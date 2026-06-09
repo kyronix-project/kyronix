@@ -123,3 +123,13 @@ typedef struct {
     uint64_t int_no, error_code;
     uint64_t rip, cs, rflags, rsp, ss;
 } PACKED cpu_state_t;
+
+typedef struct {
+    uint32_t reserved0;
+    uint64_t rsp[3];
+    uint64_t reserved1;
+    uint64_t ist[7];
+    uint64_t reserved2;
+    uint16_t reserved3;
+    uint16_t iopb_offset;
+} PACKED tss_t;
