@@ -23,6 +23,7 @@ typedef struct proc
     uint32_t pid;                    /*  8 */
     uint32_t ppid;                   /* 12 */
     vmm_space_t* space;              /* 16 */
+    uint64_t kstack_guard;
     uint8_t* kstack;                 /* 24 */
     uint64_t kstack_top;             /* 32 */
     uint64_t kstack_rsp;             /* 40 */
@@ -39,8 +40,13 @@ typedef struct proc
     k_sigaction_t sig_actions[NSIG];
     char cwd[512];
     uint64_t wakeup_tick;
+    uint64_t alarm_tick;
     uint32_t uid;
+    uint32_t euid;
+    uint32_t suid;
     uint32_t gid;
+    uint32_t egid;
+    uint32_t sgid;
     bool is_thread;
     uint32_t* cleartid_addr;
 } proc_t;

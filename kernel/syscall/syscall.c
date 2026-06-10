@@ -524,6 +524,8 @@ static int64_t sys_getcwd(char* buf, uint64_t size)
     return (int64_t) (uintptr_t) buf;
 }
 
+static void path_abs(char*, const char*);
+
 static int64_t sys_chdir(const char* path)
 {
     if (!path) return -(int64_t)EFAULT;
@@ -1996,7 +1998,7 @@ void syscall_dispatch(syscall_frame_t* f)
         ret = fd_valid((int)a1) ? 0 : -(int64_t)EBADF;
         break;
     case 74: case 75:
-        ret = fd_valid((int)a1) ? 0 : -(int64_t)EBADF;што какта 
+        ret = fd_valid((int)a1) ? 0 : -(int64_t)EBADF;
         break;
     case 76:
         ret = sys_truncate((const char*) a1, a2);
@@ -2139,7 +2141,7 @@ void syscall_dispatch(syscall_frame_t* f)
     case 127: { if (a1) *(uint64_t*)a1 = cur() ? (cur()->pending_sigs & cur()->sig_mask) : 0; ret = 0; break; }
     case 128: ret = sys_rt_sigtimedwait((const uint64_t*)a1, (void*)a2, (const void*)a3, a4); break;
     case 129: ret = 0; break; /* rt_sigqueueinfo */
-    case 132: ret = 0; break; /* utime: no-op */ conflicts
+    case 132: ret = 0; break; /* utime: no-op */
     case 130:
         ret = sys_rt_sigsuspend((const uint64_t*) a1, a2);
         break;

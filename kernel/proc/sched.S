@@ -2,10 +2,10 @@
 .section .text
 
 #define PROC_SPACE      16
-#define PROC_KSTACK_TOP 32
-#define PROC_KSTACK_RSP 40
-#define PROC_USER_RSP   48
-#define PROC_FS_BASE    88
+#define PROC_KSTACK_TOP 40
+#define PROC_KSTACK_RSP 48
+#define PROC_USER_RSP   56
+#define PROC_FS_BASE    96
 
 #define CPU_KERNEL_RSP  0
 #define CPU_USER_RSP    8
