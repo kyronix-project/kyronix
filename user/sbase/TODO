@@ -1,0 +1,43 @@
+The following list of commands is taken from the toybox roadmap[0] and
+has been stripped down  accordingly.  Commands that belong to ubase[1]
+are not listed here as well as commands that fall outside the scope of
+sbase such as vi and sh are also not listed here.
+
+at
+awk
+bc
+diff
+patch
+stty
+
+If you are looking for some work to do on sbase, another option is to
+pick a utility from the list in the README which has missing flags or
+features noted.
+
+What also needs to be implemented is the capability of the tools to
+handle data with NUL-bytes in it.
+
+The return values of mdcheckline() in crypt.c need to be fixed (0 -> success,
+1 -> error).
+
+[0] http://landley.net/toybox/roadmap.html
+[1] http://git.suckless.org/ubase/
+
+Bugs
+====
+
+ed
+--
+
+* Editing huge files doesn't work well.
+
+
+printf
+------
+* Flags for string conversion-specifier (%s) are not supported.
+* Escape sequences that expand to '%' are treated as beginning of
+  conversion specification.
+
+xargs
+-----
+* Add -L.
