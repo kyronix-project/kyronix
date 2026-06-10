@@ -17,6 +17,8 @@ char g_cwd[512] = "/";
 static vfs_file_t* g_default_fds[VFS_FD_MAX];
 static vfs_file_t** g_fds = g_default_fds;
 
+#define EACCES    13
+#define EFAULT    14
 #define EEXIST    17
 #define ENOENT     2
 #define EBADF      9
@@ -29,6 +31,7 @@ static vfs_file_t** g_fds = g_default_fds;
 #define ENOSPC    28
 #define ESPIPE    29
 #define ENOTEMPTY 39
+#define ENAMETOOLONG 36
 
 static vfs_node_t* node_alloc(const char* name, uint8_t type, uint32_t mode)
 {
@@ -38,7 +41,8 @@ static vfs_node_t* node_alloc(const char* name, uint8_t type, uint32_t mode)
     strncpy(n->name, name, sizeof(n->name) - 1);
     n->type = type;
     n->mode = mode;
-    n->ino = g_next_ino++;
+    n->ino  = g_next_ino++;
+    if (g_current_proc) { n->uid = g_current_proc->euid; n->gid = g_current_proc->egid; }
     return n;
 }
 
@@ -446,6 +450,49 @@ vfs_node_t* fd_get_node(int fd)
     return f ? f->node : NULL;
 }
 
+vfs_file_t* fd_get_file(int fd)
+{
+    return fd_get(fd);
+}
+
+int64_t fd_pread(int fd, void* buf, uint64_t len, uint64_t off)
+{
+    vfs_file_t* f = fd_get(fd);
+    if (!f) return -(int64_t)EBADF;
+    if (f->pipe) return -(int64_t)ESPIPE;
+    if (len == 0) return 0;
+    if (!uptr_ok(buf, len)) return -(int64_t)EFAULT;
+    vfs_node_t* n = f->node;
+    if (!n || n->type != VFS_TYPE_REG) return -(int64_t)EINVAL;
+    if (off >= n->size) return 0;
+    uint64_t avail = n->size - off;
+    uint64_t r = (len < avail) ? len : avail;
+    memcpy(buf, n->data + off, r);
+    return (int64_t)r;
+}
+
+int64_t fd_pwrite(int fd, const void* buf, uint64_t len, uint64_t off)
+{
+    vfs_file_t* f = fd_get(fd);
+    if (!f) return -(int64_t)EBADF;
+    if (f->pipe) return -(int64_t)ESPIPE;
+    if (len == 0) return 0;
+    if (!uptr_ok(buf, len)) return -(int64_t)EFAULT;
+    vfs_node_t* n = f->node;
+    if (!n || n->type != VFS_TYPE_REG) return -(int64_t)EINVAL;
+    uint64_t end = off + len;
+    if (end > n->capacity) {
+        uint64_t newcap = (end + 4095) & ~4095ULL;
+        uint8_t* newdata = (uint8_t*)kmalloc(newcap);
+        if (!newdata) return -(int64_t)ENOSPC;
+        if (n->data) { memcpy(newdata, n->data, n->size); kfree(n->data); }
+        n->data = newdata; n->capacity = newcap;
+    }
+    memcpy(n->data + off, buf, len);
+    if (end > n->size) n->size = end;
+    return (int64_t)len;
+}
+
 bool fd_pollin(int fd)
 {
     vfs_file_t* f = fd_get(fd);
@@ -799,6 +846,18 @@ int fd_open(const char* path, int flags, int mode)
     if (n->type == VFS_TYPE_DIR && !(flags & O_DIRECTORY))
         return -(int) EISDIR;
 
+    {
+        uint32_t uid = g_current_proc ? g_current_proc->euid : 0;
+        if (uid != 0 && n->type == VFS_TYPE_REG)
+        {
+            int acc = (flags & O_ACCMODE);
+            uint32_t need = (acc != O_WRONLY ? 4u : 0u) | (acc != O_RDONLY ? 2u : 0u);
+            uint32_t bits = (n->uid == uid) ? ((n->mode >> 6) & 7u) : (n->mode & 7u);
+            if ((bits & need) != need)
+                return -(int) EACCES;
+        }
+    }
+
     int fd = fd_alloc_from(3);
     if (fd < 0)
         return -(int) EMFILE;
@@ -848,6 +907,8 @@ int64_t fd_read(int fd, void* buf, uint64_t len)
         return -(int64_t) EBADF;
     if (len == 0)
         return 0;
+    if (!uptr_ok(buf, len))
+        return -(int64_t) EFAULT;
 
     if (f->wpipe) /* socket */
         return pipe_read(f->pipe, buf, len);
@@ -889,6 +950,8 @@ int64_t fd_write(int fd, const void* buf, uint64_t len)
         return -(int64_t) EBADF;
     if (len == 0)
         return 0;
+    if (!uptr_ok(buf, len))
+        return -(int64_t) EFAULT;
 
     if (f->wpipe) /* socket */
         return pipe_write(f->wpipe, buf, len);
@@ -1291,4 +1354,139 @@ int fd_dup2(int oldfd, int newfd)
     file_addref(nf);
     g_fds[newfd] = nf;
     return newfd;
+}
+
+int fd_dup3(int oldfd, int newfd, int flags)
+{
+    if (oldfd == newfd) return -(int)EINVAL;
+    int r = fd_dup2(oldfd, newfd);
+    if (r >= 0 && (flags & O_CLOEXEC)) { /* cloexec not enforced yet, accepted */ }
+    return r;
+}
+
+/* Reconstruct absolute path of node by walking parent pointers. */
+char* vfs_node_abspath(vfs_node_t* n, char* buf, size_t sz)
+{
+    if (!n || !buf || sz == 0) return NULL;
+    if (n->parent == n) { /* root */ buf[0] = '/'; buf[1] = '\0'; return buf; }
+
+    /* collect ancestors */
+    vfs_node_t* stack[128];
+    int depth = 0;
+    vfs_node_t* cur = n;
+    while (cur && cur->parent != cur && depth < 128) {
+        stack[depth++] = cur;
+        cur = cur->parent;
+    }
+
+    char* p = buf;
+    char* end = buf + sz - 1;
+    for (int i = depth - 1; i >= 0; i--) {
+        if (p < end) *p++ = '/';
+        size_t nl = strlen(stack[i]->name);
+        if (p + nl > end) nl = (size_t)(end - p);
+        memcpy(p, stack[i]->name, nl);
+        p += nl;
+    }
+    if (p == buf) *p++ = '/';
+    *p = '\0';
+    return buf;
+}
+
+int vfs_link(const char* oldpath, const char* newpath)
+{
+    vfs_node_t* src = vfs_lookup(oldpath);
+    if (!src) return -(int)ENOENT;
+    if (src->type == VFS_TYPE_DIR) return -(int)EISDIR;
+    const char* leaf;
+    vfs_node_t* parent = parent_of(newpath, &leaf);
+    if (!parent || parent->type != VFS_TYPE_DIR) return -(int)ENOENT;
+    if (!leaf || !*leaf) return -(int)EINVAL;
+    if (dir_find(parent, leaf)) return -(int)EEXIST;
+    /* hard link: create new node sharing same data buffer — shallow copy */
+    vfs_node_t* ln = node_alloc(leaf, src->type, src->mode);
+    if (!ln) return -(int)ENOMEM;
+    ln->data = src->data;   /* shared reference (no refcount — simple impl) */
+    ln->size = src->size;
+    ln->capacity = src->capacity;
+    dir_insert(parent, ln);
+    return 0;
+}
+
+int vfs_chmod(const char* path, uint32_t mode)
+{
+    vfs_node_t* n = vfs_lookup(path);
+    if (!n) return -(int)ENOENT;
+    n->mode = (n->mode & ~07777U) | (mode & 07777U);
+    return 0;
+}
+
+int vfs_fchmod(int fd, uint32_t mode)
+{
+    vfs_node_t* n = fd_get_node(fd);
+    if (!n) return -(int)EBADF;
+    n->mode = (n->mode & ~07777U) | (mode & 07777U);
+    return 0;
+}
+
+int vfs_chown(const char* path, uint32_t uid, uint32_t gid)
+{
+    vfs_node_t* n = vfs_lookup(path);
+    if (!n) return -(int)ENOENT;
+    if (uid != (uint32_t)-1) n->uid = uid;
+    if (gid != (uint32_t)-1) n->gid = gid;
+    return 0;
+}
+
+int vfs_lchown(const char* path, uint32_t uid, uint32_t gid)
+{
+    vfs_node_t* n = vfs_lookup_nofollow(path);
+    if (!n) return -(int)ENOENT;
+    if (uid != (uint32_t)-1) n->uid = uid;
+    if (gid != (uint32_t)-1) n->gid = gid;
+    return 0;
+}
+
+int vfs_fchown(int fd, uint32_t uid, uint32_t gid)
+{
+    vfs_node_t* n = fd_get_node(fd);
+    if (!n) return -(int)EBADF;
+    if (uid != (uint32_t)-1) n->uid = uid;
+    if (gid != (uint32_t)-1) n->gid = gid;
+    return 0;
+}
+
+int vfs_mknod(const char* path, uint32_t mode, uint64_t dev)
+{
+    (void)dev;
+    const char* leaf;
+    vfs_node_t* parent = parent_of(path, &leaf);
+    if (!parent || parent->type != VFS_TYPE_DIR) return -(int)ENOENT;
+    if (!leaf || !*leaf) return -(int)EINVAL;
+    if (dir_find(parent, leaf)) return -(int)EEXIST;
+    uint8_t type = ((mode & S_IFMT) == S_IFDIR) ? VFS_TYPE_DIR : VFS_TYPE_REG;
+    vfs_node_t* n = node_alloc(leaf, type, mode);
+    if (!n) return -(int)ENOMEM;
+    dir_insert(parent, n);
+    return 0;
+}
+
+/* Resolve *at dirfd+path into an absolute path stored in out[sz]. */
+int at_resolve(int dirfd, const char* path, char* out, size_t sz)
+{
+    if (!path) return -(int)EFAULT;
+    if (path[0] == '/' || dirfd == AT_FDCWD) {
+        vfs_abs_path(out, sz, path);
+        return 0;
+    }
+    vfs_file_t* df = fd_get(dirfd);
+    if (!df || !df->node || df->node->type != VFS_TYPE_DIR) return -(int)EBADF;
+    char dirpath[512];
+    if (!vfs_node_abspath(df->node, dirpath, sizeof(dirpath))) return -(int)EINVAL;
+    size_t dl = strlen(dirpath);
+    if (dl + 1 + strlen(path) >= sz) return -(int)ENAMETOOLONG;
+    memcpy(out, dirpath, dl);
+    if (out[dl-1] != '/') out[dl++] = '/';
+    strcpy(out + dl, path);
+    return 0;
 }

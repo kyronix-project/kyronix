@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -259,6 +260,49 @@ static int entcmp(const void* va, const void* vb)
     return rflag ? 0 - cmp : cmp;
 }
 
+static void print_columns(struct entry* ents, size_t n)
+{
+    struct winsize ws;
+    ws.ws_col = 80;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
+    int term_w = (ws.ws_col > 0) ? (int) ws.ws_col : 80;
+
+    size_t max_w = 0;
+    for (size_t i = 0; i < n; i++)
+    {
+        size_t w = strlen(ents[i].name) + strlen(indicator(ents[i].mode));
+        if (iflag) w += 8;
+        if (w > max_w) max_w = w;
+    }
+
+    int col_w = (int) max_w + 2;
+    int num_cols = term_w / col_w;
+    if (num_cols < 1) num_cols = 1;
+    size_t num_rows = (n + (size_t) num_cols - 1) / (size_t) num_cols;
+
+    for (size_t row = 0; row < num_rows; row++)
+    {
+        for (int col = 0; col < num_cols; col++)
+        {
+            size_t idx = (size_t) col * num_rows + row;
+            if (idx >= n) break;
+            int w = 0;
+            if (iflag)
+            {
+                w += printf("%lu ", (unsigned long) ents[idx].ino);
+            }
+            printname(ents[idx].name);
+            const char* ind = indicator(ents[idx].mode);
+            fputs(ind, stdout);
+            w += (int) strlen(ents[idx].name) + (int) strlen(ind);
+            /* pad if not the last column in this row */
+            if (col < num_cols - 1 && (size_t)(col + 1) * num_rows + row < n)
+                printf("%-*s", col_w - w, "");
+        }
+        putchar('\n');
+    }
+}
+
 static void lsdir(const char* path, const struct entry* dir)
 {
     DIR* dp;
@@ -300,8 +344,11 @@ static void lsdir(const char* path, const struct entry* dir)
         printname(dir->name);
         puts(":");
     }
-    for (i = 0; i < n; i++)
-        output(&ents[i]);
+    if (!lflag && isatty(STDOUT_FILENO))
+        print_columns(ents, n);
+    else
+        for (i = 0; i < n; i++)
+            output(&ents[i]);
 
     if (Rflag)
     {

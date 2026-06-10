@@ -40,3 +40,4 @@ void fb_write(const char* s);
 void fb_set_color(uint32_t fg, uint32_t bg);
 void fb_cursor_enable(int enable);
 void fb_cursor_update(void);
+void fb_cursor_blink_tick(uint64_t ticks);

@@ -11,7 +11,8 @@ typedef struct
     uint32_t count;
     uint32_t write_refs;
     uint32_t read_refs;
-    void* waiting_reader; /* proc_t* or NULL - void* to break header cycle */
+    void* waiting_reader;
+    void* waiting_writer;
 } pipe_t;
 
 #define PIPE_END_READ 0

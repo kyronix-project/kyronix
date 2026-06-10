@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/reboot.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -21,36 +22,44 @@
 #define MAX_LINE 512
 #define MAX_HISTORY 64
 
-static char cached_hostname[64];
-static char cached_username[64];
+static void print_matches_columns(char names[][PATH_MAX], int count)
+{
+    struct winsize ws;
+    ws.ws_col = 80;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
+    int term_w = (ws.ws_col > 0) ? (int) ws.ws_col : 80;
+
+    int max_w = 0;
+    for (int i = 0; i < count; i++)
+    {
+        int w = (int) strlen(names[i]);
+        if (w > max_w) max_w = w;
+    }
+
+    int col_w = max_w + 2;
+    int num_cols = term_w / col_w;
+    if (num_cols < 1) num_cols = 1;
+    int num_rows = (count + num_cols - 1) / num_cols;
+
+    for (int row = 0; row < num_rows; row++)
+    {
+        for (int col = 0; col < num_cols; col++)
+        {
+            int idx = col * num_rows + row;
+            if (idx >= count) break;
+            int w = (int) strlen(names[idx]);
+            fputs(names[idx], stdout);
+            if (col < num_cols - 1 && (col + 1) * num_rows + row < count)
+                printf("%-*s", col_w - w, "");
+        }
+        putchar('\n');
+    }
+}
 static int cached_uid = -1;
 static char shell_pwd[MAX_LINE];
 
 static void build_prompt(char* buf, size_t size)
 {
-    if (cached_hostname[0] == '\0')
-    {
-        if (gethostname(cached_hostname, sizeof(cached_hostname)) != 0)
-        {
-            snprintf(cached_hostname, sizeof(cached_hostname), "kyronix");
-        }
-        cached_hostname[sizeof(cached_hostname) - 1] = '\0';
-    }
-
-    if (cached_uid < 0)
-    {
-        cached_uid = (int) getuid();
-        struct passwd* pw = getpwuid((uid_t) cached_uid);
-        if (pw != NULL && pw->pw_name != NULL)
-        {
-            snprintf(cached_username, sizeof(cached_username), "%s", pw->pw_name);
-        }
-        else
-        {
-            snprintf(cached_username, sizeof(cached_username), "unknown");
-        }
-    }
-
     static char cwd[MAX_LINE];
     const char* cwd_str = getcwd(cwd, sizeof(cwd));
     if (cwd_str == NULL)
@@ -83,9 +92,7 @@ static void build_prompt(char* buf, size_t size)
     }
 
     const char* prompt_char = (cached_uid == 0) ? "#" : "$";
-
-    snprintf(buf, size, "\033[32m%s\033[0m@\033[32m%s\033[0m:\033[34m%s\033[0m %s ",
-             cached_username, cached_hostname, display_path, prompt_char);
+    snprintf(buf, size, "\033[34m%s\033[0m %s ", display_path, prompt_char);
 }
 
 static struct termios saved_termios;
@@ -521,10 +528,7 @@ static void complete_token(char* line, size_t* cursor, size_t* length)
     }
 
     putchar('\n');
-    for (int i = 0; i < match_count; i++)
-    {
-        puts(matches[i]);
-    }
+    print_matches_columns(matches, match_count);
     redraw_line(line, *cursor);
 }
 

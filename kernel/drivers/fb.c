@@ -13,12 +13,35 @@ extern const uint8_t g_psf_font[];
 #define PSF1_HDR 4
 
 static bool g_cursor_enabled;
+static bool g_cursor_visible = true;
 static uint32_t g_cursor_last_col;
 static uint32_t g_cursor_last_row;
 
 void fb_cursor_enable(int enable)
 {
     g_cursor_enabled = !!enable;
+}
+
+static void cursor_draw(uint32_t col, uint32_t row, uint32_t color)
+{
+    uint32_t y = row * FONT_H + (FONT_H - 1); /* row 15: always blank in this font */
+    fb_fill_rect(col * FONT_W, y, FONT_W, 1, color);
+}
+
+void fb_cursor_blink_tick(uint64_t ticks)
+{
+    if (!g_cursor_enabled || !g_fb.addr)
+        return;
+    static uint64_t last_blink;
+    if (ticks - last_blink < 500)
+        return;
+    last_blink = ticks;
+    g_cursor_visible = !g_cursor_visible;
+    uint32_t cols = (uint32_t) (g_fb.width / FONT_W);
+    uint32_t rows = (uint32_t) (g_fb.height / FONT_H);
+    if (g_cursor_last_col < cols && g_cursor_last_row < rows)
+        cursor_draw(g_cursor_last_col, g_cursor_last_row,
+                    g_cursor_visible ? g_fb.fg : g_fb.bg);
 }
 
 void fb_cursor_update(void)
@@ -30,16 +53,11 @@ void fb_cursor_update(void)
     uint32_t rows = (uint32_t) (g_fb.height / FONT_H);
 
     if (g_cursor_last_col < cols && g_cursor_last_row < rows)
-    {
-        uint32_t y = g_cursor_last_row * FONT_H + (FONT_H - 1);
-        fb_fill_rect(g_cursor_last_col * FONT_W, y, FONT_W, 1, g_fb.bg);
-    }
+        cursor_draw(g_cursor_last_col, g_cursor_last_row, g_fb.bg);
 
+    g_cursor_visible = true;
     if (g_fb.col < cols && g_fb.row < rows)
-    {
-        uint32_t y = g_fb.row * FONT_H + (FONT_H - 1);
-        fb_fill_rect(g_fb.col * FONT_W, y, FONT_W, 1, g_fb.fg);
-    }
+        cursor_draw(g_fb.col, g_fb.row, g_fb.fg);
 
     g_cursor_last_col = g_fb.col;
     g_cursor_last_row = g_fb.row;
@@ -101,10 +119,7 @@ void fb_clear(uint32_t color)
     g_cursor_last_col = 0;
     g_cursor_last_row = 0;
     if (g_cursor_enabled)
-    {
-        uint32_t y = g_fb.row * FONT_H + (FONT_H - 1);
-        fb_fill_rect(g_fb.col * FONT_W, y, FONT_W, 1, g_fb.fg);
-    }
+        cursor_draw(g_fb.col, g_fb.row, g_fb.fg);
 }
 
 void fb_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color)

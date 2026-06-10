@@ -196,6 +196,14 @@ void vmm_space_free(vmm_space_t* sp)
 
 void vmm_switch(vmm_space_t* sp)
 {
+    if (sp != &g_kernel_space)
+    {
+        /* sync any kernel mappings added after vmm_space_new (e.g. kstacks) */
+        uint64_t* dst = (uint64_t*) phys_to_virt(sp->pml4_phys);
+        uint64_t* src = (uint64_t*) phys_to_virt(g_kernel_space.pml4_phys);
+        for (int i = 256; i < 512; i++)
+            dst[i] = src[i];
+    }
     __asm__ volatile("mov %0, %%cr3" ::"r"(sp->pml4_phys) : "memory");
 }
 

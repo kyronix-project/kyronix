@@ -9,6 +9,7 @@
 #include "fs/vfs.h"
 #include "proc/proc.h"
 #include "syscall/syscall.h"
+#include "drivers/fb.h"
 
 #define IDT_INT_GATE 0x8E
 #define IDT_TRAP_GATE 0x8F
@@ -149,11 +150,19 @@ void isr_dispatch(cpu_state_t* state)
         if (irq == 0)
         {
             g_ticks++;
+            fb_cursor_blink_tick(g_ticks);
             pic_send_eoi(0);
             for (int i = 0; i < PROC_MAX; i++) {
                 proc_t* pc = &g_proctable[i];
+                if (pc->state == PROC_UNUSED) continue;
                 if (pc->wakeup_tick && g_ticks >= pc->wakeup_tick) {
                     pc->wakeup_tick = 0;
+                    if (pc->state == PROC_WAITING)
+                        pc->state = PROC_READY;
+                }
+                if (pc->alarm_tick && g_ticks >= pc->alarm_tick) {
+                    pc->alarm_tick = 0;
+                    proc_send_signal(pc, SIGALRM);
                     if (pc->state == PROC_WAITING)
                         pc->state = PROC_READY;
                 }

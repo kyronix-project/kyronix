@@ -36,6 +36,14 @@ int64_t pipe_read(pipe_t* p, void* buf, uint64_t len)
         p->rpos = (p->rpos + 1) % PIPE_BUFSZ;
         p->count--;
     }
+
+    /* wake writer that was blocked on full buffer */
+    if (p->waiting_writer) {
+        proc_t* writer = (proc_t*) p->waiting_writer;
+        if (writer->state == PROC_WAITING)
+            writer->state = PROC_READY;
+    }
+
     return (int64_t) done;
 }
 
@@ -51,19 +59,26 @@ int64_t pipe_write(pipe_t* p, const void* buf, uint64_t len)
     const uint8_t* in = (const uint8_t*) buf;
     uint64_t done = 0;
 
-    while (done < len && p->count < PIPE_BUFSZ)
+    while (done < len)
     {
+        while (p->count == PIPE_BUFSZ) {
+            if (p->read_refs == 0) {
+                proc_send_signal(g_current_proc, SIGPIPE);
+                return done ? (int64_t)done : -(int64_t)EPIPE;
+            }
+            p->waiting_writer = g_current_proc;
+            sched_yield_blocking();
+            p->waiting_writer = NULL;
+        }
         uint32_t wpos = (p->rpos + p->count) % PIPE_BUFSZ;
         p->buf[wpos] = in[done++];
         p->count++;
-    }
 
-    /* wake any reader that was blocked on an empty pipe */
-    if (done > 0 && p->waiting_reader)
-    {
-        proc_t* reader = (proc_t*) p->waiting_reader;
-        if (reader->state == PROC_WAITING)
-            reader->state = PROC_READY;
+        if (p->waiting_reader) {
+            proc_t* reader = (proc_t*) p->waiting_reader;
+            if (reader->state == PROC_WAITING)
+                reader->state = PROC_READY;
+        }
     }
 
     return (int64_t) done;

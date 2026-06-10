@@ -151,6 +151,8 @@ int main(void)
                 chdir("/");
 
             setsid();
+            setgid(pw->pw_gid);
+            setuid(pw->pw_uid);
             execlp(pw->pw_shell, pw->pw_shell, NULL);
             putstr("login: unable to start shell\n");
             _exit(1);

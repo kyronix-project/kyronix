@@ -39,10 +39,14 @@ typedef struct proc
     k_sigaction_t sig_actions[NSIG];
     char cwd[512];
     uint64_t wakeup_tick;
+    uint64_t alarm_tick;
     char exe_path[512];
     uint32_t* cleartid_addr;
     uint8_t is_thread;
-    uint32_t uid, gid;
+    uint32_t uid,  gid;  /* real */
+    uint32_t euid, egid; /* effective */
+    uint32_t suid, sgid; /* saved-set */
+    uint64_t kstack_guard; /* VA of the unmapped guard page below kstack */
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX];
@@ -50,6 +54,7 @@ extern proc_t* g_current_proc;
 
 void proc_init(void);
 proc_t* proc_alloc(uint32_t ppid);
+void proc_kstack_free(proc_t* p);
 proc_t* proc_find(uint32_t pid);
 proc_t* proc_next_ready(proc_t* skip);
 void sched_switch(proc_t* next);

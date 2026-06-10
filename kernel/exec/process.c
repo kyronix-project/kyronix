@@ -1,4 +1,5 @@
 #include "process.h"
+#include "arch/x86_64/pit.h"
 #include "arch/x86_64/syscall_setup.h"
 #include "elf.h"
 #include "fs/vfs.h"
@@ -14,10 +15,17 @@
 #define USER_STACK_TOP 0x7fffffff0000ULL
 #define USER_STACK_BASE (USER_STACK_TOP - (uint64_t) USER_STACK_PAGES * PAGE_SIZE)
 
-static inline void* top_page_kva(uint64_t uva, uint64_t top_page_phys)
+uint64_t kern_rand64(void)
 {
-    uint64_t base = USER_STACK_TOP - PAGE_SIZE;
-    return (uint8_t*) phys_to_virt(top_page_phys) + (uva - base);
+    static uint64_t s;
+    if (!s) s = g_ticks ^ 0xdeadbeef13579aceULL;
+    s ^= s << 13; s ^= s >> 7; s ^= s << 17;
+    return s;
+}
+
+static inline void* top_page_kva(uint64_t uva, uint64_t top_page_phys, uint64_t stack_top)
+{
+    return (uint8_t*) phys_to_virt(top_page_phys) + (uva - (stack_top - PAGE_SIZE));
 }
 
 uint64_t setup_user_stack(vmm_space_t* space, const elf_load_result_t* elf, int argc,
@@ -27,6 +35,9 @@ uint64_t setup_user_stack(vmm_space_t* space, const elf_load_result_t* elf, int 
     if (envp)
         while (envp[envc])
             envc++;
+
+    /* ASLR: shift stack down by 0-255 pages */
+    uint64_t stack_top = USER_STACK_TOP - ((kern_rand64() & 0xFFULL) << 12);
 
     uint64_t phys[USER_STACK_PAGES];
     for (int i = 0; i < USER_STACK_PAGES; i++)
@@ -38,7 +49,7 @@ uint64_t setup_user_stack(vmm_space_t* space, const elf_load_result_t* elf, int 
                 pmm_free((void*) phys[j]);
             return 0;
         }
-        uint64_t va = USER_STACK_TOP - (uint64_t) (USER_STACK_PAGES - i) * PAGE_SIZE;
+        uint64_t va = stack_top - (uint64_t) (USER_STACK_PAGES - i) * PAGE_SIZE;
         if (vmm_map(space, va, phys[i], VMM_UDATA) < 0)
         {
             for (int j = 0; j <= i; j++)
@@ -48,7 +59,7 @@ uint64_t setup_user_stack(vmm_space_t* space, const elf_load_result_t* elf, int 
     }
 
     uint64_t top_phys = phys[USER_STACK_PAGES - 1];
-    uint64_t sp = USER_STACK_TOP;
+    uint64_t sp = stack_top;
 
     sp -= 16;
     uint64_t random_uva = sp;
@@ -60,7 +71,7 @@ uint64_t setup_user_stack(vmm_space_t* space, const elf_load_result_t* elf, int 
         sp -= len;
         sp &= ~(uint64_t) 7;
         env_uva[i] = sp;
-        memcpy(top_page_kva(sp, top_phys), envp[i], len);
+        memcpy(top_page_kva(sp, top_phys, stack_top), envp[i], len);
     }
 
     uint64_t arg_uva[64] = {0};
@@ -72,7 +83,7 @@ uint64_t setup_user_stack(vmm_space_t* space, const elf_load_result_t* elf, int 
         sp -= len;
         sp &= ~(uint64_t) 7;
         arg_uva[i] = sp;
-        memcpy(top_page_kva(sp, top_phys), argv[i], len);
+        memcpy(top_page_kva(sp, top_phys, stack_top), argv[i], len);
     }
 
     uint64_t auxv[] = {
@@ -90,7 +101,7 @@ uint64_t setup_user_stack(vmm_space_t* space, const elf_load_result_t* elf, int 
     sp -= frame_bytes;
     sp &= ~(uint64_t) 15; /* 16-byte align */
 
-    uint64_t* p = top_page_kva(sp, top_phys);
+    uint64_t* p = top_page_kva(sp, top_phys, stack_top);
     *p++ = (uint64_t) argc;
     for (int i = 0; i < argc; i++)
         *p++ = arg_uva[i];
@@ -135,7 +146,7 @@ int process_exec(const void* data, uint64_t size, const char* name)
     p->space = res.space;
     p->brk = PAGE_ALIGN_UP(res.brk);
     p->brk_base = p->brk;
-    p->mmap_bump = 0x0000500000000000ULL;
+    p->mmap_bump = 0x0000500000000000ULL + ((kern_rand64() & 0x1FFULL) << 21); /* ±1 GB ASLR */
     p->state = PROC_RUNNING;
 
     vfs_copy_fdtable(p->fds, vfs_get_fdtable());

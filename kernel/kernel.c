@@ -143,6 +143,17 @@ void kmain(void)
     }
     pmm_init(mmap_req.response, hhdm_req.response->offset);
     vmm_init();
+    {
+        uint32_t eax = 7, ebx = 0, ecx = 0;
+        __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "+c"(ecx) : : "edx");
+        if (ebx & (1u << 7)) /* SMEP advertised */
+        {
+            uint64_t cr4;
+            __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
+            cr4 |= (1UL << 20);
+            __asm__ volatile("mov %0, %%cr4" :: "r"(cr4) : "memory");
+        }
+    }
     heap_init();
     syscall_init();
     proc_init();
