@@ -103,6 +103,7 @@ BIN =\
 	chown\
 	chroot\
 	cksum\
+	clear\
 	cmp\
 	cols\
 	comm\

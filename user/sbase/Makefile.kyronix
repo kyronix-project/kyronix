@@ -82,6 +82,7 @@ BIN := \
 	chgrp \
 	chmod \
 	chown \
+	clear \
 	cksum \
 	cmp \
 	cols \
