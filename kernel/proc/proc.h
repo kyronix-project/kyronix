@@ -39,6 +39,10 @@ typedef struct proc
     k_sigaction_t sig_actions[NSIG];
     char cwd[512];
     uint64_t wakeup_tick;
+    uint32_t uid;
+    uint32_t gid;
+    bool is_thread;
+    uint32_t* cleartid_addr;
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX];

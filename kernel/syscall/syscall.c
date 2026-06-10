@@ -1069,9 +1069,6 @@ struct pollfd_s
     short revents;
 };
 
-#define POLLIN 1
-#define POLLOUT 4
-
 static int64_t sys_poll(struct pollfd_s* fds, uint64_t nfds, int timeout)
 {
     uint64_t iterations = 0;
@@ -1130,6 +1127,15 @@ static int64_t sys_ppoll(struct pollfd_s* fds, uint64_t nfds, void* tmo, const v
     (void) sigmask;
     (void) sigsetsize;
     return sys_poll(fds, nfds, timeout);
+}
+
+static inline bool fds_test(uint8_t* set, int fd)
+{
+    return set && (set[fd >> 3] & (1 << (fd & 7)));
+}
+static inline void fds_set(uint8_t* set, int fd)
+{
+    if (set) set[fd >> 3] |= (1 << (fd & 7));
 }
 
 static int64_t sys_select(int nfds, void* rfds, void* wfds, void* efds, void* timeout)
@@ -1335,6 +1341,82 @@ static int64_t sys_access(const char* p, int m)
 {
     (void) m;
     return vfs_lookup(p) ? 0 : -(int64_t) ENOENT;
+}
+
+#define CLONE_VM      0x00000100
+#define CLONE_THREAD  0x00010000
+
+static int64_t sys_clone(uint64_t flags, uint64_t rsp, uint32_t* parent_tid, uint32_t* child_tid,
+                         uint64_t tls, syscall_frame_t* f)
+{
+    proc_t* parent = cur();
+    if (!parent)
+        return -(int64_t) ENOMEM;
+
+    proc_t* child = proc_alloc(parent->pid);
+    if (!child)
+        return -(int64_t) ENOMEM;
+
+    if (flags & CLONE_VM)
+    {
+        child->space = parent->space;
+    }
+    else
+    {
+        child->space = vmm_space_new();
+        if (!child->space) goto fail_space;
+        if (vmm_fork_user(child->space, parent->space) < 0) goto fail_fork;
+    }
+
+    vfs_copy_fdtable(child->fds, parent->fds);
+    child->brk = parent->brk;
+    child->brk_base = parent->brk_base;
+    child->mmap_bump = parent->mmap_bump;
+    child->pgid = parent->pgid;
+    child->uid = parent->uid;
+    child->gid = parent->gid;
+    child->sig_mask = parent->sig_mask;
+    memcpy(child->sig_actions, parent->sig_actions, sizeof(parent->sig_actions));
+    child->pending_sigs = 0;
+    child->fs_base = parent->fs_base;
+    child->is_thread = (flags & CLONE_THREAD) ? true : false;
+    memcpy(child->cwd, parent->cwd, sizeof(child->cwd));
+
+    uint8_t* ksp = child->kstack + KSTACK_SIZE;
+
+    ksp -= sizeof(syscall_frame_t);
+    syscall_frame_t* cf = (syscall_frame_t*) ksp;
+    *cf = *f;
+    cf->rax = 0;
+    if (rsp)
+        child->user_rsp = rsp;
+    else
+        child->user_rsp = parent->user_rsp;
+
+    ksp -= 8;
+    *(uint64_t*) ksp = (uint64_t) (uintptr_t) proc_resume_frame;
+
+    ksp -= 6 * 8;
+    memset(ksp, 0, 6 * 8);
+
+    if (tls && (flags & CLONE_VM))
+        child->fs_base = tls;
+    if (parent_tid) *parent_tid = 0;
+    if (child_tid) *child_tid = child->pid;
+
+    child->kstack_rsp = (uint64_t) ksp;
+    child->state = PROC_READY;
+
+    log_info("[clone] parent=%u child=%u flags=0x%lx", parent->pid, child->pid, flags);
+    return (int64_t) child->pid;
+
+fail_fork:
+    vmm_space_free(child->space);
+fail_space:
+    kfree(child->kstack);
+    kfree(child->fds);
+    child->state = PROC_UNUSED;
+    return -(int64_t) ENOMEM;
 }
 
 void syscall_dispatch(syscall_frame_t* f)
@@ -1627,28 +1709,12 @@ void syscall_dispatch(syscall_frame_t* f)
         ret = sys_pselect6((int) a1, (void*) a2, (void*) a3, (void*) a4, (void*) a5, (void*) a6);
         break;
     case 271:
-        ret = sys_ppoll((struct po.claude
-*.o
-*.d
-*.elf
-*.cpio
-kyronix.iso
-user/init
-user/hello
-build/*llfd_s*) a1, a2, (void*) a3, (const void*) a4, a5);
+        ret = sys_ppoll((struct pollfd_s*) a1, a2, (void*) a3, (const void*) a4, a5);
         break;
     case 273:
         ret = sys_set_robust_list((void*) a1, a2);
         break;
-    case 292:.claude
-*.o
-*.d
-*.elf
-*.cpio
-kyronix.iso
-user/init
-user/hello
-build/*
+    case 292:
         ret = fd_dup2((int) a1, (int) a2);
         break;
     case 293:
@@ -1662,15 +1728,7 @@ build/*
         break;
 
     default:
-        log_debug("[syscall %.claude
-*.o
-*.d
-*.elf
-*.cpio
-kyronix.iso
-user/init
-user/hello
-build/*lu  a1=%lx a2=%lx a3=%lx]", nr, a1, a2, a3);
+        log_debug("[syscall %lu  a1=%lx a2=%lx a3=%lx]", nr, a1, a2, a3);
         ret = -(int64_t) ENOSYS;
         break;
     }

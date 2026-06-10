@@ -1092,29 +1092,6 @@ int fd_readlink(const char* path, char* buf, uint64_t bufsz)
     return (int) len;
 }
 
-#define POLLIN 1
-#define POLLOUT 4
-
-bool fd_pollin(int fd)
-{
-    vfs_file_t* f = fd_get(fd);
-    if (!f) return false;
-    if (f->pipe) return true;
-    if (f->node && f->node->type == VFS_TYPE_CHR)
-    {
-        tty_process_input();
-        return tty_data_ready();
-    }
-    return true;
-}
-
-bool fd_pollout(int fd)
-{
-    vfs_file_t* f = fd_get(fd);
-    if (!f) return false;
-    return true;
-}
-
 #define TCGETS 0x5401
 #define TCSETS 0x5402
 #define TCSETSW 0x5403
