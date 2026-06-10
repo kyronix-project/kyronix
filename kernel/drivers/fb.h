@@ -6,15 +6,15 @@
 
 #define RGB(r, g, b) ((uint32_t) (((r) << 16) | ((g) << 8) | (b)))
 
-#define COLOR_BLACK RGB(0, 0, 0)
-#define COLOR_WHITE RGB(212, 212, 220)
-#define COLOR_RED RGB(224, 108, 117)
-#define COLOR_GREEN RGB(152, 195, 121)
-#define COLOR_BLUE RGB(97, 175, 239)
-#define COLOR_YELLOW RGB(229, 192, 123)
-#define COLOR_CYAN RGB(86, 182, 194)
-#define COLOR_GRAY RGB(145, 145, 155)
-#define COLOR_BG RGB(14, 14, 16)
+#define COLOR_BLACK  RGB(104, 104, 104)   // #686868
+#define COLOR_WHITE  RGB(255, 255, 255)   // #FFFFFF
+#define COLOR_RED    RGB(253, 113, 120)   // #FD7178
+#define COLOR_GREEN  RGB(204, 255, 104)   // #CCFF68
+#define COLOR_BLUE   RGB(74, 187, 255)    // #4ABBFF
+#define COLOR_YELLOW RGB(255, 167, 60)    // #FFA73C
+#define COLOR_CYAN   RGB(89, 255, 198)    // #59FFC6
+#define COLOR_GRAY   RGB(198, 198, 198)   // #C6C6C6
+#define COLOR_BG     RGB(0, 0, 0)         // #000000
 
 typedef struct
 {
