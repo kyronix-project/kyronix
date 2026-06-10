@@ -22,4 +22,4 @@ clean:
 	$(MAKE) -C shell clean
 	-$(MAKE) -C sbase -f Makefile.kyronix clean 2>/dev/null
 	$(MAKE) -C fetch clean
-	rm -rf $(ROOTFS)/bin $(ROOTFS)/bin/init
+	rm -rf $(ROOTFS)/bin

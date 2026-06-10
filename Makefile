@@ -77,7 +77,7 @@ all: $(TARGET) $(INITRD)
 
 $(INITRD):
 	$(MAKE) -C user
-	@cd rootfs && find . | sort | cpio -o --format=newc > ../$(INITRD) 2>/dev/null
+	@cd rootfs && find . -not -name '.gitignore' | sort | cpio -o --format=newc > ../$(INITRD) 2>/dev/null
 	@echo "  Built: $(INITRD)"
 
 $(TARGET): $(OBJS)
@@ -165,6 +165,6 @@ run-uefi: iso
 
 clean:
 	rm -f $(TARGET) $(ISO) $(INITRD)
-	rm -rf $(BUILD_DIR) iso_root rootfs/bin rootfs/init
+	rm -rf $(BUILD_DIR) iso_root rootfs/bin
 	$(MAKE) -C user clean
 	$(MAKE) -C $(LIMINE_DIR) clean 2>/dev/null; true

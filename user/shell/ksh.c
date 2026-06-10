@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <pwd.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,7 +19,49 @@
 #define MAX_ARGS 32
 #define MAX_LINE 512
 #define MAX_HISTORY 64
-#define PROMPT "kx# "
+
+static char cached_hostname[64];
+static char cached_username[64];
+static int cached_uid = -1;
+
+static void build_prompt(char *buf, size_t size)
+{
+    if (cached_hostname[0] == '\0') {
+        if (gethostname(cached_hostname, sizeof(cached_hostname)) != 0) {
+            snprintf(cached_hostname, sizeof(cached_hostname), "kyronix");
+        }
+        cached_hostname[sizeof(cached_hostname) - 1] = '\0';
+    }
+
+    if (cached_uid < 0) {
+        cached_uid = (int)getuid();
+        struct passwd *pw = getpwuid((uid_t)cached_uid);
+        if (pw != NULL && pw->pw_name != NULL) {
+            snprintf(cached_username, sizeof(cached_username), "%s", pw->pw_name);
+        } else {
+            snprintf(cached_username, sizeof(cached_username), "unknown");
+        }
+    }
+
+    char cwd[PATH_MAX];
+    const char *cwd_str = getcwd(cwd, sizeof(cwd));
+    if (cwd_str == NULL) {
+        cwd_str = "?";
+    }
+
+    const char *base = strrchr(cwd_str, '/');
+    if (base != NULL && base[1] != '\0') {
+        base++;
+    } else {
+        base = cwd_str;
+    }
+
+    const char *prompt_char = (cached_uid == 0) ? "#" : "$";
+    const char *prompt_color = (cached_uid == 0) ? "\033[1;31m" : "";
+
+    snprintf(buf, size, "\033[32m%s\033[0m@\033[36m%s\033[0m:\033[1;34m%s\033[0m %s%s\033[0m ",
+             cached_username, cached_hostname, base, prompt_color, prompt_char);
+}
 
 static struct termios saved_termios;
 static int termios_saved = 0;
@@ -195,8 +238,11 @@ static int read_escape_sequence(void)
 
 static void redraw_line(const char *line, size_t cursor)
 {
+    char prompt[PATH_MAX + 64];
+    build_prompt(prompt, sizeof(prompt));
+
     fputs("\r\033[K", stdout);
-    fputs(PROMPT, stdout);
+    fputs(prompt, stdout);
     fputs(line, stdout);
     if (cursor < strlen(line)) {
         dprintf(STDOUT_FILENO, "\033[%zuD", strlen(line) - cursor);
@@ -405,7 +451,10 @@ static int read_line(char *line, size_t size)
     int history_index = history_count;
 
     line[0] = '\0';
-    fputs(PROMPT, stdout);
+
+    char prompt[PATH_MAX + 64];
+    build_prompt(prompt, sizeof(prompt));
+    fputs(prompt, stdout);
     fflush(stdout);
 
     for (;;) {
