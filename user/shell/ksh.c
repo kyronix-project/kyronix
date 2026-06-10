@@ -3,6 +3,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <glob.h>
 #include <limits.h>
 #include <pwd.h>
 #include <signal.h>
@@ -23,6 +24,7 @@
 static char cached_hostname[64];
 static char cached_username[64];
 static int cached_uid = -1;
+static char shell_pwd[MAX_LINE];
 
 static void build_prompt(char* buf, size_t size)
 {
@@ -49,27 +51,41 @@ static void build_prompt(char* buf, size_t size)
         }
     }
 
-    char cwd[PATH_MAX];
+    static char cwd[MAX_LINE];
     const char* cwd_str = getcwd(cwd, sizeof(cwd));
     if (cwd_str == NULL)
     {
-        cwd_str = "?";
+        cwd_str = shell_pwd;
+        if (cwd_str[0] == '\0')
+        {
+            cwd_str = "?";
+        }
     }
 
-    const char* base = strrchr(cwd_str, '/');
-    if (base != NULL && base[1] != '\0')
+    const char* display_path = cwd_str;
+    static char tilde_path[MAX_LINE];
+    const char* home = getenv("HOME");
+    if (home != NULL)
     {
-        base++;
-    }
-    else
-    {
-        base = cwd_str;
+        size_t home_len = strlen(home);
+        if (strncmp(cwd_str, home, home_len) == 0)
+        {
+            if (cwd_str[home_len] == '\0')
+            {
+                display_path = "~";
+            }
+            else if (cwd_str[home_len] == '/')
+            {
+                snprintf(tilde_path, sizeof(tilde_path), "~%s", cwd_str + home_len);
+                display_path = tilde_path;
+            }
+        }
     }
 
     const char* prompt_char = (cached_uid == 0) ? "#" : "$";
 
     snprintf(buf, size, "\033[32m%s\033[0m@\033[32m%s\033[0m:\033[34m%s\033[0m %s ",
-             cached_username, cached_hostname, base, prompt_char);
+             cached_username, cached_hostname, display_path, prompt_char);
 }
 
 static struct termios saved_termios;
@@ -682,6 +698,126 @@ static int spawn_external(char** argv)
     return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
 }
 
+static void expand_globs(int* argc, char** argv)
+{
+    static char expanded[MAX_ARGS][MAX_LINE];
+    int new_argc = 0;
+
+    for (int i = 0; i < *argc && new_argc < MAX_ARGS - 1; i++)
+    {
+        glob_t gl;
+        if (glob(argv[i], GLOB_NOCHECK | GLOB_TILDE, NULL, &gl) != 0)
+        {
+            strncpy(expanded[new_argc], argv[i], MAX_LINE - 1);
+            expanded[new_argc][MAX_LINE - 1] = '\0';
+            new_argc++;
+            continue;
+        }
+
+        for (size_t j = 0; j < gl.gl_pathc && new_argc < MAX_ARGS - 1; j++)
+        {
+            strncpy(expanded[new_argc], gl.gl_pathv[j], MAX_LINE - 1);
+            expanded[new_argc][MAX_LINE - 1] = '\0';
+            new_argc++;
+        }
+        globfree(&gl);
+    }
+
+    for (int i = 0; i < new_argc; i++)
+    {
+        argv[i] = expanded[i];
+    }
+    argv[new_argc] = NULL;
+    *argc = new_argc;
+}
+
+static int resolve_path(const char* target, char* result, size_t result_size)
+{
+    static char buf[PATH_MAX * 3];
+
+    if (target[0] == '~')
+    {
+        const char* home = getenv("HOME");
+        if (home == NULL)
+            return -1;
+        size_t home_len = strlen(home);
+        size_t rest_len = strlen(target + 1);
+        if (home_len + rest_len + 1 > sizeof(buf))
+            return -1;
+        memcpy(buf, home, home_len);
+        memcpy(buf + home_len, target + 1, rest_len + 1);
+        target = buf;
+    }
+
+    char* path = buf + PATH_MAX;
+    if (target[0] == '/')
+    {
+        size_t len = strlen(target);
+        if (len >= PATH_MAX)
+            return -1;
+        memcpy(path, target, len + 1);
+    }
+    else
+    {
+        int n = snprintf(path, PATH_MAX, "%s/%s", shell_pwd, target);
+        if (n < 0 || (size_t)n >= PATH_MAX)
+            return -1;
+    }
+
+    char* norm = buf + PATH_MAX * 2;
+    size_t pos = 0;
+    const char* p = path;
+
+    while (*p != '\0')
+    {
+        while (*p == '/')
+            p++;
+        if (*p == '\0')
+            break;
+
+        const char* start = p;
+        while (*p != '\0' && *p != '/')
+            p++;
+        size_t comp_len = (size_t)(p - start);
+
+        if (comp_len == 1 && start[0] == '.')
+            continue;
+
+        if (comp_len == 2 && start[0] == '.' && start[1] == '.')
+        {
+            if (pos > 1)
+            {
+                pos--;
+                while (pos > 0 && norm[pos - 1] != '/')
+                    pos--;
+            }
+            norm[pos] = '\0';
+            continue;
+        }
+
+        if (pos > 0 && norm[pos - 1] != '/')
+            norm[pos++] = '/';
+        else if (pos == 0)
+            norm[pos++] = '/';
+
+        if (pos + comp_len >= PATH_MAX)
+            return -1;
+        memcpy(norm + pos, start, comp_len);
+        pos += comp_len;
+        norm[pos] = '\0';
+    }
+
+    if (pos == 0)
+    {
+        norm[pos++] = '/';
+        norm[pos] = '\0';
+    }
+
+    strncpy(result, norm, result_size);
+    result[result_size - 1] = '\0';
+    return 0;
+}
+
 static void print_help(void)
 {
     puts("Built-in commands:");
@@ -712,10 +848,24 @@ static int run_command(int argc, char** argv)
     if (strcmp(argv[0], "cd") == 0)
     {
         const char* dir = argv[1] != NULL ? argv[1] : getenv("HOME");
-        if (dir == NULL || chdir(dir) != 0)
+        if (dir == NULL)
+        {
+            fputs("cd: HOME not set\n", stderr);
+            return 0;
+        }
+        static char resolved[PATH_MAX];
+        if (resolve_path(dir, resolved, sizeof(resolved)) != 0)
+        {
+            fputs("cd: path too long\n", stderr);
+            return 0;
+        }
+        if (chdir(resolved) != 0)
         {
             perror("cd");
+            return 0;
         }
+        strncpy(shell_pwd, resolved, sizeof(shell_pwd) - 1);
+        shell_pwd[sizeof(shell_pwd) - 1] = '\0';
         return 0;
     }
 
@@ -727,6 +877,20 @@ int main(void)
     signal(SIGINT, SIG_IGN);
     puts("");
     puts("Type 'help' for commands.");
+
+    if (getcwd(shell_pwd, sizeof(shell_pwd)) == NULL)
+    {
+        const char* env = getenv("PWD");
+        if (env != NULL)
+        {
+            strncpy(shell_pwd, env, sizeof(shell_pwd) - 1);
+            shell_pwd[sizeof(shell_pwd) - 1] = '\0';
+        }
+        else
+        {
+            snprintf(shell_pwd, sizeof(shell_pwd), "/");
+        }
+    }
 
     history_load();
 
@@ -745,6 +909,7 @@ int main(void)
         if (argc > 0)
         {
             history_add(line);
+            expand_globs(&argc, argv);
         }
         run_command(argc, argv);
     }
