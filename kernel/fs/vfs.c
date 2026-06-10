@@ -1,5 +1,6 @@
 #include "vfs.h"
 #include "arch/x86_64/cpu.h"
+#include "drivers/fb.h"
 #include "drivers/serial.h"
 #include "drivers/tty.h"
 #include "lib/log.h"
@@ -528,35 +529,6 @@ void vfs_free_fdtable(vfs_file_t** fds)
     kfree(fds);
 }
 
-static int64_t proc_version_read(vfs_node_t* n, char* buf, uint64_t len, uint64_t off)
-{
-    (void) n;
-    static const char ver[] = "Kyronix version 0.1 (x86_64)\n";
-    uint64_t sz = sizeof(ver) - 1;
-    if (off >= sz) return 0;
-    uint64_t r = sz - off < len ? sz - off : len;
-    memcpy(buf, ver + off, r);
-    return (int64_t) r;
-}
-
-static int64_t proc_empty_read(vfs_node_t* n, char* buf, uint64_t len, uint64_t off)
-{
-    (void) n; (void) buf; (void) len; (void) off;
-    return 0;
-}
-
-static int64_t proc_exe_read(vfs_node_t* n, char* buf, uint64_t len, uint64_t off)
-{
-    (void) n;
-    if (!g_current_proc || !g_current_proc->exe_path[0]) return 0;
-    const char* p = g_current_proc->exe_path;
-    uint64_t sz = strlen(p);
-    if (off >= sz) return 0;
-    uint64_t r = sz - off < len ? sz - off : len;
-    memcpy(buf, p + off, r);
-    return (int64_t) r;
-}
-
 void vfs_init(void)
 {
     g_root = node_alloc("/", VFS_TYPE_DIR, 0755 | S_IFDIR);
@@ -564,8 +536,6 @@ void vfs_init(void)
 
     vfs_mkdir_p("/dev", 0755);
     vfs_mkdir_p("/proc", 0555);
-    vfs_mkdir_p("/proc/self", 0555);
-    vfs_mkdir_p("/proc/self/fd", 0500);
     vfs_mkdir_p("/sys", 0555);
     vfs_mkdir_p("/tmp", 01777);
     vfs_mkdir_p("/etc", 0755);
@@ -578,11 +548,6 @@ void vfs_init(void)
     vfs_create_chr("/dev/stderr", dev_null_read, dev_tty_write);
     vfs_create_symlink("/dev/console", "/dev/tty");
     vfs_create_symlink("/dev/fd", "/proc/self/fd");
-
-    vfs_create_chr("/proc/version", proc_version_read, dev_null_write);
-    vfs_create_chr("/proc/self/exe", proc_exe_read, dev_null_write);
-    vfs_create_chr("/proc/self/maps", proc_empty_read, dev_null_write);
-    vfs_create_chr("/proc/self/cmdline", proc_empty_read, dev_null_write);
 
     wire_stdio(g_default_fds);
     log_info("VFS:  root mounted  (ramfs)");
@@ -991,19 +956,6 @@ int fd_getdents64(int fd, void* buf, uint64_t count)
 
 int fd_readlink(const char* path, char* buf, uint64_t bufsz)
 {
-    if (!path || !buf || !bufsz)
-        return -(int) EINVAL;
-    if (strcmp(path, "/proc/self/exe") == 0)
-    {
-        if (!g_current_proc || !g_current_proc->exe_path[0])
-            return -(int) ENOENT;
-        size_t n = strlen(g_current_proc->exe_path);
-        if (n >= bufsz)
-            n = bufsz - 1;
-        memcpy(buf, g_current_proc->exe_path, n);
-        buf[n] = '\0';
-        return (int) n;
-    }
     vfs_node_t* n = vfs_lookup_nofollow(path);
     if (!n)
         return -(int) ENOENT;
@@ -1014,6 +966,29 @@ int fd_readlink(const char* path, char* buf, uint64_t bufsz)
         len = bufsz;
     memcpy(buf, n->symlink, len);
     return (int) len;
+}
+
+#define POLLIN 1
+#define POLLOUT 4
+
+bool fd_pollin(int fd)
+{
+    vfs_file_t* f = fd_get(fd);
+    if (!f) return false;
+    if (f->pipe) return true;
+    if (f->node && f->node->type == VFS_TYPE_CHR)
+    {
+        tty_process_input();
+        return tty_data_ready();
+    }
+    return true;
+}
+
+bool fd_pollout(int fd)
+{
+    vfs_file_t* f = fd_get(fd);
+    if (!f) return false;
+    return true;
 }
 
 #define TCGETS 0x5401
@@ -1049,10 +1024,20 @@ int fd_ioctl(int fd, uint64_t req, uint64_t arg)
         struct winsize* ws = (struct winsize*) (uintptr_t) arg;
         if (!ws)
             return -(int) EINVAL;
-        ws->ws_row = 25;
-        ws->ws_col = 80;
-        ws->ws_xpixel = 0;
-        ws->ws_ypixel = 0;
+        if (g_fb.addr)
+        {
+            ws->ws_col = (uint16_t) (g_fb.width / 8);
+            ws->ws_row = (uint16_t) (g_fb.height / 16);
+            ws->ws_xpixel = (uint16_t) g_fb.width;
+            ws->ws_ypixel = (uint16_t) g_fb.height;
+        }
+        else
+        {
+            ws->ws_col = 80;
+            ws->ws_row = 25;
+            ws->ws_xpixel = 0;
+            ws->ws_ypixel = 0;
+        }
         return 0;
     }
     case TCGETS:
@@ -1060,11 +1045,7 @@ int fd_ioctl(int fd, uint64_t req, uint64_t arg)
         struct termios* t = (struct termios*) (uintptr_t) arg;
         if (!t)
             return -(int) EINVAL;
-        memset(t, 0, sizeof(*t));
-        t->c_iflag = 0x500;
-        t->c_oflag = 0x5;
-        t->c_cflag = 0xBF;
-        t->c_lflag = tty_get_lflag();
+        tty_get_termios((struct termios_s*) t);
         return 0;
     }
     case TCSETS:
@@ -1073,7 +1054,7 @@ int fd_ioctl(int fd, uint64_t req, uint64_t arg)
     {
         struct termios* t = (struct termios*) (uintptr_t) arg;
         if (t)
-            tty_set_lflag(t->c_lflag);
+            tty_set_termios((const struct termios_s*) t);
         return 0;
     }
     case 0x5405: /* TCGETA  */

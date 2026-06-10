@@ -9,7 +9,6 @@ extern const uint8_t g_psf_font[];
 #define FONT_W 8
 #define FONT_H 16
 
-/* PSF1: 4-byte header, then 256 glyphs × FONT_H bytes each */
 #define PSF1_HDR 4
 
 static bool g_cursor_enabled;
@@ -57,7 +56,7 @@ static void draw_char(uint32_t col, uint32_t row, char c)
         for (int bit = 7; bit >= 0; bit--)
         {
             uint32_t color = (bits >> bit) & 1 ? g_fb.fg : g_fb.bg;
-            fb_put_pixel(px + (uint32_t) (7 - bit), py + (uint32_t) ri, color);
+            fb_put_pixel(px + (uint32_t)(7 - bit), py + (uint32_t) ri, color);
         }
     }
 }
@@ -227,9 +226,9 @@ void fb_putchar(char c)
         g_esc = (c == '[') ? ESC_CSI : ESC_NONE;
         if (g_esc == ESC_CSI)
         {
-            for (int i = 0; i < 8; i++)
-                g_esc_params[i] = 0;
             g_esc_np = 0;
+            for (int _i = 0; _i < 8; _i++)
+                g_esc_params[_i] = 0;
         }
         return;
     case ESC_CSI:
@@ -268,14 +267,10 @@ void fb_putchar(char c)
         }
         else if (c == 'H')
         {
-            uint32_t row = (uint32_t) (g_esc_params[0] > 0 ? g_esc_params[0] - 1 : 0);
-            uint32_t col = (uint32_t) (g_esc_params[1] > 0 ? g_esc_params[1] - 1 : 0);
-            uint32_t ncols = (uint32_t) (g_fb.width / FONT_W);
-            uint32_t nrows = (uint32_t) (g_fb.height / FONT_H);
-            if (col < ncols)
-                g_fb.col = col;
-            if (row < nrows)
-                g_fb.row = row;
+            uint32_t r = (uint32_t) (g_esc_params[0] > 0 ? g_esc_params[0] - 1 : 0);
+            uint32_t co = (uint32_t) (g_esc_params[1] > 0 ? g_esc_params[1] - 1 : 0);
+            if (co < cols) g_fb.col = co;
+            if (r < rows)  g_fb.row = r;
         }
         else if (c == 'J')
         {

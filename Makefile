@@ -65,7 +65,7 @@ SRCS := \
 ASM_SRCS := \
     kernel/arch/x86_64/idt_stubs.S    \
     kernel/arch/x86_64/syscall_entry.S \
-    kernel/proc/sched.S                \
+    kernel/proc/sched.S               \
     kernel/drivers/psf_font.S
 
 OBJS := $(SRCS:%.c=$(BUILD_DIR)/%.o) $(ASM_SRCS:%.S=$(BUILD_DIR)/%.o)

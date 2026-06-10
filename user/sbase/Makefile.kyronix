@@ -75,7 +75,7 @@ UTIL_OBJ := \
 LIBUTF := libutf.a
 LIBUTIL := libutil.a
 
-BIN := $(addprefix $(OUT)/, \
+BIN := \
 	basename \
 	cal \
 	cat \
@@ -159,7 +159,7 @@ BIN := $(addprefix $(OUT)/, \
 	which \
 	whoami \
 	xargs \
-	yes)
+	yes
 
 # Skipped (incompatible with Kyronix):
 #   bc dc      — need yacc
@@ -190,9 +190,10 @@ libutf/%.o: libutf/%.c
 libutil/%.o: libutil/%.c
 	$(CC) $(CFLAGS) -o $@ -c $<
 
-$(OUT)/%: %.c $(LIBUTF) $(LIBUTIL)
-	@mkdir -p $(OUT)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LIBUTIL) $(LIBUTF)
+%: %.c $(LIBUTF) $(LIBUTIL)
+	mkdir -p $(OUT)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(OUT)/$@ $< $(LIBUTIL) $(LIBUTF)
 
 clean:
-	rm -f $(LIBUTF) $(LIBUTIL) $(UTF_OBJ) $(UTIL_OBJ) $(BIN)
+	rm -f $(LIBUTF) $(LIBUTIL) $(UTF_OBJ) $(UTIL_OBJ)
+	set -e; for f in $(BIN); do rm -f $(OUT)/$$f; done

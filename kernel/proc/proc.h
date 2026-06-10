@@ -40,7 +40,6 @@ typedef struct proc
     k_sigaction_t sig_actions[NSIG];
     char cwd[512];
     uint64_t wakeup_tick;
-    char exe_path[512];
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX];
