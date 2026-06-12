@@ -1,5 +1,6 @@
 #include "common.h"
 #include <unistd.h>
+#include <sys/ioctl.h>
 static char ftype(mode_t m)
 {
     if (S_ISDIR(m)) return 'd';
@@ -37,25 +38,64 @@ static int list_one(const char *path, bool longfmt, bool head)
     }
     if (head) printf("%s:\n", path);
     struct dirent *de;
+    if (longfmt) {
+        while ((de = readdir(d))) {
+            if (de->d_name[0] == '.') continue;
+            char full[PATH_MAX];
+            snprintf(full, sizeof(full), "%s/%s", path, de->d_name);
+            if (lstat(full, &st) == 0) {
+                char m[11];
+                mode_string(st.st_mode, m);
+                printf("%s %5ld %s\n", m, (long)st.st_size, de->d_name);
+            }
+        }
+        closedir(d);
+        return 0;
+    }
+    if (one_per_line) {
+        while ((de = readdir(d))) {
+            if (de->d_name[0] == '.') continue;
+            puts(de->d_name);
+        }
+        closedir(d);
+        return 0;
+    }
+    char **names = NULL;
+    int count = 0, cap = 0;
+    int namemax = 0;
     while ((de = readdir(d))) {
         if (de->d_name[0] == '.') continue;
-        if (!longfmt) {
-            if (one_per_line)
-                puts(de->d_name);
-            else
-                printf("%s  ", de->d_name);
-            continue;
+        int len = strlen(de->d_name);
+        if (len > namemax) namemax = len;
+        if (count >= cap) {
+            cap = cap ? cap * 2 : 64;
+            names = realloc(names, cap * sizeof(char *));
         }
-        char full[PATH_MAX];
-        snprintf(full, sizeof(full), "%s/%s", path, de->d_name);
-        if (lstat(full, &st) == 0) {
-            char m[11];
-            mode_string(st.st_mode, m);
-            printf("%s %5ld %s\n", m, (long)st.st_size, de->d_name);
-        }
+        names[count++] = strdup(de->d_name);
     }
-    if (!longfmt && !one_per_line) putchar('\n');
     closedir(d);
+    qsort(names, count, sizeof(char *), (int (*)(const void *, const void *))strcmp);
+    int cols = 80;
+    struct winsize ws;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
+        cols = ws.ws_col;
+    int colw = namemax + 2;
+    int ncols = cols / colw;
+    if (ncols < 1) ncols = 1;
+    int rows = (count + ncols - 1) / ncols;
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < ncols; c++) {
+            int i = c * rows + r;
+            if (i >= count) break;
+            if (c == ncols - 1)
+                fputs(names[i], stdout);
+            else
+                printf("%-*s", colw, names[i]);
+        }
+        putchar('\n');
+    }
+    for (int i = 0; i < count; i++) free(names[i]);
+    free(names);
     return 0;
 }
 int main(int argc, char **argv)
