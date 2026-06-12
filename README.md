@@ -26,7 +26,6 @@ Includes:
 * vi
 * login
 * Kyrobox
-* custom Kyronix tools
 
 ## Build
 

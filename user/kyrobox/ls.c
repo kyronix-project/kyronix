@@ -1,4 +1,5 @@
 #include "common.h"
+#include <unistd.h>
 static char ftype(mode_t m)
 {
     if (S_ISDIR(m)) return 'd';
@@ -28,6 +29,7 @@ static int list_one(const char *path, bool longfmt, bool head)
         } else puts(kx_base(path));
         return 0;
     }
+    int one_per_line = !isatty(STDOUT_FILENO);
     DIR *d = opendir(path);
     if (!d) {
         kx_warn(path);
@@ -38,7 +40,10 @@ static int list_one(const char *path, bool longfmt, bool head)
     while ((de = readdir(d))) {
         if (de->d_name[0] == '.') continue;
         if (!longfmt) {
-            printf("%s  ", de->d_name);
+            if (one_per_line)
+                puts(de->d_name);
+            else
+                printf("%s  ", de->d_name);
             continue;
         }
         char full[PATH_MAX];
@@ -49,7 +54,7 @@ static int list_one(const char *path, bool longfmt, bool head)
             printf("%s %5ld %s\n", m, (long)st.st_size, de->d_name);
         }
     }
-    if (!longfmt) putchar('\n');
+    if (!longfmt && !one_per_line) putchar('\n');
     closedir(d);
     return 0;
 }

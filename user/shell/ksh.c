@@ -808,18 +808,18 @@ static int exec_pipeline(char** argv, int argc, int background, const char* cmd)
             sigprocmask(SIG_SETMASK, &oldmask, NULL);
             return 1;
         }
-        if (pid == 0)
-        {
-            signal(SIGINT, SIG_DFL);
-            signal(SIGTSTP, SIG_DFL);
-            sigprocmask(SIG_SETMASK, &oldmask, NULL);
+    if (pid == 0)
+    {
+        signal(SIGINT, SIG_DFL);
+        signal(SIGTSTP, SIG_DFL);
+        sigprocmask(SIG_SETMASK, &oldmask, NULL);
 
-            /* all pipeline children join the same pgroup */
-            setpgid(0, job_pgid ? job_pgid : 0);
+        /* all pipeline children join the same pgroup */
+        setpgid(0, job_pgid ? job_pgid : 0);
 
-            if (prev_read >= 0) { dup2(prev_read, STDIN_FILENO);  close(prev_read); }
-            if (pipe_w[1] >= 0) { close(pipe_w[0]); dup2(pipe_w[1], STDOUT_FILENO); close(pipe_w[1]); }
-            if (outfile[s] != NULL)
+        if (prev_read >= 0) { dup2(prev_read, STDIN_FILENO); close(prev_read); }
+        if (pipe_w[1] >= 0) { close(pipe_w[0]); dup2(pipe_w[1], STDOUT_FILENO); close(pipe_w[1]); }
+        if (outfile[s] != NULL)
             {
                 int flags = O_WRONLY | O_CREAT | (append[s] ? O_APPEND : O_TRUNC);
                 int fd = open(outfile[s], flags, 0666);
