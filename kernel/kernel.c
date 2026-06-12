@@ -11,13 +11,13 @@
 #include "drivers/fb.h"
 #include "drivers/fbdev.h"
 #include "drivers/input.h"
-#include "drivers/vt.h"
 #include "drivers/kbd.h"
 #include "drivers/pci.h"
 #include "drivers/ps2mouse.h"
 #include "drivers/serial.h"
 #include "drivers/tty.h"
 #include "drivers/uio.h"
+#include "drivers/vt.h"
 #include "exec/process.h"
 #include "fs/cpio.h"
 #include "fs/vfs.h"
@@ -30,10 +30,10 @@
 #include "proc/proc.h"
 
 #define STATUS_COL 72
-#define COL_GRN  "\033[0;32m"
-#define COL_RED  "\033[0;31m"
+#define COL_GRN "\033[0;32m"
+#define COL_RED "\033[0;31m"
 #define COL_BOLD "\033[1m"
-#define COL_RST  "\033[0m"
+#define COL_RST "\033[0m"
 
 LIMINE_REQUESTS_START_MARKER;
 LIMINE_BASE_REVISION(3);
@@ -74,8 +74,8 @@ static void kernel_putchar(char c, void* ctx)
 
 static void kstatus(const char* msg, bool ok)
 {
-    kprintf(COL_GRN " *" COL_RST " %s ...\033[%dG[ %s%s" COL_RST " ]\n",
-            msg, STATUS_COL, ok ? COL_GRN : COL_RED, ok ? "ok" : "!!");
+    kprintf(COL_GRN " *" COL_RST " %s ...\033[%dG[ %s%s" COL_RST " ]\n", msg, STATUS_COL,
+            ok ? COL_GRN : COL_RED, ok ? "ok" : "!!");
 }
 
 static const char* memmap_type_name(uint64_t type)
@@ -148,8 +148,8 @@ void kmain(void)
     fb_init(lfb);
     fb_clear(COLOR_BG);
 
-    kprintf(COL_BOLD "KyronixOS" COL_RST
-            " kernel is starting up " COL_GRN "kyronixos-0.0.1 (x86_64)" COL_RST "\n\n");
+    kprintf(COL_BOLD "KyronixOS" COL_RST " kernel is starting up " COL_GRN
+                     "kyronixos-0.0.1 (x86_64)" COL_RST "\n\n");
 
     kstatus("Initialising PMM", true);
     vmm_init();
@@ -162,7 +162,7 @@ void kmain(void)
             uint64_t cr4;
             __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
             cr4 |= (1UL << 20);
-            __asm__ volatile("mov %0, %%cr4" :: "r"(cr4) : "memory");
+            __asm__ volatile("mov %0, %%cr4" ::"r"(cr4) : "memory");
         }
     }
     kstatus("Enabling CPU protections", true);
@@ -183,8 +183,8 @@ void kmain(void)
     fbdev_init();
     kstatus("Registering framebuffer", vfs_lookup("/dev/fb0") != NULL);
     input_init();
-    kstatus("Initialising evdev", vfs_lookup("/dev/input/event0") != NULL &&
-                                 vfs_lookup("/dev/input/event1") != NULL);
+    kstatus("Initialising evdev",
+            vfs_lookup("/dev/input/event0") != NULL && vfs_lookup("/dev/input/event1") != NULL);
     vt_init();
     kstatus("Initialising virtual tty", true);
     pit_init();

@@ -1,7 +1,7 @@
 CC := musl-gcc
-CFLAGS := -std=c11 -O2 -march=x86-64 -mtune=generic -fno-pie -fno-link-libatomic -D_GNU_SOURCE
+CFLAGS := -std=c11 -O2 -march=x86-64 -mtune=generic -fno-pie -L../../build -D_GNU_SOURCE
 WARN := -Wall -Wno-parentheses -Wno-dangling-pointer -Wno-address -Wno-unused-but-set-variable -Wno-stringop-truncation -Werror
-LDFLAGS := -static -no-pie -fno-link-libatomic
+LDFLAGS := -static -no-pie -L../../build
 STAGE := ../../build/bin
 
 .PHONY: all clean

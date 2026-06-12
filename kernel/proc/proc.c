@@ -52,7 +52,8 @@ proc_t* proc_alloc(uint32_t ppid)
                     uint64_t va = guard_va + PAGE_SIZE + (uint64_t) j * PAGE_SIZE;
                     uint64_t pa = vmm_virt_to_phys(&g_kernel_space, va);
                     vmm_unmap(&g_kernel_space, va);
-                    if (pa) pmm_free((void*) pa);
+                    if (pa)
+                        pmm_free((void*) pa);
                 }
                 p->state = PROC_UNUSED;
                 return NULL;
@@ -66,15 +67,16 @@ proc_t* proc_alloc(uint32_t ppid)
                     uint64_t jva = guard_va + PAGE_SIZE + (uint64_t) j * PAGE_SIZE;
                     uint64_t pa = vmm_virt_to_phys(&g_kernel_space, jva);
                     vmm_unmap(&g_kernel_space, jva);
-                    if (pa) pmm_free((void*) pa);
+                    if (pa)
+                        pmm_free((void*) pa);
                 }
                 p->state = PROC_UNUSED;
                 return NULL;
             }
         }
         p->kstack_guard = guard_va;
-        p->kstack       = (uint8_t*)(guard_va + PAGE_SIZE);
-        p->kstack_top   = guard_va + KSTACK_VA_STRIDE;
+        p->kstack = (uint8_t*) (guard_va + PAGE_SIZE);
+        p->kstack_top = guard_va + KSTACK_VA_STRIDE;
 
         p->fds = (vfs_file_t**) kcalloc(VFS_FD_MAX, sizeof(vfs_file_t*));
         if (!p->fds)
@@ -100,8 +102,8 @@ proc_t* proc_alloc(uint32_t ppid)
         p->cwd[1] = '\0';
 
         /* default x87 FPU + SSE state: mask all exceptions */
-        ((uint16_t*)p->fpu_state)[0] = 0x037F; /* FCW */
-        ((uint32_t*)(p->fpu_state + 24))[0] = 0x1F80; /* MXCSR */
+        ((uint16_t*) p->fpu_state)[0] = 0x037F;        /* FCW */
+        ((uint32_t*) (p->fpu_state + 24))[0] = 0x1F80; /* MXCSR */
 
         return p;
     }
@@ -117,7 +119,8 @@ void proc_kstack_free(proc_t* p)
         uint64_t va = p->kstack_guard + PAGE_SIZE + (uint64_t) pg * PAGE_SIZE;
         uint64_t pa = vmm_virt_to_phys(&g_kernel_space, va);
         vmm_unmap(&g_kernel_space, va);
-        if (pa) pmm_free((void*) pa);
+        if (pa)
+            pmm_free((void*) pa);
     }
     p->kstack_guard = 0;
     p->kstack = NULL;
@@ -147,8 +150,11 @@ void sched_yield_blocking(void)
 {
     proc_t* p = g_current_proc;
     proc_t* next = proc_next_ready(p);
-    if (!next) {
-        sti(); hlt(); cli(); /* let IRQ0/IRQ1 fire when idle */
+    if (!next)
+    {
+        sti();
+        hlt();
+        cli(); /* let IRQ0/IRQ1 fire when idle */
         return;
     }
 

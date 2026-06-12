@@ -1,7 +1,7 @@
 #include "fb.h"
-#include <stdbool.h>
 #include "../lib/string.h"
 #include "../mm/pmm.h"
+#include <stdbool.h>
 
 fb_t g_fb;
 
@@ -45,8 +45,7 @@ void fb_cursor_blink_tick(uint64_t ticks)
     uint32_t cols = (uint32_t) (g_fb.width / FONT_W);
     uint32_t rows = (uint32_t) (g_fb.height / FONT_H);
     if (g_cursor_last_col < cols && g_cursor_last_row < rows)
-        cursor_draw(g_cursor_last_col, g_cursor_last_row,
-                    g_cursor_visible ? g_fb.fg : g_fb.bg);
+        cursor_draw(g_cursor_last_col, g_cursor_last_row, g_cursor_visible ? g_fb.fg : g_fb.bg);
 }
 
 void fb_cursor_update(void)
@@ -290,7 +289,8 @@ void fb_putchar(char c)
         else if (c == 'G')
         {
             uint32_t co = (uint32_t) (g_esc_params[0] > 0 ? g_esc_params[0] - 1 : 0);
-            if (co < cols) g_fb.col = co;
+            if (co < cols)
+                g_fb.col = co;
         }
         else if (c == 'H')
         {

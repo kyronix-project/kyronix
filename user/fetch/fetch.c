@@ -6,12 +6,8 @@
 #include <unistd.h>
 
 static const char* logo[] = {
-    " ____  __.  ",
-    "|    |/ _|  ",
-    "|      <      ",
-    "|    |  \\     ",
-    "|____|__ \\    ", 
-    "        \\/        ",
+    " ____  __.  ",    "|    |/ _|  ",    "|      <      ",
+    "|    |  \\     ", "|____|__ \\    ", "        \\/        ",
 };
 
 #define LOGO_LEN ((int) (sizeof(logo) / sizeof(logo[0])))

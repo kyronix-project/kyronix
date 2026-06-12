@@ -1,8 +1,9 @@
-#ifndef	_DIRENT_H
-#define	_DIRENT_H
+#ifndef _DIRENT_H
+#define _DIRENT_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include <features.h>
@@ -16,36 +17,38 @@ extern "C" {
 
 #include <bits/dirent.h>
 
-typedef unsigned short reclen_t;
+    typedef unsigned short reclen_t;
 
-struct posix_dent {
-	ino_t d_ino;
-	off_t d_off;
-	reclen_t d_reclen;
-	unsigned char d_type;
-	char d_name[];
-};
+    struct posix_dent
+    {
+        ino_t d_ino;
+        off_t d_off;
+        reclen_t d_reclen;
+        unsigned char d_type;
+        char d_name[];
+    };
 
-typedef struct __dirstream DIR;
+    typedef struct __dirstream DIR;
 
 #define d_fileno d_ino
 
-int            closedir(DIR *);
-DIR           *fdopendir(int);
-DIR           *opendir(const char *);
-struct dirent *readdir(DIR *);
-int            readdir_r(DIR *__restrict, struct dirent *__restrict, struct dirent **__restrict);
-void           rewinddir(DIR *);
-int            dirfd(DIR *);
+    int closedir(DIR*);
+    DIR* fdopendir(int);
+    DIR* opendir(const char*);
+    struct dirent* readdir(DIR*);
+    int readdir_r(DIR* __restrict, struct dirent* __restrict, struct dirent** __restrict);
+    void rewinddir(DIR*);
+    int dirfd(DIR*);
 
-ssize_t posix_getdents(int, void *, size_t, int);
+    ssize_t posix_getdents(int, void*, size_t, int);
 
-int alphasort(const struct dirent **, const struct dirent **);
-int scandir(const char *, struct dirent ***, int (*)(const struct dirent *), int (*)(const struct dirent **, const struct dirent **));
+    int alphasort(const struct dirent**, const struct dirent**);
+    int scandir(const char*, struct dirent***, int (*)(const struct dirent*),
+                int (*)(const struct dirent**, const struct dirent**));
 
 #if defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
-void           seekdir(DIR *, long);
-long           telldir(DIR *);
+    void seekdir(DIR*, long);
+    long telldir(DIR*);
 #endif
 
 #define DT_UNKNOWN 0
@@ -59,13 +62,13 @@ long           telldir(DIR *);
 #define DT_WHT 14
 
 #if defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
-#define IFTODT(x) ((x)>>12 & 017)
-#define DTTOIF(x) ((x)<<12)
-int getdents(int, struct dirent *, size_t);
+#define IFTODT(x) ((x) >> 12 & 017)
+#define DTTOIF(x) ((x) << 12)
+    int getdents(int, struct dirent*, size_t);
 #endif
 
 #ifdef _GNU_SOURCE
-int versionsort(const struct dirent **, const struct dirent **);
+    int versionsort(const struct dirent**, const struct dirent**);
 #endif
 
 #if defined(_LARGEFILE64_SOURCE)

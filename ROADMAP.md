@@ -1,293 +1,293 @@
 # Kyronix — roadmap
 
-Target: Linux-compatible x86-64 OS способная запускать реальный userspace без патчей.
+Target: Linux-compatible x86-64 OS capable of running real userspace without patches.
 
 `[x]` = done · `[~]` = partial · `[ ]` = not started
 
-Дата составления: июнь 2026. Горизонт: 2 года (до июня 2028).
+Drafted: June 2026. Horizon: 2 years (until June 2028).
 
 ---
 
-## Реализовано
+## Implemented
 
-### Ядро
-- [x] GDT / IDT / TSS / PIC 8259 ремап
-- [x] PMM (bitmap + free-stack), VMM (4-уровневый PT, NX, HHDM), heap
-- [x] Demand paging — #PF выделяет страницу на лету
-- [x] PIT ~1000 Hz → g_ticks → вытесняющий планировщик (IRQ0)
+### Kernel
+- [x] GDT / IDT / TSS / PIC 8259 remap
+- [x] PMM (bitmap + free-stack), VMM (4-level page tables, NX, HHDM), heap
+- [x] Demand paging — #PF allocates page on the fly
+- [x] PIT ~1000 Hz → g_ticks → preemptive scheduler (IRQ0)
 - [x] SYSCALL/SYSRET + swapgs, TSS.rsp0, SSE/FPU
-- [x] RTC → g_epoch_base (реальное Unix-время)
+- [x] RTC → g_epoch_base (real Unix time)
 
-### Процессы и сигналы
-- [x] ELF64 загрузчик + PIE (ET_DYN) + shebang (#!)
-- [x] PT_INTERP → динамический линкёр (musl) + AT_BASE в auxv
+### Processes and signals
+- [x] ELF64 loader + PIE (ET_DYN) + shebang (#!)
+- [x] PT_INTERP → dynamic linker (musl) + AT_BASE in auxv
 - [x] fork / execve / wait4 / exit / exit_group
-- [x] Кооперативный + вытесняющий планировщик (sched_switch в asm)
-- [x] Сигналы: rt_sigaction, rt_sigreturn, kill, SIGCHLD, SIGPIPE
-- [x] clone() с CLONE_VM (базовые потоки)
-- [x] nanosleep с реальным ожиданием (wakeup_tick + IRQ0 wake)
-- [x] futex FUTEX_WAIT / FUTEX_WAKE (реальная блокировка)
+- [x] Cooperative + preemptive scheduler (sched_switch in asm)
+- [x] Signals: rt_sigaction, rt_sigreturn, kill, SIGCHLD, SIGPIPE
+- [x] clone() with CLONE_VM (basic threads)
+- [x] nanosleep with real blocking (wakeup_tick + IRQ0 wake)
+- [x] futex FUTEX_WAIT / FUTEX_WAKE (real blocking)
 
-### VFS и файловая система
+### VFS and filesystem
 - [x] VFS ramfs: O_CREAT, O_TRUNC, write, unlink, mkdir, rename, chmod, chown
 - [x] CPIO initrd, symlinks, chr-dev
 - [x] pipe / pipe2 / dup / dup2 / dup3
 - [x] /dev/tty, null, zero, urandom, stdin/stdout/stderr
 - [x] /proc/version, /proc/self/exe, /proc/self/fd/N
-- [x] Per-process cwd; chdir, getcwd, *at-syscalls (mkdirat, unlinkat и др.)
+- [x] Per-process cwd; chdir, getcwd, *at-syscalls (mkdirat, unlinkat etc.)
 
-### Память
-- [x] mmap (анонимный + file-backed MAP_PRIVATE), mprotect, munmap, mremap, brk
-- [x] PROT_EXEC корректно снимает NX-бит
-- [x] mmap PROT_EXEC для динамического линкёра
+### Memory
+- [x] mmap (anonymous + file-backed MAP_PRIVATE), mprotect, munmap, mremap, brk
+- [x] PROT_EXEC correctly removes NX bit
+- [x] mmap PROT_EXEC for dynamic linker
 
-### Syscalls & совместимость
-- [x] 150+ syscalls (read/write/open/close, stat, poll, select, epoll, sendfile и др.)
-- [x] clock_gettime / gettimeofday (реальное время от RTC + g_ticks)
+### Syscalls & compatibility
+- [x] 150+ syscalls (read/write/open/close, stat, poll, select, epoll, sendfile etc.)
+- [x] clock_gettime / gettimeofday (real time from RTC + g_ticks)
 - [x] getrandom (RDRAND + TSC fallback)
 - [x] arch_prctl FS/GS base (TLS)
 
 ### Userspace
-- [x] musl libc как dynamic linker (/lib/ld-musl-x86_64.so.1)
+- [x] musl libc as dynamic linker (/lib/ld-musl-x86_64.so.1)
 - [x] /bin/sh → ksh, /usr/bin/env → /bin/env
 - [x] ksh: pipes, redirects, history, tilde expansion
-- [x] Kyronix coreutils: собственные отдельные бинарники для базовых POSIX-команд
-- [x] Kyronix coreutils: find/sed/sort/uniq/tr/dd/du/cksum и базовые текстовые фильтры
-- [ ] Kyronix coreutils: awk/tar/md5sum/sha*sum и расширенные флаги
+- [x] Kyrobox: standalone binaries for basic POSIX commands
+- [x] Kyrobox: find/sed/sort/uniq/tr/dd/du/cksum and basic text filters
+- [ ] Kyrobox: awk/tar/md5sum/sha*sum and extended flags
 - [x] tcc 0.9.28 (C compiler), NASM (assembler)
 
 ---
 
-## Квартал 1 — июнь–август 2026
-### Интерактивный shell (то, что видно каждый день)
+## Quarter 1 — June–August 2026
+### Interactive shell (what you see every day)
 
-**Job control в ksh**
-- [ ] `&` — запуск в фоне, shell продолжает работу
-- [ ] Ctrl+C → SIGINT в foreground process group
-- [ ] Ctrl+Z → SIGTSTP, `fg` / `bg` команды
-- [ ] TTY: доставлять сигналы через tty на foreground pgid
+**Job control in ksh**
+- [ ] `&` — background execution, shell continues
+- [ ] Ctrl+C → SIGINT to foreground process group
+- [ ] Ctrl+Z → SIGTSTP, `fg` / `bg` commands
+- [ ] TTY: deliver signals via tty to foreground pgid
 
-**Tab completion в ksh**
-- [ ] Tab → дополнение имён файлов и команд из PATH
-- [ ] Double-Tab → список вариантов
+**Tab completion in ksh**
+- [ ] Tab → complete file names and commands from PATH
+- [ ] Double-Tab → show candidates list
 
-**poll/select реальная блокировка**
-- [ ] Сейчас busy-wait — жрёт CPU и ломает event loop программ
-- [ ] `fd_wait_queue_t` на каждый fd, процесс → PROC_WAITING до события
-- [ ] Разбуждать при read/write-ready (pipe, tty, chr-dev)
+**poll/select real blocking**
+- [ ] Currently busy-wait — eats CPU and breaks program event loops
+- [ ] `fd_wait_queue_t` per fd, process → PROC_WAITING until event
+- [ ] Wake up on read/write-ready (pipe, tty, chr-dev)
 
-**TTY дисциплина**
+**TTY discipline**
 - [ ] ISIG: Ctrl+C = SIGINT, Ctrl+Z = SIGTSTP, Ctrl+\ = SIGQUIT
 - [ ] IXON: Ctrl+S / Ctrl+Q (flow control)
-- [ ] canonical mode (строковый) vs raw mode (побайтовый)
+- [ ] canonical mode (line-based) vs raw mode (byte-based)
 
 ---
 
-## Квартал 2 — сентябрь–ноябрь 2026
-### Постоянное хранилище
+## Quarter 2 — September–November 2026
+### Persistent storage
 
 **PCI enumeration**
-- [ ] Обход PCI Configuration Space (порты 0xCF8/0xCFC)
-- [ ] Найти устройства по vendor/device ID
-- [ ] Базовая таблица устройств, BAR mapping
+- [ ] Walk PCI Configuration Space (ports 0xCF8/0xCFC)
+- [ ] Find devices by vendor/device ID
+- [ ] Basic device table, BAR mapping
 
-**virtio-blk драйвер**
-- [ ] Нашли 1af4:1001 → инициализируем virtqueue
-- [ ] Чтение/запись секторов (request + response descriptor ring)
-- [ ] Интегрировать с VFS как block device
+**virtio-blk driver**
+- [ ] Found 1af4:1001 → initialize virtqueue
+- [ ] Read/write sectors (request + response descriptor ring)
+- [ ] Integrate with VFS as block device
 
-**ext2 файловая система**
-- [ ] Парсинг superblock, group descriptors, inodes
-- [ ] Чтение файлов и директорий (read-only для начала)
-- [ ] Запись: выделение блоков, создание файлов, директорий
-- [ ] fsck-совместимый формат (проверять magic 0xEF53)
+**ext2 filesystem**
+- [ ] Parse superblock, group descriptors, inodes
+- [ ] Read files and directories (read-only for now)
+- [ ] Write: block allocation, file/directory creation
+- [ ] fsck-compatible format (verify magic 0xEF53)
 
 **VFS: mount table**
 - [ ] `vfs_mount(path, fstype, dev)` / `vfs_umount(path)`
-- [ ] Поддержка нескольких точек монтирования одновременно
-- [ ] /etc/fstab чтение при boot (tmpfs / ext2)
+- [ ] Support multiple mount points simultaneously
+- [ ] Read /etc/fstab at boot (tmpfs / ext2)
 
 ---
 
-## Квартал 3 — декабрь 2026–февраль 2027
-### Сеть: L2/L3
+## Quarter 3 — December 2026–February 2027
+### Networking: L2/L3
 
-**virtio-net драйвер**
+**virtio-net driver**
 - [ ] PCI device 1af4:1000 → virtqueue RX/TX
-- [ ] Отправка и приём ethernet фреймов
+- [ ] Send and receive ethernet frames
 - [ ] Interrupt-driven + polling fallback
 
-**Сетевой стек — L2/L3**
-- [ ] ARP: reply на запросы, кеш соседей
-- [ ] IPv4: fragmentation, checksum, routing table (1 маршрут)
-- [ ] ICMP: echo request/reply (ping работает)
-- [ ] DHCP клиент (простой: DISCOVER/OFFER/REQUEST/ACK через UDP)
+**Network stack — L2/L3**
+- [ ] ARP: reply to requests, neighbor cache
+- [ ] IPv4: fragmentation, checksum, routing table (1 route)
+- [ ] ICMP: echo request/reply (ping works)
+- [ ] DHCP client (simple: DISCOVER/OFFER/REQUEST/ACK over UDP)
 
-**UDP сокеты**
+**UDP sockets**
 - [ ] `socket(AF_INET, SOCK_DGRAM)` / `bind` / `sendto` / `recvfrom`
-- [ ] Портовый мультиплексор, буферы RX/TX
-- [ ] DNS resolver: gethostbyname через UDP :53
+- [ ] Port multiplexer, RX/TX buffers
+- [ ] DNS resolver: gethostbyname over UDP :53
 
 ---
 
-## Квартал 4 — март–май 2027
-### Сеть: TCP + socket API
+## Quarter 4 — March–May 2027
+### Networking: TCP + socket API
 
-**TCP стек**
+**TCP stack**
 - [ ] State machine: CLOSED → SYN_SENT → ESTABLISHED → FIN_WAIT → TIME_WAIT
 - [ ] Sliding window, ACK, retransmit timeout (RTO)
 - [ ] Passive open: listen/accept
 
-**BSD сокеты**
+**BSD sockets**
 - [ ] `socket` / `bind` / `listen` / `accept` / `connect`
 - [ ] `send` / `recv` / `sendmsg` / `recvmsg`
 - [ ] `setsockopt` / `getsockopt` (SO_REUSEADDR, TCP_NODELAY)
-- [ ] AF_UNIX (unix domain sockets — нужны для IPC)
-- [ ] select/poll/epoll на сокетах
+- [ ] AF_UNIX (unix domain sockets — needed for IPC)
+- [ ] select/poll/epoll on sockets
 
-**Утилиты**
+**Utilities**
 - [ ] ping (ICMP), wget/curl (HTTP GET over TCP)
-- [ ] nc (netcat), простой HTTP сервер
+- [ ] nc (netcat), simple HTTP server
 
 ---
 
-## Квартал 5 — июнь–август 2027
-### Потоки (pthreads)
+## Quarter 5 — June–August 2027
+### Threads (pthreads)
 
-**clone() полная реализация**
+**clone() full implementation**
 - [ ] CLONE_VM + CLONE_FS + CLONE_FILES + CLONE_SIGHAND + CLONE_THREAD
-- [ ] Выделение user-stack потоку (если child_stack != 0)
-- [ ] Общие fd-таблица, vmm_space, cwd между потоками одного процесса
+- [ ] Allocate user-stack for thread (if child_stack != 0)
+- [ ] Shared fd-table, vmm_space, cwd between threads of same process
 
 **TLS (Thread-Local Storage)**
-- [ ] Каждый поток имеет свой fs_base (arch_prctl SET_FS)
-- [ ] Копирование TLS template из PT_TLS сегмента ELF
-- [ ] __thread переменные работают корректно
+- [ ] Each thread has its own fs_base (arch_prctl SET_FS)
+- [ ] Copy TLS template from PT_TLS segment of ELF
+- [ ] __thread variables work correctly
 
-**Синхронизация**
+**Synchronization**
 - [ ] futex FUTEX_REQUEUE / FUTEX_CMP_REQUEUE
-- [ ] Правильный exit_thread (не exit_group) для set_tid_address
-- [ ] robust futex (FUTEX_WAIT_REQUEUE_PI, грубая реализация)
+- [ ] Correct exit_thread (not exit_group) for set_tid_address
+- [ ] robust futex (FUTEX_WAIT_REQUEUE_PI, rough implementation)
 
-**Тест**
-- [ ] Программа с несколькими pthread_create запускается
-- [ ] pthread_mutex_lock/unlock работают через futex
+**Test**
+- [ ] Program with multiple pthread_create runs
+- [ ] pthread_mutex_lock/unlock work via futex
 
 ---
 
-## Квартал 6 — сентябрь–ноябрь 2027
-### APIC и SMP
+## Quarter 6 — September–November 2027
+### APIC and SMP
 
 **Local APIC**
-- [ ] Обнаружение через CPUID + ACPI MADT
-- [ ] Включить xAPIC / x2APIC
-- [ ] APIC timer как замена PIT (TSC-deadline mode если доступен)
+- [ ] Detect via CPUID + ACPI MADT
+- [ ] Enable xAPIC / x2APIC
+- [ ] APIC timer as PIT replacement (TSC-deadline mode if available)
 - [ ] Spurious interrupt vector
 
 **I/O APIC**
-- [ ] Парсинг MADT, IOAPIC base address
-- [ ] Маршрутизация legacy IRQ → векторы
-- [ ] Keyboard, serial, timer через IOAPIC
+- [ ] Parse MADT, IOAPIC base address
+- [ ] Route legacy IRQs → vectors
+- [ ] Keyboard, serial, timer via IOAPIC
 
 **SMP: AP startup**
-- [ ] SIPI sequence (startup IPI → AP переходит в protected/long mode)
-- [ ] Per-CPU GDT/IDT/TSS/stack для каждого ядра
+- [ ] SIPI sequence (startup IPI → AP enters protected/long mode)
+- [ ] Per-CPU GDT/IDT/TSS/stack for each core
 - [ ] Spinlock (test-and-set, lock prefix)
 - [ ] Per-CPU current process pointer
 
-**SMP: планировщик**
-- [ ] Run queue per CPU (or simple global queue с spinlock)
-- [ ] IPI для preemption между ядрами
-- [ ] Корректный выход из idle через hlt с sti
+**SMP: scheduler**
+- [ ] Run queue per CPU (or simple global queue with spinlock)
+- [ ] IPI for preemption between cores
+- [ ] Correct idle exit via hlt with sti
 
 ---
 
-## Квартал 7 — декабрь 2027–февраль 2028
-### Безопасность и права доступа
+## Quarter 7 — December 2027–February 2028
+### Security and access rights
 
 **VFS permissions**
-- [ ] Проверка mode bits (rwxrwxrwx) в open/create/exec
-- [ ] uid/gid проверяются реально (не захардкожены в 0)
-- [ ] sticky bit для /tmp
+- [ ] Check mode bits (rwxrwxrwx) on open/create/exec
+- [ ] uid/gid checked properly (not hardcoded to 0)
+- [ ] sticky bit for /tmp
 
-**Пользователи**
-- [ ] /etc/passwd и /etc/shadow парсинг
+**Users**
+- [ ] Parse /etc/passwd and /etc/shadow
 - [ ] /etc/group
-- [ ] login с проверкой пароля (crypt/sha-512)
-- [ ] setuid/setgid бинарники (sudo, su)
+- [ ] login with password check (crypt/sha-512)
+- [ ] setuid/setgid binaries (sudo, su)
 
-**chroot и namespaces**
-- [ ] `chroot(path)` — меняет корень VFS для процесса
-- [ ] Базовая изоляция: CLONE_NEWNS (mount namespace)
-- [ ] PID namespace (для контейнеров — stretch goal)
+**chroot and namespaces**
+- [ ] `chroot(path)` — changes VFS root for process
+- [ ] Basic isolation: CLONE_NEWNS (mount namespace)
+- [ ] PID namespace (for containers — stretch goal)
 
 **Capabilities**
-- [ ] Базовый набор: CAP_CHOWN, CAP_KILL, CAP_NET_BIND_SERVICE и др.
-- [ ] Проверка capabilities вместо «только root»
+- [ ] Basic set: CAP_CHOWN, CAP_KILL, CAP_NET_BIND_SERVICE etc.
+- [ ] Check capabilities instead of "root only"
 
 ---
 
-## Квартал 8 — март–июнь 2028
-### PTY, продвинутый I/O, полировка
+## Quarter 8 — March–June 2028
+### PTY, advanced I/O, polish
 
-**PTY (псевдотерминал)**
-- [ ] /dev/ptmx — открыть мастер
-- [ ] /dev/pts/N — slave стороны (devpts псевдо-ФС)
-- [ ] Протокол мастер↔slave (TIOCGPTN, TIOCSPTLCK)
-- [ ] Нужен для: SSH, tmux, screen, любого terminal multiplexer
+**PTY (pseudo-terminal)**
+- [ ] /dev/ptmx — open master
+- [ ] /dev/pts/N — slave sides (devpts pseudo-FS)
+- [ ] Master↔slave protocol (TIOCGPTN, TIOCSPTLCK)
+- [ ] Needed for: SSH, tmux, screen, any terminal multiplexer
 
 **Advanced I/O**
 - [ ] inotify (IN_CREATE, IN_MODIFY, IN_DELETE)
 - [ ] timerfd / eventfd / signalfd
 - [ ] io_uring (submit queue + completion queue) — stretch goal
-- [ ] splice / tee (zero-copy между fd)
+- [ ] splice / tee (zero-copy between fds)
 
-**Графика (stretch goal)**
-- [ ] virtio-gpu Wayland compositor (framebuffer режим)
-- [ ] DRM/KMS минимальный интерфейс
-- [ ] Простой window manager на framebuffer
+**Graphics (stretch goal)**
+- [ ] virtio-gpu Wayland compositor (framebuffer mode)
+- [ ] Minimal DRM/KMS interface
+- [ ] Simple window manager on framebuffer
 
-**Утилиты и совместимость**
-- [ ] ssh (клиент — использует TCP + PTY)
-- [ ] Python 3 интерпретатор (статически с musl)
-- [ ] Lua / MicroPython как встроенный язык
-- [ ] pkg: простейший пакетный менеджер (tar.gz + manifest)
-- [ ] /proc/meminfo, /proc/cpuinfo, /proc/net/... полные
+**Utilities and compatibility**
+- [ ] ssh (client — uses TCP + PTY)
+- [ ] Python 3 interpreter (statically linked with musl)
+- [ ] Lua / MicroPython as embedded language
+- [ ] pkg: simple package manager (tar.gz + manifest)
+- [ ] Full /proc/meminfo, /proc/cpuinfo, /proc/net/...
 
 ---
 
-## Долгосрочные цели (за горизонтом 2028)
+## Long-term goals (beyond 2028)
 
-- [ ] NVMe драйвер (PCIe, не virtio)
-- [ ] USB стек (xHCI → HID keyboard/mouse)
+- [ ] NVMe driver (PCIe, not virtio)
+- [ ] USB stack (xHCI → HID keyboard/mouse)
 - [ ] Bluetooth (HCI over USB)
 - [ ] ACPI: S3 suspend-to-RAM, battery status
-- [ ] btrfs или F2FS (copy-on-write ФС)
-- [ ] Динамическая линковка полная (dlopen/dlsym/dlclose)
-- [ ] VDSO (clock_gettime без syscall через shared page)
-- [ ] seccomp-BPF (фильтрация syscalls)
-- [ ] cgroups v2 (ограничения ресурсов)
-- [ ] Полноценный контейнерный рантайм (как podman)
-- [ ] Поддержка RISC-V 64 (второй arch target)
+- [ ] btrfs or F2FS (copy-on-write FS)
+- [ ] Full dynamic linking (dlopen/dlsym/dlclose)
+- [ ] VDSO (clock_gettime without syscall via shared page)
+- [ ] seccomp-BPF (syscall filtering)
+- [ ] cgroups v2 (resource limits)
+- [ ] Full container runtime (like podman)
+- [ ] RISC-V 64 support (second arch target)
 
 ---
 
-## Сводная таблица по годам
+## Summary by year
 
-| Период | Фокус | Ключевой результат |
-|--------|-------|-------------------|
+| Period | Focus | Key result |
+|--------|-------|-----------|
 | Q1 2026 | Shell UX | job control, tab completion, real poll |
-| Q2 2026 | Хранилище | virtio-blk + ext2 + mount table |
-| Q3 2026 | Сеть L2/L3 | ping, DHCP, UDP, DNS |
-| Q4 2026 | TCP + сокеты | wget работает, AF_UNIX |
-| Q5 2027 | pthreads | многопоточные программы запускаются |
-| Q6 2027 | SMP | 2+ ядра, APIC timer |
-| Q7 2027 | Безопасность | пользователи, права, chroot |
-| Q8 2028 | PTY + polish | tmux, SSH, полная совместимость |
+| Q2 2026 | Storage | virtio-blk + ext2 + mount table |
+| Q3 2026 | Network L2/L3 | ping, DHCP, UDP, DNS |
+| Q4 2026 | TCP + sockets | wget works, AF_UNIX |
+| Q5 2027 | pthreads | multithreaded programs run |
+| Q6 2027 | SMP | 2+ cores, APIC timer |
+| Q7 2027 | Security | users, permissions, chroot |
+| Q8 2028 | PTY + polish | tmux, SSH, full compatibility |
 
 ---
 
-## Порядок зависимостей
+## Dependency order
 
 ```
 Job control → TTY signals → poll blocking

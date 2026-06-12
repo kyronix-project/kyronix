@@ -1,5 +1,5 @@
 CC := musl-gcc
-CFLAGS ?= -std=c11 -Wall -Wextra -Werror -O2 -march=x86-64 -mtune=generic -fno-pie -fno-link-libatomic
+CFLAGS ?= -std=c11 -Wall -Wextra -Werror -O2 -march=x86-64 -mtune=generic -fno-pie -L../../build
 LDFLAGS ?= -static -no-pie
 OUT := ../../build/bin/kyronix-init
 

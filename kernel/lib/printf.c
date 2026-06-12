@@ -1,6 +1,6 @@
 #include "printf.h"
-#include "string.h"
 #include "../drivers/serial.h"
+#include "string.h"
 #include <stdbool.h>
 #include <stdint.h>
 

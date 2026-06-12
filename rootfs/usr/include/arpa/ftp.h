@@ -27,9 +27,9 @@
 #define BLK_RESTART 0x10
 #define BLK_BYTECOUNT 2
 #ifdef FTP_NAMES
-char *modenames[] =  {"0", "Stream", "Block", "Compressed" };
-char *strunames[] =  {"0", "File", "Record", "Page" };
-char *typenames[] =  {"0", "ASCII", "EBCDIC", "Image", "Local" };
-char *formnames[] =  {"0", "Nonprint", "Telnet", "Carriage-control" };
+char* modenames[] = {"0", "Stream", "Block", "Compressed"};
+char* strunames[] = {"0", "File", "Record", "Page"};
+char* typenames[] = {"0", "ASCII", "EBCDIC", "Image", "Local"};
+char* formnames[] = {"0", "Nonprint", "Telnet", "Carriage-control"};
 #endif
 #endif

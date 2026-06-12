@@ -15,7 +15,8 @@ cd /etc/X11
 /usr/libexec/Xorg :0 -config xorg.conf -nolisten tcp -noreset vt1 &
 sleep 3
 
-xterm -T login +u8 -fn 6x13 -geometry 80x24+5+5 -e /bin/login &
+cd
+xterm -T ksh +u8 -fn 6x13 -geometry 80x24+5+5 -e /bin/ksh &
 xclock -analog -geometry 180x180-5+5 &
 sleep 1
 xsetroot -solid gray

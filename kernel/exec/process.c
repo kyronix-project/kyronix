@@ -18,8 +18,11 @@
 uint64_t kern_rand64(void)
 {
     static uint64_t s;
-    if (!s) s = g_ticks ^ 0xdeadbeef13579aceULL;
-    s ^= s << 13; s ^= s >> 7; s ^= s << 17;
+    if (!s)
+        s = g_ticks ^ 0xdeadbeef13579aceULL;
+    s ^= s << 13;
+    s ^= s >> 7;
+    s ^= s << 17;
     return s;
 }
 

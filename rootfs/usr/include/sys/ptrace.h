@@ -1,7 +1,8 @@
 #ifndef _SYS_PTRACE_H
 #define _SYS_PTRACE_H
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include <stdint.h>
@@ -42,7 +43,7 @@ extern "C" {
 #define PTRACE_SECCOMP_GET_FILTER 0x420c
 #define PTRACE_SECCOMP_GET_METADATA 0x420d
 #define PTRACE_GET_SYSCALL_INFO 0x420e
-#define PTRACE_GET_RSEQ_CONFIGURATION	0x420f
+#define PTRACE_GET_RSEQ_CONFIGURATION 0x420f
 
 #define PT_READ_I PTRACE_PEEKTEXT
 #define PT_READ_D PTRACE_PEEKDATA
@@ -67,17 +68,17 @@ extern "C" {
 #define PT_GETSIGINFO PTRACE_GETSIGINFO
 #define PT_SETSIGINFO PTRACE_SETSIGINFO
 
-#define PTRACE_O_TRACESYSGOOD   0x00000001
-#define PTRACE_O_TRACEFORK      0x00000002
-#define PTRACE_O_TRACEVFORK     0x00000004
-#define PTRACE_O_TRACECLONE     0x00000008
-#define PTRACE_O_TRACEEXEC      0x00000010
+#define PTRACE_O_TRACESYSGOOD 0x00000001
+#define PTRACE_O_TRACEFORK 0x00000002
+#define PTRACE_O_TRACEVFORK 0x00000004
+#define PTRACE_O_TRACECLONE 0x00000008
+#define PTRACE_O_TRACEEXEC 0x00000010
 #define PTRACE_O_TRACEVFORKDONE 0x00000020
-#define PTRACE_O_TRACEEXIT      0x00000040
-#define PTRACE_O_TRACESECCOMP   0x00000080
-#define PTRACE_O_EXITKILL       0x00100000
+#define PTRACE_O_TRACEEXIT 0x00000040
+#define PTRACE_O_TRACESECCOMP 0x00000080
+#define PTRACE_O_EXITKILL 0x00100000
 #define PTRACE_O_SUSPEND_SECCOMP 0x00200000
-#define PTRACE_O_MASK           0x003000ff
+#define PTRACE_O_MASK 0x003000ff
 
 #define PTRACE_EVENT_FORK 1
 #define PTRACE_EVENT_VFORK 2
@@ -97,49 +98,57 @@ extern "C" {
 
 #include <bits/ptrace.h>
 
-struct __ptrace_peeksiginfo_args {
-	uint64_t off;
-	uint32_t flags;
-	int32_t nr;
-};
+    struct __ptrace_peeksiginfo_args
+    {
+        uint64_t off;
+        uint32_t flags;
+        int32_t nr;
+    };
 
-struct __ptrace_seccomp_metadata {
-	uint64_t filter_off;
-	uint64_t flags;
-};
+    struct __ptrace_seccomp_metadata
+    {
+        uint64_t filter_off;
+        uint64_t flags;
+    };
 
-struct __ptrace_syscall_info {
-	uint8_t op;
-	uint8_t __pad[3];
-	uint32_t arch;
-	uint64_t instruction_pointer;
-	uint64_t stack_pointer;
-	union {
-		struct {
-			uint64_t nr;
-			uint64_t args[6];
-		} entry;
-		struct {
-			int64_t rval;
-			uint8_t is_error;
-		} exit;
-		struct {
-			uint64_t nr;
-			uint64_t args[6];
-			uint32_t ret_data;
-		} seccomp;
-	};
-};
+    struct __ptrace_syscall_info
+    {
+        uint8_t op;
+        uint8_t __pad[3];
+        uint32_t arch;
+        uint64_t instruction_pointer;
+        uint64_t stack_pointer;
+        union
+        {
+            struct
+            {
+                uint64_t nr;
+                uint64_t args[6];
+            } entry;
+            struct
+            {
+                int64_t rval;
+                uint8_t is_error;
+            } exit;
+            struct
+            {
+                uint64_t nr;
+                uint64_t args[6];
+                uint32_t ret_data;
+            } seccomp;
+        };
+    };
 
-struct __ptrace_rseq_configuration {
-	uint64_t rseq_abi_pointer;
-	uint32_t rseq_abi_size;
-	uint32_t signature;
-	uint32_t flags;
-	uint32_t pad;
-};
+    struct __ptrace_rseq_configuration
+    {
+        uint64_t rseq_abi_pointer;
+        uint32_t rseq_abi_size;
+        uint32_t signature;
+        uint32_t flags;
+        uint32_t pad;
+    };
 
-long ptrace(int, ...);
+    long ptrace(int, ...);
 
 #ifdef __cplusplus
 }

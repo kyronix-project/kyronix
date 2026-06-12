@@ -1,7 +1,8 @@
 #ifndef _SYS_TIMEB_H
 #define _SYS_TIMEB_H
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include <features.h>
@@ -10,16 +11,17 @@ extern "C" {
 
 #include <bits/alltypes.h>
 
-struct timeb {
-	time_t time;
-	unsigned short millitm;
-	short timezone, dstflag;
-};
+    struct timeb
+    {
+        time_t time;
+        unsigned short millitm;
+        short timezone, dstflag;
+    };
 
-int ftime(struct timeb *);
+    int ftime(struct timeb*);
 
 #if _REDIR_TIME64
-__REDIR(ftime, __ftime64);
+    __REDIR(ftime, __ftime64);
 #endif
 
 #ifdef __cplusplus

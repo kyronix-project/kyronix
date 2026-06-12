@@ -41,8 +41,8 @@ static inline void pic_mask_all(void)
 static inline void pic_mask_irq(uint8_t irq)
 {
     uint16_t port = (irq < 8) ? PIC1_DATA : PIC2_DATA;
-    uint8_t bit = (irq < 8) ? irq : (uint8_t)(irq - 8);
-    outb(port, inb(port) | (uint8_t)(1u << bit));
+    uint8_t bit = (irq < 8) ? irq : (uint8_t) (irq - 8);
+    outb(port, inb(port) | (uint8_t) (1u << bit));
 }
 
 static inline void pic_unmask_irq(uint8_t irq)

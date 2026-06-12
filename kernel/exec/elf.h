@@ -68,8 +68,8 @@ typedef struct
 typedef struct
 {
     vmm_space_t* space;
-    uint64_t entry;       /* jump target: interpreter entry if PT_INTERP, else prog entry */
-    uint64_t prog_entry;  /* AT_ENTRY: main program's own entry point */
+    uint64_t entry;      /* jump target: interpreter entry if PT_INTERP, else prog entry */
+    uint64_t prog_entry; /* AT_ENTRY: main program's own entry point */
     uint64_t brk;
     uint64_t phdr_va;
     uint16_t phentsize;
@@ -79,8 +79,8 @@ typedef struct
 } elf_load_result_t;
 
 /* load ELF segments into an existing space at the given bias */
-int elf_load_into(vmm_space_t* space, const void* data, uint64_t size,
-                  uint64_t bias, elf_load_result_t* out);
+int elf_load_into(vmm_space_t* space, const void* data, uint64_t size, uint64_t bias,
+                  elf_load_result_t* out);
 
 /* create space and load; handles PIE bias (ET_DYN → PIE_BASE) */
 int elf_load(const void* data, uint64_t size, elf_load_result_t* out);

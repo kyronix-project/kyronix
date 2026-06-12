@@ -2,7 +2,8 @@
 #define _LANGINFO_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include <features.h>
@@ -77,7 +78,7 @@ extern "C" {
 #define YESEXPR 0x50000
 #define NOEXPR 0x50001
 
-#define _NL_LOCALE_NAME(cat) (((cat)<<16) | 0xffff)
+#define _NL_LOCALE_NAME(cat) (((cat) << 16) | 0xffff)
 
 #if defined(_GNU_SOURCE)
 #define NL_LOCALE_NAME(cat) _NL_LOCALE_NAME(cat)
@@ -88,8 +89,8 @@ extern "C" {
 #define NOSTR 0x50003
 #endif
 
-char *nl_langinfo(nl_item);
-char *nl_langinfo_l(nl_item, locale_t);
+    char* nl_langinfo(nl_item);
+    char* nl_langinfo_l(nl_item, locale_t);
 
 #ifdef __cplusplus
 }

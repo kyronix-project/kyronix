@@ -2,7 +2,8 @@
 #define _SYS_FSUID_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #define __NEED_uid_t
@@ -10,8 +11,8 @@ extern "C" {
 
 #include <bits/alltypes.h>
 
-int setfsuid(uid_t);
-int setfsgid(gid_t);
+    int setfsuid(uid_t);
+    int setfsgid(gid_t);
 
 #ifdef __cplusplus
 }

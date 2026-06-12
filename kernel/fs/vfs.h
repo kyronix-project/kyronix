@@ -70,10 +70,10 @@ struct linux_dirent64
 #define SEEK_CUR 1
 #define SEEK_END 2
 
-#define VFS_TYPE_REG  1
-#define VFS_TYPE_DIR  2
-#define VFS_TYPE_SYM  3
-#define VFS_TYPE_CHR  4
+#define VFS_TYPE_REG 1
+#define VFS_TYPE_DIR 2
+#define VFS_TYPE_SYM 3
+#define VFS_TYPE_CHR 4
 #define VFS_TYPE_SOCK 5
 
 #define S_IFSOCK 0140000U
@@ -104,7 +104,7 @@ typedef struct vfs_node
     int64_t (*chr_read)(struct vfs_node*, char*, uint64_t, uint64_t);
     int64_t (*chr_write)(struct vfs_node*, const char*, uint64_t);
     int64_t (*chr_ioctl)(struct vfs_node*, uint64_t req, uint64_t arg);
-    bool    (*chr_pollin)(struct vfs_node*); /* NULL → always readable */
+    bool (*chr_pollin)(struct vfs_node*); /* NULL → always readable */
     /* optional: called by sys_mmap for chr-devs instead of normal file mapping */
     int64_t (*chr_mmap)(struct vfs_node*, uint64_t off, uint64_t len, uint64_t va, uint64_t vflags);
 
@@ -119,7 +119,7 @@ typedef struct
     uint64_t pos;
     int flags;
     pipe_t* pipe;
-    int pipe_end; /* PIPE_END_READ or PIPE_END_WRITE */
+    int pipe_end;  /* PIPE_END_READ or PIPE_END_WRITE */
     pipe_t* wpipe; /* non-NULL for socket fds: separate write-direction pipe */
     uint32_t peer_pid, peer_uid, peer_gid;
     int passcred;
@@ -156,9 +156,9 @@ int fd_dup2(int oldfd, int newfd);
 bool fd_valid(int fd);
 vfs_node_t* fd_get_node(int fd);
 vfs_file_t* fd_get_file(int fd);
-int64_t     fd_pread(int fd, void* buf, uint64_t len, uint64_t off);
-int64_t     fd_pwrite(int fd, const void* buf, uint64_t len, uint64_t off);
-int64_t     fd_peek(int fd, void* buf, uint64_t len, uint64_t skip);
+int64_t fd_pread(int fd, void* buf, uint64_t len, uint64_t off);
+int64_t fd_pwrite(int fd, const void* buf, uint64_t len, uint64_t off);
+int64_t fd_peek(int fd, void* buf, uint64_t len, uint64_t skip);
 bool fd_pollin(int fd);
 bool fd_pollout(int fd);
 int fd_pipe(int pipefd[2]);
@@ -192,5 +192,5 @@ int vfs_truncate(const char* path, uint64_t len);
 int vfs_access(const char* path, int mode);
 int vfs_mknod(const char* path, uint32_t mode, uint64_t dev);
 char* vfs_node_abspath(vfs_node_t* n, char* buf, size_t sz);
-int   at_resolve(int dirfd, const char* path, char* out, size_t sz);
-int   fd_dup3(int oldfd, int newfd, int flags);
+int at_resolve(int dirfd, const char* path, char* out, size_t sz);
+int fd_dup3(int oldfd, int newfd, int flags);

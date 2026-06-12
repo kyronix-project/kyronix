@@ -1,15 +1,15 @@
 #include "idt.h"
+#include "arch/x86_64/syscall_setup.h"
+#include "drivers/fb.h"
+#include "fs/vfs.h"
 #include "gdt.h"
 #include "lib/printf.h"
 #include "mm/pmm.h"
 #include "mm/vmm.h"
 #include "pic.h"
 #include "pit.h"
-#include "arch/x86_64/syscall_setup.h"
-#include "fs/vfs.h"
 #include "proc/proc.h"
 #include "syscall/syscall.h"
-#include "drivers/fb.h"
 
 #define IDT_INT_GATE 0x8E
 #define IDT_TRAP_GATE 0x8F
@@ -17,13 +17,18 @@
 
 static idt_entry_t g_idt[256] __attribute__((aligned(16)));
 
-typedef struct { void (*fn)(int, void*); void* arg; } irq_handler_t;
+typedef struct
+{
+    void (*fn)(int, void*);
+    void* arg;
+} irq_handler_t;
 static irq_handler_t g_irq_handlers[16];
 
 void request_irq(uint8_t irq, void (*fn)(int, void*), void* arg)
 {
-    if (irq < 16) {
-        g_irq_handlers[irq].fn  = fn;
+    if (irq < 16)
+    {
+        g_irq_handlers[irq].fn = fn;
         g_irq_handlers[irq].arg = arg;
         pic_unmask_irq(irq);
     }
@@ -129,13 +134,13 @@ void isr_dispatch(cpu_state_t* state)
         /* user-mode exception: kill the process, don't halt the kernel */
         if ((state->cs & 3) == 3 && g_current_proc)
         {
-            static const int exc_sig[] = {
-                8,8,4,5,4,8,4,8,8,8,8,5,4,11,8,8,7,8,5,8,8,8,8,8,8,8,8,8,8,8,8,8
-            };
+            static const int exc_sig[] = {8, 8, 4, 5, 4, 8, 4, 8, 8, 8, 8, 5, 4, 11, 8, 8,
+                                          7, 8, 5, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,  8, 8};
             int sig = (n < 32) ? exc_sig[n] : 11;
-            kprintf("\n[exc#%lu pid=%u RIP=%lx] → sig %d\n",
-                    n, g_current_proc->pid, state->rip, sig);
-            if (n == 14) {
+            kprintf("\n[exc#%lu pid=%u RIP=%lx] → sig %d\n", n, g_current_proc->pid, state->rip,
+                    sig);
+            if (n == 14)
+            {
                 uint64_t cr2 = read_cr2();
                 kprintf("  CR2=%lx err=%lx\n", cr2, state->error_code);
             }
@@ -180,23 +185,44 @@ void isr_dispatch(cpu_state_t* state)
             g_ticks++;
             fb_cursor_blink_tick(g_ticks);
             pic_send_eoi(0);
-            for (int i = 0; i < PROC_MAX; i++) {
+            if (g_ticks % 2000 == 0)
+            {
+                extern volatile uint64_t g_dbg_sc_count;
+                extern volatile uint64_t g_dbg_last_sc[64];
+                kdbg("[HB t=%lu cnt=%lu]", g_ticks, g_dbg_sc_count);
+                for (int _i = 0; _i < PROC_MAX; _i++)
+                {
+                    proc_t* _p = &g_proctable[_i];
+                    if (_p->state == PROC_UNUSED)
+                        continue;
+                    uint64_t sc = (_p->pid && _p->pid <= 64) ? g_dbg_last_sc[_p->pid - 1] : 0;
+                    /* state: 1=RUN 2=READY 3=WAIT 4=ZOMBIE */
+                    kdbg(" p%u:s%d:nr%lu", _p->pid, _p->state, sc);
+                }
+                kdbg("\n");
+            }
+            for (int i = 0; i < PROC_MAX; i++)
+            {
                 proc_t* pc = &g_proctable[i];
-                if (pc->state == PROC_UNUSED) continue;
-                if (pc->wakeup_tick && g_ticks >= pc->wakeup_tick) {
+                if (pc->state == PROC_UNUSED)
+                    continue;
+                if (pc->wakeup_tick && g_ticks >= pc->wakeup_tick)
+                {
                     pc->wakeup_tick = 0;
                     if (pc->state == PROC_WAITING)
                         pc->state = PROC_READY;
                 }
-                if (pc->alarm_tick && g_ticks >= pc->alarm_tick) {
+                if (pc->alarm_tick && g_ticks >= pc->alarm_tick)
+                {
                     pc->alarm_tick = 0;
                     proc_send_signal(pc, SIGALRM);
                     if (pc->state == PROC_WAITING)
                         pc->state = PROC_READY;
                 }
-                if (pc->itimer_next_tick && g_ticks >= pc->itimer_next_tick) {
-                    pc->itimer_next_tick = pc->itimer_interval_ms
-                                          ? pc->itimer_next_tick + pc->itimer_interval_ms : 0;
+                if (pc->itimer_next_tick && g_ticks >= pc->itimer_next_tick)
+                {
+                    pc->itimer_next_tick =
+                        pc->itimer_interval_ms ? pc->itimer_next_tick + pc->itimer_interval_ms : 0;
                     proc_send_signal(pc, SIGALRM);
                     if (pc->state == PROC_WAITING)
                         pc->state = PROC_READY;
@@ -225,7 +251,7 @@ void isr_dispatch(cpu_state_t* state)
         {
             irq_handler_t* h = &g_irq_handlers[irq];
             if (h->fn)
-                h->fn((int)irq, h->arg);
+                h->fn((int) irq, h->arg);
             pic_send_eoi(irq);
         }
     }

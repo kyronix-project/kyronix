@@ -52,60 +52,64 @@
 #define SG_SET_COMMAND_Q 0x2271
 #define SG_SET_DEBUG 0x227e
 #define SG_NEXT_CMD_LEN 0x2283
-#define SG_DEFAULT_TIMEOUT (60*100) /* 60*HZ */
+#define SG_DEFAULT_TIMEOUT (60 * 100) /* 60*HZ */
 #define SG_DEF_COMMAND_Q 0
 #define SG_DEF_UNDERRUN_FLAG 0
 
-typedef struct sg_iovec {
-	void *iov_base;
-	unsigned long iov_len;
+typedef struct sg_iovec
+{
+    void* iov_base;
+    unsigned long iov_len;
 } sg_iovec_t;
 
-typedef struct sg_io_hdr { 
-	int interface_id; 
-	int dxfer_direction; 
-	unsigned char cmd_len;
-	unsigned char mx_sb_len;
-	unsigned short iovec_count;
-	unsigned dxfer_len;
-	void *dxferp;
-	unsigned char *cmdp;
-	unsigned char *sbp;
-	unsigned timeout;
-	unsigned flags;
-	int pack_id;
-	void *usr_ptr;
-	unsigned char status;
-	unsigned char masked_status;
-	unsigned char msg_status;
-	unsigned char sb_len_wr;
-	unsigned short host_status;
-	unsigned short driver_status;
-	int resid; 
-	unsigned int duration;
-	unsigned int info;
+typedef struct sg_io_hdr
+{
+    int interface_id;
+    int dxfer_direction;
+    unsigned char cmd_len;
+    unsigned char mx_sb_len;
+    unsigned short iovec_count;
+    unsigned dxfer_len;
+    void* dxferp;
+    unsigned char* cmdp;
+    unsigned char* sbp;
+    unsigned timeout;
+    unsigned flags;
+    int pack_id;
+    void* usr_ptr;
+    unsigned char status;
+    unsigned char masked_status;
+    unsigned char msg_status;
+    unsigned char sb_len_wr;
+    unsigned short host_status;
+    unsigned short driver_status;
+    int resid;
+    unsigned int duration;
+    unsigned int info;
 } sg_io_hdr_t;
 
-struct sg_scsi_id {
-	int host_no;
-	int channel;
-	int scsi_id;
-	int lun;
-	int scsi_type;
-	short h_cmd_per_lun;
-	short d_queue_depth;
-	int unused[2];
+struct sg_scsi_id
+{
+    int host_no;
+    int channel;
+    int scsi_id;
+    int lun;
+    int scsi_type;
+    short h_cmd_per_lun;
+    short d_queue_depth;
+    int unused[2];
 };
 
-typedef struct sg_req_info {
-	char req_state;
-	char orphan;
-	char sg_io_owned;
-	char problem;
-	int pack_id;
-	void *usr_ptr;
-	unsigned duration; 
-	int unused; 
+typedef struct sg_req_info
+{
+    char req_state;
+    char orphan;
+    char sg_io_owned;
+    char problem;
+    int pack_id;
+    void* usr_ptr;
+    unsigned duration;
+    int unused;
 } sg_req_info_t;
 
 typedef struct sg_io_hdr Sg_io_hdr;
@@ -113,17 +117,18 @@ typedef struct sg_io_vec Sg_io_vec;
 typedef struct sg_scsi_id Sg_scsi_id;
 typedef struct sg_req_info Sg_req_info;
 
-struct sg_header {
-	int pack_len;
-	int reply_len;
-	int pack_id;
-	int result;
-	unsigned twelve_byte:1;
-	unsigned target_status:5;
-	unsigned host_status:8;
-	unsigned driver_status:8;
-	unsigned other_flags:10;
-	unsigned char sense_buffer[SG_MAX_SENSE];
+struct sg_header
+{
+    int pack_len;
+    int reply_len;
+    int pack_id;
+    int result;
+    unsigned twelve_byte : 1;
+    unsigned target_status : 5;
+    unsigned host_status : 8;
+    unsigned driver_status : 8;
+    unsigned other_flags : 10;
+    unsigned char sense_buffer[SG_MAX_SENSE];
 };
 
 #endif

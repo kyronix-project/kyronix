@@ -4,9 +4,9 @@
 #include "../proc/proc.h"
 #include "../proc/signal.h"
 #include "fb.h"
+#include "input.h"
 #include "kbd.h"
 #include "serial.h"
-#include "input.h"
 
 #define EINTR 4
 #define TTY_BUF_SIZE 256
@@ -22,15 +22,16 @@ static struct termios_s tty_termios = {
     .c_oflag = OPOST | ONLCR,
     .c_cflag = CS8 | CREAD,
     .c_lflag = ISIG | ICANON,
-    .c_cc = {
-        [VINTR] = 0x03,  /* Ctrl-C */
-        [VQUIT] = 0x1C,  /* Ctrl-\ */
-        [VERASE] = 0x7F, /* DEL */
-        [VKILL] = 0x15,  /* Ctrl-U */
-        [VEOF] = 0x04,   /* Ctrl-D */
-        [VMIN] = 1,
-        [VTIME] = 0,
-    },
+    .c_cc =
+        {
+            [VINTR] = 0x03,  /* Ctrl-C */
+            [VQUIT] = 0x1C,  /* Ctrl-\ */
+            [VERASE] = 0x7F, /* DEL */
+            [VKILL] = 0x15,  /* Ctrl-U */
+            [VEOF] = 0x04,   /* Ctrl-D */
+            [VMIN] = 1,
+            [VTIME] = 0,
+        },
 };
 
 static bool tty_buf_empty(void)
@@ -162,8 +163,10 @@ int64_t tty_read(char* buf, uint64_t len)
         return 0;
 
     uint64_t vmin = tty_termios.c_cc[VMIN];
-    if (vmin == 0) vmin = 1;
-    if (vmin > len) vmin = len;
+    if (vmin == 0)
+        vmin = 1;
+    if (vmin > len)
+        vmin = len;
 
     uint64_t i = 0;
 

@@ -1,8 +1,9 @@
-#ifndef	_UTIME_H
-#define	_UTIME_H
+#ifndef _UTIME_H
+#define _UTIME_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include <features.h>
@@ -11,15 +12,16 @@ extern "C" {
 
 #include <bits/alltypes.h>
 
-struct utimbuf {
-	time_t actime;
-	time_t modtime;
-};
+    struct utimbuf
+    {
+        time_t actime;
+        time_t modtime;
+    };
 
-int utime (const char *, const struct utimbuf *);
+    int utime(const char*, const struct utimbuf*);
 
 #if _REDIR_TIME64
-__REDIR(utime, __utime64);
+    __REDIR(utime, __utime64);
 #endif
 
 #ifdef __cplusplus

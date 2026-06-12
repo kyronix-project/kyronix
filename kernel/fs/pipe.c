@@ -1,9 +1,9 @@
 #include "pipe.h"
-#include "lib/string.h"
+#include "arch/x86_64/pit.h"
 #include "lib/log.h"
+#include "lib/string.h"
 #include "mm/heap.h"
 #include "proc/proc.h"
-#include "arch/x86_64/pit.h"
 #include <stdbool.h>
 
 #define PIPE_MAGIC 0x4b59504950454d47ULL /* "KYPipeMG" */
@@ -28,7 +28,7 @@ void pipe_free(pipe_t* p)
 
 static bool pipe_valid(pipe_t* p)
 {
-    uintptr_t addr = (uintptr_t)p;
+    uintptr_t addr = (uintptr_t) p;
     if (!p || addr < HEAP_START || addr >= HEAP_MAX || (addr & 7))
         return false;
     return p->magic == PIPE_MAGIC;
@@ -37,7 +37,7 @@ static bool pipe_valid(pipe_t* p)
 int64_t pipe_read(pipe_t* p, void* buf, uint64_t len)
 {
     if (!pipe_valid(p))
-        return -(int64_t)EIO;
+        return -(int64_t) EIO;
     uint8_t* out = (uint8_t*) buf;
     uint64_t done = 0;
 
@@ -50,11 +50,13 @@ int64_t pipe_read(pipe_t* p, void* buf, uint64_t len)
             if (done > 0)
                 break; /* return data already available; don't wait to fill buf */
             proc_t* _rp = g_current_proc;
-            if (_rp) _rp->wakeup_tick = g_ticks + 10;
+            if (_rp)
+                _rp->wakeup_tick = g_ticks + 10;
             p->waiting_reader = _rp;
             sched_yield_blocking();
             p->waiting_reader = NULL;
-            if (_rp) _rp->wakeup_tick = 0;
+            if (_rp)
+                _rp->wakeup_tick = 0;
             continue;
         }
         out[done++] = p->buf[p->rpos];
@@ -63,7 +65,8 @@ int64_t pipe_read(pipe_t* p, void* buf, uint64_t len)
     }
 
     /* wake writer that was blocked on full buffer */
-    if (p->waiting_writer) {
+    if (p->waiting_writer)
+    {
         proc_t* writer = (proc_t*) p->waiting_writer;
         if (writer->state == PROC_WAITING)
             writer->state = PROC_READY;
@@ -75,7 +78,7 @@ int64_t pipe_read(pipe_t* p, void* buf, uint64_t len)
 int64_t pipe_peek(pipe_t* p, void* buf, uint64_t len, uint64_t skip)
 {
     if (!pipe_valid(p))
-        return -(int64_t)EIO;
+        return -(int64_t) EIO;
     uint8_t* out = (uint8_t*) buf;
     uint64_t done = 0;
 
@@ -88,11 +91,13 @@ int64_t pipe_peek(pipe_t* p, void* buf, uint64_t len, uint64_t skip)
             if (done > 0)
                 break;
             proc_t* _rp = g_current_proc;
-            if (_rp) _rp->wakeup_tick = g_ticks + 10;
+            if (_rp)
+                _rp->wakeup_tick = g_ticks + 10;
             p->waiting_reader = _rp;
             sched_yield_blocking();
             p->waiting_reader = NULL;
-            if (_rp) _rp->wakeup_tick = 0;
+            if (_rp)
+                _rp->wakeup_tick = 0;
             continue;
         }
 
@@ -106,8 +111,9 @@ int64_t pipe_peek(pipe_t* p, void* buf, uint64_t len, uint64_t skip)
 int64_t pipe_write(pipe_t* p, const void* buf, uint64_t len)
 {
     if (!pipe_valid(p))
-        return -(int64_t)EIO;
-    if (p->read_refs == 0) {
+        return -(int64_t) EIO;
+    if (p->read_refs == 0)
+    {
         proc_send_signal(g_current_proc, SIGPIPE);
         return -(int64_t) EPIPE;
     }
@@ -119,10 +125,12 @@ int64_t pipe_write(pipe_t* p, const void* buf, uint64_t len)
 
     while (done < len)
     {
-        while (p->count == PIPE_BUFSZ) {
-            if (p->read_refs == 0) {
+        while (p->count == PIPE_BUFSZ)
+        {
+            if (p->read_refs == 0)
+            {
                 proc_send_signal(g_current_proc, SIGPIPE);
-                return done ? (int64_t)done : -(int64_t)EPIPE;
+                return done ? (int64_t) done : -(int64_t) EPIPE;
             }
             p->waiting_writer = g_current_proc;
             sched_yield_blocking();
@@ -132,7 +140,8 @@ int64_t pipe_write(pipe_t* p, const void* buf, uint64_t len)
         p->buf[wpos] = in[done++];
         p->count++;
 
-        if (p->waiting_reader) {
+        if (p->waiting_reader)
+        {
             proc_t* reader = (proc_t*) p->waiting_reader;
             if (reader->state == PROC_WAITING)
                 reader->state = PROC_READY;

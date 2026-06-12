@@ -1,7 +1,8 @@
 #ifndef _SYS_USER_H
 #define _SYS_USER_H
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include <limits.h>

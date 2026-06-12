@@ -3,5 +3,8 @@
 *.d
 *.elf
 *.cpio
+*.log
 kyronix.iso
+kyronix-test.iso
+test_rootfs/
 build/*

@@ -2,7 +2,8 @@
 #define _AIO_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include <features.h>
@@ -14,19 +15,20 @@ extern "C" {
 
 #include <bits/alltypes.h>
 
-struct aiocb {
-	int aio_fildes, aio_lio_opcode, aio_reqprio;
-	volatile void *aio_buf;
-	size_t aio_nbytes;
-	struct sigevent aio_sigevent;
-	void *__td;
-	int __lock[2];
-	volatile int __err;
-	ssize_t __ret;
-	off_t aio_offset;
-	void *__next, *__prev;
-	char __dummy4[32-2*sizeof(void *)];
-};
+    struct aiocb
+    {
+        int aio_fildes, aio_lio_opcode, aio_reqprio;
+        volatile void* aio_buf;
+        size_t aio_nbytes;
+        struct sigevent aio_sigevent;
+        void* __td;
+        int __lock[2];
+        volatile int __err;
+        ssize_t __ret;
+        off_t aio_offset;
+        void *__next, *__prev;
+        char __dummy4[32 - 2 * sizeof(void*)];
+    };
 
 #define AIO_CANCELED 0
 #define AIO_NOTCANCELED 1
@@ -39,15 +41,16 @@ struct aiocb {
 #define LIO_WAIT 0
 #define LIO_NOWAIT 1
 
-int aio_read(struct aiocb *);
-int aio_write(struct aiocb *);
-int aio_error(const struct aiocb *);
-ssize_t aio_return(struct aiocb *);
-int aio_cancel(int, struct aiocb *);
-int aio_suspend(const struct aiocb *const [], int, const struct timespec *);
-int aio_fsync(int, struct aiocb *);
+    int aio_read(struct aiocb*);
+    int aio_write(struct aiocb*);
+    int aio_error(const struct aiocb*);
+    ssize_t aio_return(struct aiocb*);
+    int aio_cancel(int, struct aiocb*);
+    int aio_suspend(const struct aiocb* const[], int, const struct timespec*);
+    int aio_fsync(int, struct aiocb*);
 
-int lio_listio(int, struct aiocb *__restrict const *__restrict, int, struct sigevent *__restrict);
+    int lio_listio(int, struct aiocb* __restrict const* __restrict, int,
+                   struct sigevent* __restrict);
 
 #if defined(_LARGEFILE64_SOURCE)
 #define aiocb64 aiocb
@@ -63,7 +66,7 @@ int lio_listio(int, struct aiocb *__restrict const *__restrict, int, struct sige
 #endif
 
 #if _REDIR_TIME64
-__REDIR(aio_suspend, __aio_suspend_time64);
+    __REDIR(aio_suspend, __aio_suspend_time64);
 #endif
 
 #ifdef __cplusplus

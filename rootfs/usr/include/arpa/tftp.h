@@ -6,14 +6,16 @@
 #define DATA 03
 #define ACK 04
 #define ERROR 05
-struct tftphdr {
-	short th_opcode;
-	union {
-		unsigned short tu_block;
-		short tu_code;
-		char tu_stuff[1];
-	} th_u;
-	char th_data[1];
+struct tftphdr
+{
+    short th_opcode;
+    union
+    {
+        unsigned short tu_block;
+        short tu_code;
+        char tu_stuff[1];
+    } th_u;
+    char th_data[1];
 };
 #define th_block th_u.tu_block
 #define th_code th_u.tu_code
@@ -28,4 +30,3 @@ struct tftphdr {
 #define EEXISTS 6
 #define ENOUSER 7
 #endif
-

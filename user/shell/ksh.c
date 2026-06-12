@@ -10,8 +10,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/reboot.h>
 #include <sys/ioctl.h>
+#include <sys/reboot.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -23,43 +23,54 @@
 #define MAX_HISTORY 64
 #define MAX_JOBS 16
 
-typedef struct {
+typedef struct
+{
     pid_t pgid;
     pid_t pids[32];
-    int   npids;
-    char  cmd[MAX_LINE];
-    int   stopped;
-    int   id;
+    int npids;
+    char cmd[MAX_LINE];
+    int stopped;
+    int id;
 } job_t;
 
 static job_t g_jobs[MAX_JOBS];
-static int   g_job_seq = 0;
+static int g_job_seq = 0;
 
 static job_t* job_add(pid_t pgid, pid_t* pids, int n, const char* cmd)
 {
-    for (int i = 0; i < MAX_JOBS; i++) {
-        if (g_jobs[i].pgid == 0) {
-            g_jobs[i].pgid    = pgid;
-            g_jobs[i].npids   = n;
-            for (int j = 0; j < n; j++) g_jobs[i].pids[j] = pids[j];
+    for (int i = 0; i < MAX_JOBS; i++)
+    {
+        if (g_jobs[i].pgid == 0)
+        {
+            g_jobs[i].pgid = pgid;
+            g_jobs[i].npids = n;
+            for (int j = 0; j < n; j++)
+                g_jobs[i].pids[j] = pids[j];
             strncpy(g_jobs[i].cmd, cmd, MAX_LINE - 1);
             g_jobs[i].stopped = 0;
-            g_jobs[i].id      = ++g_job_seq;
+            g_jobs[i].id = ++g_job_seq;
             return &g_jobs[i];
         }
     }
     return NULL;
 }
 
-static void job_remove(job_t* j) { memset(j, 0, sizeof(*j)); }
+static void job_remove(job_t* j)
+{
+    memset(j, 0, sizeof(*j));
+}
 
 static job_t* job_last(int stopped_only)
 {
     job_t* best = NULL;
-    for (int i = 0; i < MAX_JOBS; i++) {
-        if (!g_jobs[i].pgid) continue;
-        if (stopped_only && !g_jobs[i].stopped) continue;
-        if (!best || g_jobs[i].id > best->id) best = &g_jobs[i];
+    for (int i = 0; i < MAX_JOBS; i++)
+    {
+        if (!g_jobs[i].pgid)
+            continue;
+        if (stopped_only && !g_jobs[i].stopped)
+            continue;
+        if (!best || g_jobs[i].id > best->id)
+            best = &g_jobs[i];
     }
     return best;
 }
@@ -67,7 +78,8 @@ static job_t* job_last(int stopped_only)
 static job_t* job_by_id(int id)
 {
     for (int i = 0; i < MAX_JOBS; i++)
-        if (g_jobs[i].pgid && g_jobs[i].id == id) return &g_jobs[i];
+        if (g_jobs[i].pgid && g_jobs[i].id == id)
+            return &g_jobs[i];
     return NULL;
 }
 
@@ -82,12 +94,14 @@ static void print_matches_columns(char names[][PATH_MAX], int count)
     for (int i = 0; i < count; i++)
     {
         int w = (int) strlen(names[i]);
-        if (w > max_w) max_w = w;
+        if (w > max_w)
+            max_w = w;
     }
 
     int col_w = max_w + 2;
     int num_cols = term_w / col_w;
-    if (num_cols < 1) num_cols = 1;
+    if (num_cols < 1)
+        num_cols = 1;
     int num_rows = (count + num_cols - 1) / num_cols;
 
     for (int row = 0; row < num_rows; row++)
@@ -95,7 +109,8 @@ static void print_matches_columns(char names[][PATH_MAX], int count)
         for (int col = 0; col < num_cols; col++)
         {
             int idx = col * num_rows + row;
-            if (idx >= count) break;
+            if (idx >= count)
+                break;
             int w = (int) strlen(names[idx]);
             fputs(names[idx], stdout);
             if (col < num_cols - 1 && (col + 1) * num_rows + row < count)
@@ -324,7 +339,8 @@ static int read_byte(void)
 {
     unsigned char byte = 0;
     ssize_t r;
-    do {
+    do
+    {
         r = read(STDIN_FILENO, &byte, 1);
     } while (r < 0 && errno == EINTR);
     return (r == 1) ? (int) byte : -1;
@@ -817,13 +833,26 @@ static int exec_pipeline(char** argv, int argc, int background, const char* cmd)
             /* all pipeline children join the same pgroup */
             setpgid(0, job_pgid ? job_pgid : 0);
 
-            if (prev_read >= 0) { dup2(prev_read, STDIN_FILENO);  close(prev_read); }
-            if (pipe_w[1] >= 0) { close(pipe_w[0]); dup2(pipe_w[1], STDOUT_FILENO); close(pipe_w[1]); }
+            if (prev_read >= 0)
+            {
+                dup2(prev_read, STDIN_FILENO);
+                close(prev_read);
+            }
+            if (pipe_w[1] >= 0)
+            {
+                close(pipe_w[0]);
+                dup2(pipe_w[1], STDOUT_FILENO);
+                close(pipe_w[1]);
+            }
             if (outfile[s] != NULL)
             {
                 int flags = O_WRONLY | O_CREAT | (append[s] ? O_APPEND : O_TRUNC);
                 int fd = open(outfile[s], flags, 0666);
-                if (fd < 0) { perror(outfile[s]); _exit(1); }
+                if (fd < 0)
+                {
+                    perror(outfile[s]);
+                    _exit(1);
+                }
                 dup2(fd, STDOUT_FILENO);
                 close(fd);
             }
@@ -834,21 +863,26 @@ static int exec_pipeline(char** argv, int argc, int background, const char* cmd)
         }
 
         /* parent: assign all children to the same pgroup (first child's pid) */
-        if (job_pgid == 0) job_pgid = pid;
+        if (job_pgid == 0)
+            job_pgid = pid;
         setpgid(pid, job_pgid);
         children[n_children++] = pid;
 
-        if (prev_read >= 0) close(prev_read);
-        if (pipe_w[1] >= 0) close(pipe_w[1]);
+        if (prev_read >= 0)
+            close(prev_read);
+        if (pipe_w[1] >= 0)
+            close(pipe_w[1]);
         prev_read = pipe_w[0];
     }
 
-    if (prev_read >= 0) close(prev_read);
+    if (prev_read >= 0)
+        close(prev_read);
 
     if (background)
     {
         job_t* j = job_add(job_pgid, children, n_children, cmd);
-        if (j) printf("[%d] %d\n", j->id, (int) job_pgid);
+        if (j)
+            printf("[%d] %d\n", j->id, (int) job_pgid);
         sigprocmask(SIG_SETMASK, &oldmask, NULL);
         return 0;
     }
@@ -861,11 +895,14 @@ static int exec_pipeline(char** argv, int argc, int background, const char* cmd)
     for (int i = 0; i < n_children; i++)
     {
         int s;
-        if (waitpid(children[i], &s, WUNTRACED) == -1) {
-            if (errno != ECHILD) perror("waitpid");
+        if (waitpid(children[i], &s, WUNTRACED) == -1)
+        {
+            if (errno != ECHILD)
+                perror("waitpid");
             continue;
         }
-        if (WIFSTOPPED(s)) any_stopped = 1;
+        if (WIFSTOPPED(s))
+            any_stopped = 1;
         status = s;
     }
 
@@ -874,11 +911,16 @@ static int exec_pipeline(char** argv, int argc, int background, const char* cmd)
     if (any_stopped)
     {
         job_t* j = job_add(job_pgid, children, n_children, cmd);
-        if (j) { j->stopped = 1; printf("\n[%d]+  Stopped\t%s\n", j->id, cmd); }
+        if (j)
+        {
+            j->stopped = 1;
+            printf("\n[%d]+  Stopped\t%s\n", j->id, cmd);
+        }
         return 128 + SIGTSTP;
     }
 
-    return WIFEXITED(status) ? WEXITSTATUS(status) : (WIFSIGNALED(status) ? 128 + WTERMSIG(status) : 1);
+    return WIFEXITED(status) ? WEXITSTATUS(status)
+                             : (WIFSIGNALED(status) ? 128 + WTERMSIG(status) : 1);
 }
 
 static void expand_globs(int* argc, char** argv)
@@ -943,7 +985,7 @@ static int resolve_path(const char* target, char* result, size_t result_size)
     else
     {
         int n = snprintf(path, PATH_MAX, "%s/%s", shell_pwd, target);
-        if (n < 0 || (size_t)n >= PATH_MAX)
+        if (n < 0 || (size_t) n >= PATH_MAX)
             return -1;
     }
 
@@ -961,7 +1003,7 @@ static int resolve_path(const char* target, char* result, size_t result_size)
         const char* start = p;
         while (*p != '\0' && *p != '/')
             p++;
-        size_t comp_len = (size_t)(p - start);
+        size_t comp_len = (size_t) (p - start);
 
         if (comp_len == 1 && start[0] == '.')
             continue;
@@ -1013,10 +1055,13 @@ static void print_help(void)
 static void argv_to_cmd(char** argv, int argc, char* buf, size_t sz)
 {
     size_t pos = 0;
-    for (int i = 0; i < argc && argv[i]; i++) {
-        if (i && pos < sz - 1) buf[pos++] = ' ';
+    for (int i = 0; i < argc && argv[i]; i++)
+    {
+        if (i && pos < sz - 1)
+            buf[pos++] = ' ';
         size_t n = strlen(argv[i]);
-        if (pos + n >= sz) break;
+        if (pos + n >= sz)
+            break;
         memcpy(buf + pos, argv[i], n);
         pos += n;
     }
@@ -1100,19 +1145,27 @@ fail:
 
 static int run_command(int argc, char** argv)
 {
-    if (argc == 0) return 0;
+    if (argc == 0)
+        return 0;
 
     /* detect trailing & for background */
     int background = 0;
-    if (argc > 0 && argv[argc - 1] && strcmp(argv[argc - 1], "&") == 0) {
+    if (argc > 0 && argv[argc - 1] && strcmp(argv[argc - 1], "&") == 0)
+    {
         background = 1;
         argv[--argc] = NULL;
-        if (argc == 0) return 0;
+        if (argc == 0)
+            return 0;
     }
 
-    if (strcmp(argv[0], "exit") == 0) exit(0);
+    if (strcmp(argv[0], "exit") == 0)
+        exit(0);
 
-    if (strcmp(argv[0], "help") == 0) { print_help(); return 0; }
+    if (strcmp(argv[0], "help") == 0)
+    {
+        print_help();
+        return 0;
+    }
 
     if (strcmp(argv[0], "export") == 0)
     {
@@ -1156,11 +1209,12 @@ static int run_command(int argc, char** argv)
 
     if (strcmp(argv[0], "jobs") == 0)
     {
-        for (int i = 0; i < MAX_JOBS; i++) {
+        for (int i = 0; i < MAX_JOBS; i++)
+        {
             job_t* j = &g_jobs[i];
-            if (!j->pgid) continue;
-            printf("[%d]%s  %s\t\t%s\n", j->id,
-                   (job_last(0) == j ? "+" : " "),
+            if (!j->pgid)
+                continue;
+            printf("[%d]%s  %s\t\t%s\n", j->id, (job_last(0) == j ? "+" : " "),
                    j->stopped ? "Stopped" : "Running", j->cmd);
         }
         return 0;
@@ -1169,22 +1223,36 @@ static int run_command(int argc, char** argv)
     if (strcmp(argv[0], "fg") == 0)
     {
         job_t* j = NULL;
-        if (argv[1] && argv[1][0] == '%') j = job_by_id(atoi(argv[1] + 1));
-        if (!j) j = job_last(0);
-        if (!j) { fputs("fg: no current job\n", stderr); return 1; }
+        if (argv[1] && argv[1][0] == '%')
+            j = job_by_id(atoi(argv[1] + 1));
+        if (!j)
+            j = job_last(0);
+        if (!j)
+        {
+            fputs("fg: no current job\n", stderr);
+            return 1;
+        }
         printf("%s\n", j->cmd);
         tcsetpgrp(STDIN_FILENO, j->pgid);
         j->stopped = 0;
         kill(-j->pgid, SIGCONT);
         int status = 0, any_stopped = 0;
-        for (int i = 0; i < j->npids; i++) {
+        for (int i = 0; i < j->npids; i++)
+        {
             int s;
-            if (waitpid(j->pids[i], &s, WUNTRACED) == -1) continue;
-            if (WIFSTOPPED(s)) any_stopped = 1;
+            if (waitpid(j->pids[i], &s, WUNTRACED) == -1)
+                continue;
+            if (WIFSTOPPED(s))
+                any_stopped = 1;
             status = s;
         }
         tcsetpgrp(STDIN_FILENO, getpgrp());
-        if (any_stopped) { j->stopped = 1; printf("\n[%d]+  Stopped\t%s\n", j->id, j->cmd); return 128 + SIGTSTP; }
+        if (any_stopped)
+        {
+            j->stopped = 1;
+            printf("\n[%d]+  Stopped\t%s\n", j->id, j->cmd);
+            return 128 + SIGTSTP;
+        }
         int ret = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
         job_remove(j);
         return ret;
@@ -1193,9 +1261,15 @@ static int run_command(int argc, char** argv)
     if (strcmp(argv[0], "bg") == 0)
     {
         job_t* j = NULL;
-        if (argv[1] && argv[1][0] == '%') j = job_by_id(atoi(argv[1] + 1));
-        if (!j) j = job_last(1);
-        if (!j) { fputs("bg: no stopped jobs\n", stderr); return 1; }
+        if (argv[1] && argv[1][0] == '%')
+            j = job_by_id(atoi(argv[1] + 1));
+        if (!j)
+            j = job_last(1);
+        if (!j)
+        {
+            fputs("bg: no stopped jobs\n", stderr);
+            return 1;
+        }
         j->stopped = 0;
         kill(-j->pgid, SIGCONT);
         printf("[%d]+ %s &\n", j->id, j->cmd);
@@ -1204,15 +1278,32 @@ static int run_command(int argc, char** argv)
 
     if (strcmp(argv[0], "cd") == 0)
     {
-        for (int i = 1; i < argc; i++) {
-            if (strcmp(argv[i], "|") == 0 || strcmp(argv[i], ">") == 0 || strcmp(argv[i], ">>") == 0)
-                { fputs("cd: pipes/redirections not supported\n", stderr); return 1; }
+        for (int i = 1; i < argc; i++)
+        {
+            if (strcmp(argv[i], "|") == 0 || strcmp(argv[i], ">") == 0 ||
+                strcmp(argv[i], ">>") == 0)
+            {
+                fputs("cd: pipes/redirections not supported\n", stderr);
+                return 1;
+            }
         }
         const char* dir = argv[1] ? argv[1] : getenv("HOME");
-        if (!dir) { fputs("cd: HOME not set\n", stderr); return 0; }
+        if (!dir)
+        {
+            fputs("cd: HOME not set\n", stderr);
+            return 0;
+        }
         static char resolved[PATH_MAX];
-        if (resolve_path(dir, resolved, sizeof(resolved)) != 0) { fputs("cd: path too long\n", stderr); return 0; }
-        if (chdir(resolved) != 0) { perror("cd"); return 1; }
+        if (resolve_path(dir, resolved, sizeof(resolved)) != 0)
+        {
+            fputs("cd: path too long\n", stderr);
+            return 0;
+        }
+        if (chdir(resolved) != 0)
+        {
+            perror("cd");
+            return 1;
+        }
         strncpy(shell_pwd, resolved, sizeof(shell_pwd) - 1);
         shell_pwd[sizeof(shell_pwd) - 1] = '\0';
         return 0;
@@ -1343,27 +1434,39 @@ int main(int argc, char** argv)
     for (;;)
     {
         /* reap finished background jobs */
-        for (int i = 0; i < MAX_JOBS; i++) {
+        for (int i = 0; i < MAX_JOBS; i++)
+        {
             job_t* j = &g_jobs[i];
-            if (!j->pgid || j->stopped) continue;
+            if (!j->pgid || j->stopped)
+                continue;
             int s;
             pid_t p = waitpid(j->pids[j->npids - 1], &s, WNOHANG);
-            if (p > 0 && (WIFEXITED(s) || WIFSIGNALED(s))) {
+            if (p > 0 && (WIFEXITED(s) || WIFSIGNALED(s)))
+            {
                 printf("[%d]+  Done\t\t%s\n", j->id, j->cmd);
                 job_remove(j);
             }
         }
 
         int rl = read_line(line, sizeof(line));
-        if (rl == 2) continue;
-        if (rl != 0) { putchar('\n'); break; }
+        if (rl == 2)
+            continue;
+        if (rl != 0)
+        {
+            putchar('\n');
+            break;
+        }
 
         char line_copy[MAX_LINE];
         strncpy(line_copy, line, sizeof(line_copy) - 1);
         line_copy[sizeof(line_copy) - 1] = '\0';
 
         int argc = split_line(line_copy, cmd_argv);
-        if (argc > 0) { history_add(line); expand_globs(&argc, cmd_argv); }
+        if (argc > 0)
+        {
+            history_add(line);
+            expand_globs(&argc, cmd_argv);
+        }
         run_command(argc, cmd_argv);
     }
 

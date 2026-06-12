@@ -1,0 +1,22 @@
+name: test
+on:
+  push:
+    branches: [ "*" ]
+  pull_request:
+    branches: [ "*" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y musl-tools qemu-system-x86 xorriso
+      - name: Build test ISO
+        run: make test-iso
+      - name: Run tests in QEMU
+        run: make test-run-log
+        timeout-minutes: 2
+      - name: Show full log
+        run: cat test.log
+        if: always()
