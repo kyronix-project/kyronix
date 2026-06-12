@@ -28,6 +28,7 @@
 #include "mm/pmm.h"
 #include "mm/vmm.h"
 #include "proc/proc.h"
+#include "fs/procfs.h"
 
 #define STATUS_COL 72
 #define COL_GRN "\033[0;32m"
@@ -173,6 +174,7 @@ void kmain(void)
     proc_init();
     kstatus("Initialising scheduler", true);
     vfs_init();
+    procfs_init();
     kstatus("Mounting /proc", vfs_lookup("/proc") != NULL);
     kstatus("Mounting /sys", vfs_lookup("/sys") != NULL);
     kstatus("Mounting /dev/pts", vfs_lookup("/dev/pts") != NULL);

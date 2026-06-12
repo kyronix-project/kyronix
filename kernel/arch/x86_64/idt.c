@@ -11,6 +11,9 @@
 #include "proc/proc.h"
 #include "syscall/syscall.h"
 
+volatile uint64_t g_dbg_sc_count = 0;
+volatile uint64_t g_dbg_last_sc[64] = {0};
+
 #define IDT_INT_GATE 0x8E
 #define IDT_TRAP_GATE 0x8F
 #define IDT_USER_GATE 0xEE /* DPL=3: int 0x80 callable from ring 3 */

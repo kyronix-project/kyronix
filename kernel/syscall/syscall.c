@@ -46,10 +46,13 @@
 #define ENOTCONN 107
 #define EISCONN 106
 #define EPROTONOSUPPORT 93
+#define CLONE_THREAD        0x00010000
+#define CLONE_FILES         0x00000400
 
 vmm_space_t* g_current_space = NULL;
 
 static void cleartid_wake(uint32_t* addr);
+static int64_t sys_fork(syscall_frame_t* f);
 
 static inline proc_t* cur(void)
 {
@@ -2298,9 +2301,11 @@ struct epoll_watch
 typedef struct
 {
     int epfd;
+    vmm_space_t* owner_space;
     struct epoll_watch w[EPOLL_MAXW];
     int nw;
 } epoll_t;
+
 static epoll_t g_epolls[EPOLL_SLOTS];
 static int g_epoll_init;
 
@@ -3006,10 +3011,10 @@ void syscall_dispatch(syscall_frame_t* f)
         ret = sys_clone(a1, a2, (uint32_t*) a3, (uint32_t*) a4, a5, f);
         break;
     case 57:
-        ret = sys_fork(f);
+        ret = sys_fork_at(f, 0);
         break;
     case 58:
-        ret = sys_fork(f); /* vfork: treat as fork */
+        ret = sys_fork_at(f, 0); /* vfork: treat as fork */
         break;
     case 59:
         ret = sys_execve((const char*) a1, (const char**) a2, (const char**) a3);

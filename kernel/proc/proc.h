@@ -34,10 +34,11 @@ typedef struct proc
     uint64_t mmap_bump;  /* 80 */
     uint64_t fs_base;    /* 88 */
     vfs_file_t** fds;    /* 96 */
-    uint64_t pending_sigs;
-    uint64_t sig_mask;
-    k_sigaction_t sig_actions[NSIG];
-    char cwd[512];
+    uint32_t* fds_refcnt; /* 104 - reference counter for fds table */
+    uint64_t pending_sigs; /* 112 */
+    uint64_t sig_mask;     /* 120 */
+    k_sigaction_t sig_actions[NSIG]; /* 128 + NSIG*16 */
+    char cwd[512];          /* will be at offset ~ 128+NSIG*16 */
     uint64_t wakeup_tick;
     uint64_t alarm_tick;
     char exe_path[512];

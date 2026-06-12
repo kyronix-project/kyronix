@@ -11,6 +11,9 @@
 #include "proc/proc.h"
 #include "syscall/syscall.h"
 
+static int procfs_getdents64(vfs_node_t* dir, uint64_t* pos, void* buf, uint64_t count, int* ret);
+static int procfs_readlink(const char* path, char* buf, uint64_t bufsz, int* ret);
+
 static vfs_node_t* g_root = NULL;
 static uint32_t g_next_ino = 1;
 
