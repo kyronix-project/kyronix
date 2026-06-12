@@ -1,6 +1,7 @@
 #include "fb.h"
 #include <stdbool.h>
 #include "../lib/string.h"
+#include "../mm/pmm.h"
 
 fb_t g_fb;
 
@@ -17,8 +18,12 @@ static bool g_cursor_visible = true;
 static uint32_t g_cursor_last_col;
 static uint32_t g_cursor_last_row;
 
+static void cursor_draw(uint32_t col, uint32_t row, uint32_t color);
+
 void fb_cursor_enable(int enable)
 {
+    if (!enable && g_cursor_enabled && g_fb.addr)
+        cursor_draw(g_cursor_last_col, g_cursor_last_row, g_fb.bg);
     g_cursor_enabled = !!enable;
 }
 
@@ -83,6 +88,7 @@ static void draw_char(uint32_t col, uint32_t row, char c)
 void fb_init(struct limine_framebuffer* fb)
 {
     g_fb.addr = fb->address;
+    g_fb.phys_addr = virt_to_phys(fb->address);
     g_fb.width = fb->width;
     g_fb.height = fb->height;
     g_fb.pitch = fb->pitch;

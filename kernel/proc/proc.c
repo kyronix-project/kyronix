@@ -87,6 +87,11 @@ proc_t* proc_alloc(uint32_t ppid)
         p->mmap_bump = 0x0000500000000000ULL;
         p->cwd[0] = '/';
         p->cwd[1] = '\0';
+
+        /* default x87 FPU + SSE state: mask all exceptions */
+        ((uint16_t*)p->fpu_state)[0] = 0x037F; /* FCW */
+        ((uint32_t*)(p->fpu_state + 24))[0] = 0x1F80; /* MXCSR */
+
         return p;
     }
     return NULL;

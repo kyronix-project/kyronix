@@ -87,12 +87,13 @@ uint64_t setup_user_stack(vmm_space_t* space, const elf_load_result_t* elf, int 
     }
 
     uint64_t auxv[] = {
-        AT_ENTRY,  elf->entry,
+        AT_ENTRY,  elf->prog_entry,
         AT_PHDR,   elf->phdr_va,
         AT_PHENT,  elf->phentsize,
         AT_PHNUM,  elf->phnum,
         AT_PAGESZ, PAGE_SIZE,
         AT_RANDOM, random_uva,
+        AT_BASE,   elf->interp_base,
         AT_EXECFN, argc > 0 ? arg_uva[0] : 0,
         AT_NULL,   0,
     };

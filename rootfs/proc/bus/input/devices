@@ -1,0 +1,14 @@
+I: Bus=0011 Vendor=0001 Product=0001 Version=ab41
+N: Name="Kyronix Keyboard"
+P: Phys=isa0060/serio0/input0
+S: Sysfs=/devices/platform/i8042/serio0/input/input0
+U: Uniq=
+H: Handlers=kbd event0
+
+I: Bus=0011 Vendor=0002 Product=0002 Version=ab54
+N: Name="Kyronix PS/2 Mouse"
+P: Phys=isa0060/serio1/input0
+S: Sysfs=/devices/platform/i8042/serio1/input/input1
+U: Uniq=
+H: Handlers=mouse0 event1
+

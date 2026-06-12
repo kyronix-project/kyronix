@@ -17,6 +17,18 @@
 
 static idt_entry_t g_idt[256] __attribute__((aligned(16)));
 
+typedef struct { void (*fn)(int, void*); void* arg; } irq_handler_t;
+static irq_handler_t g_irq_handlers[16];
+
+void request_irq(uint8_t irq, void (*fn)(int, void*), void* arg)
+{
+    if (irq < 16) {
+        g_irq_handlers[irq].fn  = fn;
+        g_irq_handlers[irq].arg = arg;
+        pic_unmask_irq(irq);
+    }
+}
+
 extern uint64_t isr_stub_table[];
 
 static void idt_set_gate(uint8_t vec, uint64_t handler, uint8_t type)
@@ -114,6 +126,22 @@ void isr_dispatch(cpu_state_t* state)
             }
         }
 
+        /* user-mode exception: kill the process, don't halt the kernel */
+        if ((state->cs & 3) == 3 && g_current_proc)
+        {
+            static const int exc_sig[] = {
+                8,8,4,5,4,8,4,8,8,8,8,5,4,11,8,8,7,8,5,8,8,8,8,8,8,8,8,8,8,8,8,8
+            };
+            int sig = (n < 32) ? exc_sig[n] : 11;
+            kprintf("\n[exc#%lu pid=%u RIP=%lx] → sig %d\n",
+                    n, g_current_proc->pid, state->rip, sig);
+            if (n == 14) {
+                uint64_t cr2 = read_cr2();
+                kprintf("  CR2=%lx err=%lx\n", cr2, state->error_code);
+            }
+            proc_do_exit(-sig);
+        }
+
         kprintf("\n\n!!! KERNEL EXCEPTION !!! pid=%u\n", g_current_proc ? g_current_proc->pid : 0);
         kprintf("  %s  (vector %lu)\n", exc_name[n], n);
         kprintf("  error = 0x%016lx\n", state->error_code);
@@ -166,6 +194,13 @@ void isr_dispatch(cpu_state_t* state)
                     if (pc->state == PROC_WAITING)
                         pc->state = PROC_READY;
                 }
+                if (pc->itimer_next_tick && g_ticks >= pc->itimer_next_tick) {
+                    pc->itimer_next_tick = pc->itimer_interval_ms
+                                          ? pc->itimer_next_tick + pc->itimer_interval_ms : 0;
+                    proc_send_signal(pc, SIGALRM);
+                    if (pc->state == PROC_WAITING)
+                        pc->state = PROC_READY;
+                }
             }
             if ((state->cs & 3) == 3 && g_current_proc)
             {
@@ -188,6 +223,9 @@ void isr_dispatch(cpu_state_t* state)
         }
         else
         {
+            irq_handler_t* h = &g_irq_handlers[irq];
+            if (h->fn)
+                h->fn((int)irq, h->arg);
             pic_send_eoi(irq);
         }
     }

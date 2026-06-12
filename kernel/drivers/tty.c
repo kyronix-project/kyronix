@@ -1,10 +1,12 @@
 #include "tty.h"
 #include "../arch/x86_64/cpu.h"
+#include "../arch/x86_64/pit.h"
 #include "../proc/proc.h"
 #include "../proc/signal.h"
 #include "fb.h"
 #include "kbd.h"
 #include "serial.h"
+#include "input.h"
 
 #define EINTR 4
 #define TTY_BUF_SIZE 256
@@ -13,6 +15,7 @@ static uint8_t tty_buf[TTY_BUF_SIZE];
 static volatile int tty_buf_head;
 static volatile int tty_buf_tail;
 static int tty_fg_pgid = 1;
+static proc_t* tty_waiter;
 
 static struct termios_s tty_termios = {
     .c_iflag = ICRNL | IXON,
@@ -48,6 +51,9 @@ static void tty_enqueue(uint8_t c)
         tty_buf[tty_buf_head] = c;
         tty_buf_head = next;
     }
+    if (tty_waiter && tty_waiter->state == PROC_WAITING)
+        tty_waiter->state = PROC_READY;
+    tty_waiter = NULL;
 }
 
 static int tty_dequeue(void)
@@ -144,8 +150,8 @@ void tty_process_input(void)
 
     if (kbd_data_ready())
     {
-        int c = kbd_getchar();
-        if (c > 0)
+        int c = kbd_getchar(); /* always drain PS/2 buffer; evdev hook fires inside */
+        if (c > 0 && !g_evdev_kbd_open)
             tty_input_char((uint8_t) c);
     }
 }
@@ -199,7 +205,14 @@ int64_t tty_read(char* buf, uint64_t len)
             }
         }
 
+        tty_waiter = g_current_proc;
+        if (g_current_proc)
+            g_current_proc->wakeup_tick = g_ticks + 1;
         sched_yield_blocking();
+        if (g_current_proc)
+            g_current_proc->wakeup_tick = 0;
+        if (tty_waiter == g_current_proc)
+            tty_waiter = NULL;
         cpu_relax();
     }
 

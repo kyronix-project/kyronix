@@ -9,9 +9,15 @@
 #include "arch/x86_64/syscall_setup.h"
 #include "boot/limine.h"
 #include "drivers/fb.h"
+#include "drivers/fbdev.h"
+#include "drivers/input.h"
+#include "drivers/vt.h"
 #include "drivers/kbd.h"
+#include "drivers/pci.h"
+#include "drivers/ps2mouse.h"
 #include "drivers/serial.h"
 #include "drivers/tty.h"
+#include "drivers/uio.h"
 #include "exec/process.h"
 #include "fs/cpio.h"
 #include "fs/vfs.h"
@@ -22,6 +28,12 @@
 #include "mm/pmm.h"
 #include "mm/vmm.h"
 #include "proc/proc.h"
+
+#define STATUS_COL 72
+#define COL_GRN  "\033[0;32m"
+#define COL_RED  "\033[0;31m"
+#define COL_BOLD "\033[1m"
+#define COL_RST  "\033[0m"
 
 LIMINE_REQUESTS_START_MARKER;
 LIMINE_BASE_REVISION(3);
@@ -60,6 +72,12 @@ static void kernel_putchar(char c, void* ctx)
     tty_putchar(c);
 }
 
+static void kstatus(const char* msg, bool ok)
+{
+    kprintf(COL_GRN " *" COL_RST " %s ...\033[%dG[ %s%s" COL_RST " ]\n",
+            msg, STATUS_COL, ok ? COL_GRN : COL_RED, ok ? "ok" : "!!");
+}
+
 static const char* memmap_type_name(uint64_t type)
 {
     switch (type)
@@ -83,26 +101,6 @@ static const char* memmap_type_name(uint64_t type)
     default:
         return "Unknown";
     }
-}
-
-static void print_system_info(struct limine_framebuffer* lfb)
-{
-    if (!mmap_req.response)
-        return;
-
-    uint64_t usable = 0;
-    for (uint64_t i = 0; i < mmap_req.response->entry_count; i++)
-    {
-        struct limine_memmap_entry* e = mmap_req.response->entries[i];
-        if (e->type == LIMINE_MEMMAP_USABLE)
-            usable += e->length;
-    }
-
-    fb_set_color(COLOR_GRAY, COLOR_BG);
-    kprintf("  Memory:  %lu MiB usable\n", usable >> 20);
-    kprintf("  Video:   %lux%lu  %u bpp\n", lfb->width, lfb->height, (unsigned) lfb->bpp);
-    fb_set_color(COLOR_WHITE, COLOR_BG);
-    kprintf("\n");
 }
 
 static void print_memmap(void)
@@ -142,7 +140,20 @@ void kmain(void)
         cpu_halt();
     }
     pmm_init(mmap_req.response, hhdm_req.response->offset);
+
+    if (!fb_req.response || fb_req.response->framebuffer_count < 1)
+        cpu_halt();
+
+    struct limine_framebuffer* lfb = fb_req.response->framebuffers[0];
+    fb_init(lfb);
+    fb_clear(COLOR_BG);
+
+    kprintf(COL_BOLD "KyronixOS" COL_RST
+            " kernel is starting up " COL_GRN "kyronixos-0.0.1 (x86_64)" COL_RST "\n\n");
+
+    kstatus("Initialising PMM", true);
     vmm_init();
+    kstatus("Initialising VMM", true);
     {
         uint32_t eax = 7, ebx = 0, ecx = 0;
         __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "+c"(ecx) : : "edx");
@@ -154,19 +165,34 @@ void kmain(void)
             __asm__ volatile("mov %0, %%cr4" :: "r"(cr4) : "memory");
         }
     }
+    kstatus("Enabling CPU protections", true);
     heap_init();
+    kstatus("Initialising heap", true);
     syscall_init();
+    kstatus("Initialising syscalls", true);
     proc_init();
+    kstatus("Initialising scheduler", true);
     vfs_init();
+    kstatus("Mounting /proc", vfs_lookup("/proc") != NULL);
+    kstatus("Mounting /sys", vfs_lookup("/sys") != NULL);
+    kstatus("Mounting /dev/pts", vfs_lookup("/dev/pts") != NULL);
+    pci_enumerate();
+    kstatus("Enumerating PCI", true);
+    uio_init();
+    kstatus("Initialising UIO", true);
+    fbdev_init();
+    kstatus("Registering framebuffer", vfs_lookup("/dev/fb0") != NULL);
+    input_init();
+    kstatus("Initialising evdev", vfs_lookup("/dev/input/event0") != NULL &&
+                                 vfs_lookup("/dev/input/event1") != NULL);
+    vt_init();
+    kstatus("Initialising virtual tty", true);
     pit_init();
+    kstatus("Starting timer", true);
     sti();
-
-    if (!fb_req.response || fb_req.response->framebuffer_count < 1)
-        cpu_halt();
-
-    struct limine_framebuffer* lfb = fb_req.response->framebuffers[0];
-    fb_init(lfb);
-    fb_clear(COLOR_BG);
+    ps2mouse_init();
+    kstatus("Initialising PS/2 mouse", true);
+    kprintf("\n");
 
     {
         void* p[4];
@@ -286,10 +312,18 @@ void kmain(void)
         struct limine_file* initrd = mod_req.response->modules[0];
         log_info("initrd: %s  (%lu bytes)", initrd->path, initrd->size);
         if (cpio_load(initrd->address, initrd->size) < 0)
+        {
+            kstatus("Loading initrd", false);
             log_warn("initrd parse failed");
+        }
+        else
+        {
+            kstatus("Loading initrd", true);
+        }
     }
     else
     {
+        kstatus("Loading initrd", false);
         log_warn("no initrd module");
     }
 

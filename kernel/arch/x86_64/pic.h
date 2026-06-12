@@ -38,11 +38,22 @@ static inline void pic_mask_all(void)
     outb(PIC2_DATA, 0xFF);
 }
 
+static inline void pic_mask_irq(uint8_t irq)
+{
+    uint16_t port = (irq < 8) ? PIC1_DATA : PIC2_DATA;
+    uint8_t bit = (irq < 8) ? irq : (uint8_t)(irq - 8);
+    outb(port, inb(port) | (uint8_t)(1u << bit));
+}
+
 static inline void pic_unmask_irq(uint8_t irq)
 {
     uint16_t port = (irq < 8) ? PIC1_DATA : PIC2_DATA;
     if (irq >= 8)
+    {
         irq -= 8;
+        /* slave IRQs reach the CPU only if the cascade line (IRQ2) is unmasked */
+        outb(PIC1_DATA, inb(PIC1_DATA) & (uint8_t) ~(1u << 2));
+    }
     outb(port, inb(port) & (uint8_t) ~(1u << irq));
 }
 

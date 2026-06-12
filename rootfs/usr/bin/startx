@@ -1,0 +1,18 @@
+#!/bin/sh
+export DISPLAY=:0
+export XAUTHORITY=/tmp/.Xauthority
+export LANG=C
+export LC_ALL=C
+export PATH=/usr/bin:/bin:/sbin
+
+mkdir -p /tmp/.X11-unix
+chmod 1777 /tmp/.X11-unix
+
+cd /etc/X11
+/usr/libexec/Xorg :0 -config xorg.conf -nolisten tcp -noreset vt1 &
+sleep 3
+
+xsetroot -grey
+xterm -T login +u8 -fn 6x13 -geometry 80x24+5+5 -e /bin/login &
+xclock -analog -geometry 180x180-5+5 &
+exec twm -q

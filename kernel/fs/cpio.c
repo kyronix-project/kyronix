@@ -140,7 +140,12 @@ int cpio_load(const void* data, uint64_t total_size)
                 char target[512];
                 memcpy(target, base + data_off, filesize);
                 target[filesize] = '\0';
-                vfs_create_symlink(fullpath, target);
+                vfs_node_t* n = vfs_create_symlink(fullpath, target);
+                if (n)
+                {
+                    n->uid = uid;
+                    n->gid = gid;
+                }
             }
         }
 

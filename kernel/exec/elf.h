@@ -30,6 +30,7 @@
 #define AT_PHENT 4
 #define AT_PHNUM 5
 #define AT_PAGESZ 6
+#define AT_BASE 7
 #define AT_ENTRY 9
 #define AT_RANDOM 25
 #define AT_EXECFN 31
@@ -67,11 +68,19 @@ typedef struct
 typedef struct
 {
     vmm_space_t* space;
-    uint64_t entry;
+    uint64_t entry;       /* jump target: interpreter entry if PT_INTERP, else prog entry */
+    uint64_t prog_entry;  /* AT_ENTRY: main program's own entry point */
     uint64_t brk;
     uint64_t phdr_va;
     uint16_t phentsize;
     uint16_t phnum;
+    uint64_t interp_base; /* AT_BASE: where interpreter was loaded (0 = no interpreter) */
+    char interp[256];     /* PT_INTERP path, empty if none */
 } elf_load_result_t;
 
+/* load ELF segments into an existing space at the given bias */
+int elf_load_into(vmm_space_t* space, const void* data, uint64_t size,
+                  uint64_t bias, elf_load_result_t* out);
+
+/* create space and load; handles PIE bias (ET_DYN → PIE_BASE) */
 int elf_load(const void* data, uint64_t size, elf_load_result_t* out);

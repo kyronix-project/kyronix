@@ -82,6 +82,36 @@ uint64_t vmm_virt_to_phys(vmm_space_t* sp, uint64_t virt)
     return pte_addr(pt[PT_IDX(virt)]);
 }
 
+/* full leaf PTE (with flags) for a VA, or 0 if any level is not present */
+static uint64_t vmm_leaf_pte(vmm_space_t* sp, uint64_t virt)
+{
+    uint64_t* pml4 = (uint64_t*) phys_to_virt(sp->pml4_phys);
+    if (!(pml4[PML4_IDX(virt)] & VMM_PRESENT)) return 0;
+    uint64_t* pdpt = (uint64_t*) phys_to_virt(pte_addr(pml4[PML4_IDX(virt)]));
+    if (!(pdpt[PDPT_IDX(virt)] & VMM_PRESENT)) return 0;
+    uint64_t* pd = (uint64_t*) phys_to_virt(pte_addr(pdpt[PDPT_IDX(virt)]));
+    if (!(pd[PD_IDX(virt)] & VMM_PRESENT)) return 0;
+    uint64_t* pt = (uint64_t*) phys_to_virt(pte_addr(pd[PD_IDX(virt)]));
+    return pt[PT_IDX(virt)];
+}
+
+/* verify every page in [virt, virt+len) is mapped and user-accessible */
+bool vmm_user_range_ok(vmm_space_t* sp, uint64_t virt, uint64_t len, bool write)
+{
+    if (!sp) return false;
+    if (len == 0) return true;
+    if (virt + len < virt) return false; /* address overflow */
+    uint64_t pg   = virt & ~0xFFFULL;
+    uint64_t last = (virt + len - 1) & ~0xFFFULL;
+    for (;; pg += 0x1000) {
+        uint64_t pte = vmm_leaf_pte(sp, pg);
+        if (!(pte & VMM_PRESENT) || !(pte & VMM_USER)) return false;
+        if (write && !(pte & VMM_WRITE)) return false;
+        if (pg == last) break;
+    }
+    return true;
+}
+
 int vmm_protect(vmm_space_t* sp, uint64_t virt, uint64_t flags)
 {
     uint64_t* pml4 = (uint64_t*) phys_to_virt(sp->pml4_phys);

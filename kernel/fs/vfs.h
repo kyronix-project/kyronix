@@ -70,10 +70,13 @@ struct linux_dirent64
 #define SEEK_CUR 1
 #define SEEK_END 2
 
-#define VFS_TYPE_REG 1
-#define VFS_TYPE_DIR 2
-#define VFS_TYPE_SYM 3
-#define VFS_TYPE_CHR 4
+#define VFS_TYPE_REG  1
+#define VFS_TYPE_DIR  2
+#define VFS_TYPE_SYM  3
+#define VFS_TYPE_CHR  4
+#define VFS_TYPE_SOCK 5
+
+#define S_IFSOCK 0140000U
 
 typedef struct vfs_node
 {
@@ -100,6 +103,13 @@ typedef struct vfs_node
     /* CHR: device callbacks */
     int64_t (*chr_read)(struct vfs_node*, char*, uint64_t, uint64_t);
     int64_t (*chr_write)(struct vfs_node*, const char*, uint64_t);
+    int64_t (*chr_ioctl)(struct vfs_node*, uint64_t req, uint64_t arg);
+    bool    (*chr_pollin)(struct vfs_node*); /* NULL → always readable */
+    /* optional: called by sys_mmap for chr-devs instead of normal file mapping */
+    int64_t (*chr_mmap)(struct vfs_node*, uint64_t off, uint64_t len, uint64_t va, uint64_t vflags);
+
+    /* SOCK: pending connection count (for poll/select on listening socket) */
+    volatile int sock_backlog;
 } vfs_node_t;
 
 typedef struct
@@ -110,6 +120,8 @@ typedef struct
     pipe_t* pipe;
     int pipe_end; /* PIPE_END_READ or PIPE_END_WRITE */
     pipe_t* wpipe; /* non-NULL for socket fds: separate write-direction pipe */
+    uint32_t peer_pid, peer_uid, peer_gid;
+    int passcred;
 } vfs_file_t;
 
 #define VFS_FD_MAX 1024
@@ -126,6 +138,7 @@ int fd_openat(int dirfd, const char* path, int flags, int mode);
 int fd_close(int fd);
 int64_t fd_read(int fd, void* buf, uint64_t len);
 int64_t fd_write(int fd, const void* buf, uint64_t len);
+int64_t fd_write_kbuf(int fd, const void* buf, uint64_t len);
 int64_t fd_lseek(int fd, int64_t off, int whence);
 int fd_stat(const char* path, struct linux_stat* st);
 int fd_lstat(const char* path, struct linux_stat* st);
@@ -142,10 +155,17 @@ vfs_node_t* fd_get_node(int fd);
 vfs_file_t* fd_get_file(int fd);
 int64_t     fd_pread(int fd, void* buf, uint64_t len, uint64_t off);
 int64_t     fd_pwrite(int fd, const void* buf, uint64_t len, uint64_t off);
+int64_t     fd_peek(int fd, void* buf, uint64_t len, uint64_t skip);
 bool fd_pollin(int fd);
 bool fd_pollout(int fd);
 int fd_pipe(int pipefd[2]);
 int fd_socketpair(int sv[2]);
+
+int fd_socket(int domain, int type, int proto);
+int fd_bind_unix(int fd, const char* path);
+int fd_listen_unix(int fd, int backlog);
+int fd_accept_unix(int fd, char* path_out, int path_max, int flags);
+int fd_connect_unix(int fd, const char* path);
 
 vfs_node_t* vfs_lookup(const char* path);
 vfs_node_t* vfs_lookup_nofollow(const char* path);
@@ -165,6 +185,8 @@ int vfs_fchmod(int fd, uint32_t mode);
 int vfs_chown(const char* path, uint32_t uid, uint32_t gid);
 int vfs_lchown(const char* path, uint32_t uid, uint32_t gid);
 int vfs_fchown(int fd, uint32_t uid, uint32_t gid);
+int vfs_truncate(const char* path, uint64_t len);
+int vfs_access(const char* path, int mode);
 int vfs_mknod(const char* path, uint32_t mode, uint64_t dev);
 char* vfs_node_abspath(vfs_node_t* n, char* buf, size_t sz);
 int   at_resolve(int dirfd, const char* path, char* out, size_t sz);

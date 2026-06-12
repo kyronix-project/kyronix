@@ -45,6 +45,7 @@ SRCS := \
     kernel/mm/pmm.c                   \
     kernel/mm/vmm.c                   \
     kernel/mm/heap.c                  \
+    kernel/mm/shm.c                   \
     kernel/arch/x86_64/syscall_setup.c \
     kernel/syscall/syscall.c          \
     kernel/exec/elf.c                  \
@@ -58,6 +59,12 @@ SRCS := \
     kernel/drivers/kbd.c              \
     kernel/drivers/tty.c              \
     kernel/drivers/fb.c               \
+    kernel/drivers/pci.c              \
+    kernel/drivers/uio.c              \
+    kernel/drivers/fbdev.c            \
+    kernel/drivers/input.c            \
+    kernel/drivers/ps2mouse.c         \
+    kernel/drivers/vt.c               \
     kernel/lib/string.c               \
     kernel/lib/printf.c                \
     kernel/lib/log.c
@@ -74,18 +81,21 @@ DEPS := $(OBJS:.o=.d)
 SRC_DIR  := .
 INITRD   := initrd.cpio
 
-.PHONY: all iso run run-serial run-uefi clean user-build
+.PHONY: all iso run run-serial run-uefi clean user-build xorg
 
 all: $(TARGET) $(INITRD)
 
 user-build:
 	$(MAKE) -C user
 
+xorg:
+	@bash scripts/get-xorg.sh
+
 INITRD_DEPS := $(shell find rootfs -not -name '.gitignore' -type f | sort) \
                $(wildcard build/bin/*)
 
 $(INITRD): $(INITRD_DEPS) | user-build
-	@cd rootfs && find . -not -name '.gitignore' | sort | cpio -o --format=newc > ../$@ 2>/dev/null
+	@cd rootfs && find . -not -name '.gitignore' | sort | cpio -o --format=newc --owner=0:0 --reproducible > ../$@ 2>/dev/null
 	@echo "  Built: $@"
 
 $(TARGET): $(OBJS)
@@ -141,9 +151,7 @@ run: iso
 	    -boot d                     \
 	    -serial stdio               \
 	    -vga qxl                    \
-	    -global qxl-vga.vgamem_mb=1024 \
-	    -no-reboot                  \
-	    -no-shutdown
+	    -global qxl-vga.vgamem_mb=1024
 
 run-serial: iso
 	qemu-system-x86_64              \
@@ -152,9 +160,7 @@ run-serial: iso
 	    -cdrom $(ISO)               \
 	    -boot d                     \
 	    -display none               \
-	    -serial stdio               \
-	    -no-reboot                  \
-	    -no-shutdown
+	    -serial stdio
 
 OVMF ?= /usr/share/edk2/x64/OVMF.fd
 
@@ -167,9 +173,7 @@ run-uefi: iso
 	    -boot d                     \
 	    -serial stdio               \
 	    -vga qxl                    \
-	    -global qxl-vga.vgamem_mb=1024 \
-	    -no-reboot                  \
-	    -no-shutdown
+	    -global qxl-vga.vgamem_mb=1024
 
 fmt:
 	@echo "Formatting code..."

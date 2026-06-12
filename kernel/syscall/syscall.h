@@ -6,10 +6,24 @@
 /* highest valid user virtual address + 1 */
 #define USER_LIMIT 0x800000000000ULL
 
+extern vmm_space_t* g_current_space;
+
+/* readable user range: in-bounds AND every page mapped user-accessible */
 static inline bool uptr_ok(const void* p, uint64_t len)
 {
     uint64_t base = (uint64_t)(uintptr_t) p;
-    return base < USER_LIMIT && (!len || base + len <= USER_LIMIT);
+    if (base >= USER_LIMIT) return false;
+    if (len && base > USER_LIMIT - len) return false;
+    return vmm_user_range_ok(g_current_space, base, len, false);
+}
+
+/* writable user range: additionally requires the WRITE bit on every page */
+static inline bool uptr_ok_w(const void* p, uint64_t len)
+{
+    uint64_t base = (uint64_t)(uintptr_t) p;
+    if (base >= USER_LIMIT) return false;
+    if (len && base > USER_LIMIT - len) return false;
+    return vmm_user_range_ok(g_current_space, base, len, true);
 }
 
 /* push order in syscall_entry.S: rax last -> rax at rsp+0 */
@@ -33,8 +47,6 @@ typedef struct
 } __attribute__((packed)) syscall_frame_t;
 
 void syscall_dispatch(syscall_frame_t* f);
-
-extern vmm_space_t* g_current_space;
 
 void syscall_set_brk(uint64_t brk_base);
 void signal_check(syscall_frame_t* f);

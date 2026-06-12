@@ -34,10 +34,20 @@ static void read_line(char *buf, size_t size, int echo)
             putstr("\r\n");
             return;
         }
+        if (c == '\b' || c == 0x7f) {
+            if (i > 0) {
+                i--;
+                if (echo)
+                    putstr("\b \b");
+            }
+            continue;
+        }
         if (i < size - 1) {
             buf[i++] = c;
-            if (echo)
+            if (echo > 0)
                 write(STDERR_FILENO, &c, 1);
+            else if (echo < 0)
+                putstr("*");
         }
     }
 }
@@ -114,7 +124,7 @@ int main(void)
                 continue;
 
             putstr("Password: ");
-            read_line(pass, sizeof(pass), 0);
+            read_line(pass, sizeof(pass), -1);
 
             pw = getpwnam(user);
             if (!pw) {
@@ -134,33 +144,19 @@ int main(void)
 
         endspent();
 
-        pid_t pid = fork();
-        if (pid < 0) {
-            putstr("login: fork failed\n");
-            continue;
-        }
+        setenv("USER", pw->pw_name, 1);
+        setenv("HOME", pw->pw_dir, 1);
+        setenv("SHELL", pw->pw_shell, 1);
+        setenv("LOGNAME", pw->pw_name, 1);
+        setenv("TERM", "vt100", 1);
 
-        if (pid == 0) {
-            setenv("USER", pw->pw_name, 1);
-            setenv("HOME", pw->pw_dir, 1);
-            setenv("SHELL", pw->pw_shell, 1);
-            setenv("LOGNAME", pw->pw_name, 1);
-            setenv("TERM", "vt100", 1);
+        if (chdir(pw->pw_dir) < 0)
+            chdir("/");
 
-            if (chdir(pw->pw_dir) < 0)
-                chdir("/");
-
-            setsid();
-            setgid(pw->pw_gid);
-            setuid(pw->pw_uid);
-            execlp(pw->pw_shell, pw->pw_shell, NULL);
-            putstr("login: unable to start shell\n");
-            _exit(1);
-        }
-
-        {
-            int status;
-            waitpid(pid, &status, 0);
-        }
+        setgid(pw->pw_gid);
+        setuid(pw->pw_uid);
+        execlp(pw->pw_shell, pw->pw_shell, NULL);
+        putstr("login: unable to start shell\n");
+        return 1;
     }
 }

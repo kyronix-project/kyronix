@@ -21,6 +21,55 @@
 #define MAX_ARGS 32
 #define MAX_LINE 512
 #define MAX_HISTORY 64
+#define MAX_JOBS 16
+
+typedef struct {
+    pid_t pgid;
+    pid_t pids[32];
+    int   npids;
+    char  cmd[MAX_LINE];
+    int   stopped;
+    int   id;
+} job_t;
+
+static job_t g_jobs[MAX_JOBS];
+static int   g_job_seq = 0;
+
+static job_t* job_add(pid_t pgid, pid_t* pids, int n, const char* cmd)
+{
+    for (int i = 0; i < MAX_JOBS; i++) {
+        if (g_jobs[i].pgid == 0) {
+            g_jobs[i].pgid    = pgid;
+            g_jobs[i].npids   = n;
+            for (int j = 0; j < n; j++) g_jobs[i].pids[j] = pids[j];
+            strncpy(g_jobs[i].cmd, cmd, MAX_LINE - 1);
+            g_jobs[i].stopped = 0;
+            g_jobs[i].id      = ++g_job_seq;
+            return &g_jobs[i];
+        }
+    }
+    return NULL;
+}
+
+static void job_remove(job_t* j) { memset(j, 0, sizeof(*j)); }
+
+static job_t* job_last(int stopped_only)
+{
+    job_t* best = NULL;
+    for (int i = 0; i < MAX_JOBS; i++) {
+        if (!g_jobs[i].pgid) continue;
+        if (stopped_only && !g_jobs[i].stopped) continue;
+        if (!best || g_jobs[i].id > best->id) best = &g_jobs[i];
+    }
+    return best;
+}
+
+static job_t* job_by_id(int id)
+{
+    for (int i = 0; i < MAX_JOBS; i++)
+        if (g_jobs[i].pgid && g_jobs[i].id == id) return &g_jobs[i];
+    return NULL;
+}
 
 static void print_matches_columns(char names[][PATH_MAX], int count)
 {
@@ -118,15 +167,34 @@ static int split_line(char* line, char** argv)
             break;
         }
 
-        argv[argc++] = cursor;
-        while (*cursor != '\0' && !isspace((unsigned char) *cursor))
+        char* out = cursor;
+        argv[argc++] = out;
+        int quote = 0;
+
+        while (*cursor != '\0')
+        {
+            if (quote == 0 && isspace((unsigned char) *cursor))
+                break;
+
+            if ((*cursor == '\'' || *cursor == '"') && (quote == 0 || quote == *cursor))
+            {
+                quote = quote == 0 ? *cursor : 0;
+                cursor++;
+                continue;
+            }
+
+            if (*cursor == '\\' && cursor[1] != '\0')
+                cursor++;
+
+            *out++ = *cursor;
+            cursor++;
+        }
+
+        if (*cursor != '\0')
         {
             cursor++;
         }
-        if (*cursor != '\0')
-        {
-            *cursor++ = '\0';
-        }
+        *out = '\0';
     }
 
     argv[argc] = NULL;
@@ -574,11 +642,18 @@ static int read_line(char* line, size_t size)
             return 0;
         }
 
-        if (key == 3) /* Ctrl+C: cancel current line */
+        if (key == 3) /* Ctrl+C */
         {
             write(STDERR_FILENO, "^C\n", 3);
             terminal_restore();
             return 2;
+        }
+
+        if (key == 26) /* Ctrl+Z: nothing to suspend while reading prompt */
+        {
+            write(STDERR_FILENO, "^Z\n", 3);
+            redraw_line(line, cursor);
+            continue;
         }
 
         if (key == 4)
@@ -663,7 +738,7 @@ static int read_line(char* line, size_t size)
     }
 }
 
-static int exec_pipeline(char** argv, int argc)
+static int exec_pipeline(char** argv, int argc, int background, const char* cmd)
 {
     int pipe_at[32];
     int n_pipes = 0;
@@ -714,6 +789,7 @@ static int exec_pipeline(char** argv, int argc)
     int prev_read = -1;
     pid_t children[32];
     int n_children = 0;
+    pid_t job_pgid = 0;
 
     for (int s = 0; s < n_stages; s++)
     {
@@ -735,63 +811,74 @@ static int exec_pipeline(char** argv, int argc)
         if (pid == 0)
         {
             signal(SIGINT, SIG_DFL);
+            signal(SIGTSTP, SIG_DFL);
             sigprocmask(SIG_SETMASK, &oldmask, NULL);
 
-            if (prev_read >= 0)
-            {
-                dup2(prev_read, STDIN_FILENO);
-                close(prev_read);
-            }
-            if (pipe_w[1] >= 0)
-            {
-                close(pipe_w[0]);
-                dup2(pipe_w[1], STDOUT_FILENO);
-                close(pipe_w[1]);
-            }
+            /* all pipeline children join the same pgroup */
+            setpgid(0, job_pgid ? job_pgid : 0);
+
+            if (prev_read >= 0) { dup2(prev_read, STDIN_FILENO);  close(prev_read); }
+            if (pipe_w[1] >= 0) { close(pipe_w[0]); dup2(pipe_w[1], STDOUT_FILENO); close(pipe_w[1]); }
             if (outfile[s] != NULL)
             {
                 int flags = O_WRONLY | O_CREAT | (append[s] ? O_APPEND : O_TRUNC);
                 int fd = open(outfile[s], flags, 0666);
-                if (fd < 0)
-                {
-                    perror(outfile[s]);
-                    _exit(1);
-                }
+                if (fd < 0) { perror(outfile[s]); _exit(1); }
                 dup2(fd, STDOUT_FILENO);
                 close(fd);
             }
 
-            setpgid(0, 0);
-            tcsetpgrp(0, getpgrp());
             execvp(argv[st_start[s]], argv + st_start[s]);
             perror(argv[st_start[s]]);
             _exit(127);
         }
 
+        /* parent: assign all children to the same pgroup (first child's pid) */
+        if (job_pgid == 0) job_pgid = pid;
+        setpgid(pid, job_pgid);
         children[n_children++] = pid;
 
-        if (prev_read >= 0)
-            close(prev_read);
-        if (pipe_w[1] >= 0)
-            close(pipe_w[1]);
+        if (prev_read >= 0) close(prev_read);
+        if (pipe_w[1] >= 0) close(pipe_w[1]);
         prev_read = pipe_w[0];
     }
 
-    if (prev_read >= 0)
-        close(prev_read);
+    if (prev_read >= 0) close(prev_read);
 
-    tcsetpgrp(0, children[0]);
+    if (background)
+    {
+        job_t* j = job_add(job_pgid, children, n_children, cmd);
+        if (j) printf("[%d] %d\n", j->id, (int) job_pgid);
+        sigprocmask(SIG_SETMASK, &oldmask, NULL);
+        return 0;
+    }
+
+    tcsetpgrp(STDIN_FILENO, job_pgid);
     sigprocmask(SIG_SETMASK, &oldmask, NULL);
 
     int status = 0;
+    int any_stopped = 0;
     for (int i = 0; i < n_children; i++)
     {
-        if (waitpid(children[i], &status, 0) == -1)
-            perror("waitpid");
+        int s;
+        if (waitpid(children[i], &s, WUNTRACED) == -1) {
+            if (errno != ECHILD) perror("waitpid");
+            continue;
+        }
+        if (WIFSTOPPED(s)) any_stopped = 1;
+        status = s;
     }
-    tcsetpgrp(0, getpgrp());
 
-    return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+    tcsetpgrp(STDIN_FILENO, getpgrp());
+
+    if (any_stopped)
+    {
+        job_t* j = job_add(job_pgid, children, n_children, cmd);
+        if (j) { j->stopped = 1; printf("\n[%d]+  Stopped\t%s\n", j->id, cmd); }
+        return 128 + SIGTSTP;
+    }
+
+    return WIFEXITED(status) ? WEXITSTATUS(status) : (WIFSIGNALED(status) ? 128 + WTERMSIG(status) : 1);
 }
 
 static void expand_globs(int* argc, char** argv)
@@ -923,64 +1010,224 @@ static void print_help(void)
     puts("External commands are also supported via $PATH.");
 }
 
+static void argv_to_cmd(char** argv, int argc, char* buf, size_t sz)
+{
+    size_t pos = 0;
+    for (int i = 0; i < argc && argv[i]; i++) {
+        if (i && pos < sz - 1) buf[pos++] = ' ';
+        size_t n = strlen(argv[i]);
+        if (pos + n >= sz) break;
+        memcpy(buf + pos, argv[i], n);
+        pos += n;
+    }
+    buf[pos] = '\0';
+}
+
 static int run_command(int argc, char** argv)
 {
-    if (argc == 0)
+    if (argc == 0) return 0;
+
+    /* detect trailing & for background */
+    int background = 0;
+    if (argc > 0 && argv[argc - 1] && strcmp(argv[argc - 1], "&") == 0) {
+        background = 1;
+        argv[--argc] = NULL;
+        if (argc == 0) return 0;
+    }
+
+    if (strcmp(argv[0], "exit") == 0) exit(0);
+
+    if (strcmp(argv[0], "help") == 0) { print_help(); return 0; }
+
+    if (strcmp(argv[0], "export") == 0)
     {
+        int ret = 0;
+        for (int i = 1; i < argc; i++)
+        {
+            char* eq = strchr(argv[i], '=');
+            if (eq == NULL)
+            {
+                if (getenv(argv[i]) == NULL && setenv(argv[i], "", 1) != 0)
+                {
+                    perror("export");
+                    ret = 1;
+                }
+                continue;
+            }
+
+            *eq = '\0';
+            if (setenv(argv[i], eq + 1, 1) != 0)
+            {
+                perror("export");
+                ret = 1;
+            }
+            *eq = '=';
+        }
+        return ret;
+    }
+
+    if (strcmp(argv[0], "exec") == 0)
+    {
+        if (argc == 1)
+            return 0;
+        execvp(argv[1], argv + 1);
+        perror(argv[1]);
+        return 127;
+    }
+
+    if (strcmp(argv[0], "jobs") == 0)
+    {
+        for (int i = 0; i < MAX_JOBS; i++) {
+            job_t* j = &g_jobs[i];
+            if (!j->pgid) continue;
+            printf("[%d]%s  %s\t\t%s\n", j->id,
+                   (job_last(0) == j ? "+" : " "),
+                   j->stopped ? "Stopped" : "Running", j->cmd);
+        }
         return 0;
     }
 
-    if (strcmp(argv[0], "exit") == 0)
+    if (strcmp(argv[0], "fg") == 0)
     {
-        exit(0);
+        job_t* j = NULL;
+        if (argv[1] && argv[1][0] == '%') j = job_by_id(atoi(argv[1] + 1));
+        if (!j) j = job_last(0);
+        if (!j) { fputs("fg: no current job\n", stderr); return 1; }
+        printf("%s\n", j->cmd);
+        tcsetpgrp(STDIN_FILENO, j->pgid);
+        j->stopped = 0;
+        kill(-j->pgid, SIGCONT);
+        int status = 0, any_stopped = 0;
+        for (int i = 0; i < j->npids; i++) {
+            int s;
+            if (waitpid(j->pids[i], &s, WUNTRACED) == -1) continue;
+            if (WIFSTOPPED(s)) any_stopped = 1;
+            status = s;
+        }
+        tcsetpgrp(STDIN_FILENO, getpgrp());
+        if (any_stopped) { j->stopped = 1; printf("\n[%d]+  Stopped\t%s\n", j->id, j->cmd); return 128 + SIGTSTP; }
+        int ret = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+        job_remove(j);
+        return ret;
     }
 
-    if (strcmp(argv[0], "help") == 0)
+    if (strcmp(argv[0], "bg") == 0)
     {
-        print_help();
+        job_t* j = NULL;
+        if (argv[1] && argv[1][0] == '%') j = job_by_id(atoi(argv[1] + 1));
+        if (!j) j = job_last(1);
+        if (!j) { fputs("bg: no stopped jobs\n", stderr); return 1; }
+        j->stopped = 0;
+        kill(-j->pgid, SIGCONT);
+        printf("[%d]+ %s &\n", j->id, j->cmd);
         return 0;
     }
 
     if (strcmp(argv[0], "cd") == 0)
     {
-        for (int i = 1; i < argc; i++)
-        {
+        for (int i = 1; i < argc; i++) {
             if (strcmp(argv[i], "|") == 0 || strcmp(argv[i], ">") == 0 || strcmp(argv[i], ">>") == 0)
-            {
-                fputs("cd: pipes/redirections not supported\n", stderr);
-                return 1;
-            }
+                { fputs("cd: pipes/redirections not supported\n", stderr); return 1; }
         }
-        const char* dir = argv[1] != NULL ? argv[1] : getenv("HOME");
-        if (dir == NULL)
-        {
-            fputs("cd: HOME not set\n", stderr);
-            return 0;
-        }
+        const char* dir = argv[1] ? argv[1] : getenv("HOME");
+        if (!dir) { fputs("cd: HOME not set\n", stderr); return 0; }
         static char resolved[PATH_MAX];
-        if (resolve_path(dir, resolved, sizeof(resolved)) != 0)
-        {
-            fputs("cd: path too long\n", stderr);
-            return 0;
-        }
-        if (chdir(resolved) != 0)
-        {
-            perror("cd");
-            return 0;
-        }
+        if (resolve_path(dir, resolved, sizeof(resolved)) != 0) { fputs("cd: path too long\n", stderr); return 0; }
+        if (chdir(resolved) != 0) { perror("cd"); return 1; }
         strncpy(shell_pwd, resolved, sizeof(shell_pwd) - 1);
         shell_pwd[sizeof(shell_pwd) - 1] = '\0';
         return 0;
     }
 
-    return exec_pipeline(argv, argc);
+    char cmdbuf[MAX_LINE];
+    argv_to_cmd(argv, argc, cmdbuf, sizeof(cmdbuf));
+    return exec_pipeline(argv, argc, background, cmdbuf);
 }
 
-int main(void)
+static int run_script(const char* path)
+{
+    FILE* file = fopen(path, "r");
+    if (file == NULL)
+    {
+        perror(path);
+        return 127;
+    }
+
+    char logical[MAX_LINE];
+    char physical[MAX_LINE];
+    char* cmd_argv[MAX_ARGS];
+    int status = 0;
+
+    logical[0] = '\0';
+    while (fgets(physical, sizeof(physical), file) != NULL)
+    {
+        physical[strcspn(physical, "\n")] = '\0';
+        size_t len = strlen(physical);
+        if (len > 0 && physical[len - 1] == '\r')
+            physical[--len] = '\0';
+
+        int continued = len > 0 && physical[len - 1] == '\\';
+        if (continued)
+            physical[--len] = '\0';
+
+        if (strlen(logical) + len + 1 >= sizeof(logical))
+        {
+            fputs("script: line too long\n", stderr);
+            status = 1;
+            logical[0] = '\0';
+            if (!continued)
+                continue;
+        }
+        else
+        {
+            strncat(logical, physical, sizeof(logical) - strlen(logical) - 1);
+        }
+
+        if (continued)
+            continue;
+
+        char* p = logical;
+        while (isspace((unsigned char) *p))
+            p++;
+
+        if (*p == '\0' || *p == '#')
+        {
+            logical[0] = '\0';
+            continue;
+        }
+
+        char line_copy[MAX_LINE];
+        strncpy(line_copy, p, sizeof(line_copy) - 1);
+        line_copy[sizeof(line_copy) - 1] = '\0';
+
+        int argc = split_line(line_copy, cmd_argv);
+        if (argc > 0)
+            expand_globs(&argc, cmd_argv);
+        status = run_command(argc, cmd_argv);
+        logical[0] = '\0';
+    }
+
+    fclose(file);
+    return status;
+}
+
+static int run_command_string(const char* command)
+{
+    char line[MAX_LINE];
+    char* cmd_argv[MAX_ARGS];
+
+    strncpy(line, command, sizeof(line) - 1);
+    line[sizeof(line) - 1] = '\0';
+
+    int argc = split_line(line, cmd_argv);
+    if (argc > 0)
+        expand_globs(&argc, cmd_argv);
+    return run_command(argc, cmd_argv);
+}
+
+int main(int argc, char** argv)
 {
     signal(SIGINT, SIG_IGN);
-    puts("");
-    puts("Type 'help' for commands.");
 
     if (getcwd(shell_pwd, sizeof(shell_pwd)) == NULL)
     {
@@ -996,33 +1243,45 @@ int main(void)
         }
     }
 
+    if (argc > 2 && strcmp(argv[1], "-c") == 0)
+        return run_command_string(argv[2]);
+
+    if (argc > 1)
+        return run_script(argv[1]);
+
+    puts("");
+    puts("Type 'help' for commands.");
+
     history_load();
 
     char line[MAX_LINE];
-    char* argv[MAX_ARGS];
+    char* cmd_argv[MAX_ARGS];
 
     for (;;)
     {
-        int rl = read_line(line, sizeof(line));
-        if (rl == 2)
-            continue;
-        if (rl != 0)   /* EOF or error */
-        {
-            putchar('\n');
-            break;
+        /* reap finished background jobs */
+        for (int i = 0; i < MAX_JOBS; i++) {
+            job_t* j = &g_jobs[i];
+            if (!j->pgid || j->stopped) continue;
+            int s;
+            pid_t p = waitpid(j->pids[j->npids - 1], &s, WNOHANG);
+            if (p > 0 && (WIFEXITED(s) || WIFSIGNALED(s))) {
+                printf("[%d]+  Done\t\t%s\n", j->id, j->cmd);
+                job_remove(j);
+            }
         }
+
+        int rl = read_line(line, sizeof(line));
+        if (rl == 2) continue;
+        if (rl != 0) { putchar('\n'); break; }
 
         char line_copy[MAX_LINE];
         strncpy(line_copy, line, sizeof(line_copy) - 1);
         line_copy[sizeof(line_copy) - 1] = '\0';
 
-        int argc = split_line(line_copy, argv);
-        if (argc > 0)
-        {
-            history_add(line);
-            expand_globs(&argc, argv);
-        }
-        run_command(argc, argv);
+        int argc = split_line(line_copy, cmd_argv);
+        if (argc > 0) { history_add(line); expand_globs(&argc, cmd_argv); }
+        run_command(argc, cmd_argv);
     }
 
     terminal_restore();

@@ -6,6 +6,7 @@
 #define PROC_KSTACK_RSP 40
 #define PROC_USER_RSP   48
 #define PROC_FS_BASE    88
+#define PROC_FPU_STATE  3280
 
 #define CPU_KERNEL_RSP  0
 #define CPU_USER_RSP    8
@@ -20,6 +21,9 @@ sched_switch:
     pushq   %r15
 
     movq    g_current_proc(%rip), %r15
+
+    /* save FPU/SSE state of outgoing process */
+    fxsave64 PROC_FPU_STATE(%r15)
 
     /* save FS base of outgoing process */
     movl    $0xC0000100, %ecx
@@ -58,6 +62,9 @@ sched_switch:
     /* rax clobbered by vmm_switch */
     movq    g_current_proc(%rip),   %rax
     movq    PROC_KSTACK_RSP(%rax),  %rsp
+
+    /* restore FPU/SSE state of incoming process */
+    fxrstor64 PROC_FPU_STATE(%rax)
 
     popq    %r15
     popq    %r14

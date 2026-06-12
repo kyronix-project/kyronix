@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define PIPE_BUFSZ 4096
+#define PIPE_BUFSZ 65536
 
 typedef struct
 {
@@ -21,4 +21,5 @@ typedef struct
 pipe_t* pipe_alloc(void);
 void pipe_free(pipe_t* p);
 int64_t pipe_read(pipe_t* p, void* buf, uint64_t len);
+int64_t pipe_peek(pipe_t* p, void* buf, uint64_t len, uint64_t skip);
 int64_t pipe_write(pipe_t* p, const void* buf, uint64_t len);
