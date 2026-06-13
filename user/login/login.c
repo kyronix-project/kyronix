@@ -14,12 +14,12 @@
 #define PROMPT_MAX 64
 #define LINE_MAX 256
 
-static void putstr(const char *s)
+static void putstr(const char* s)
 {
     write(STDERR_FILENO, s, strlen(s));
 }
 
-static void read_line(char *buf, size_t size, int echo)
+static void read_line(char* buf, size_t size, int echo)
 {
     size_t i = 0;
     int c;
@@ -65,15 +65,15 @@ static void print_issue(void)
     puts("");
 }
 
-static int check_password(const char *user, const char *pass)
+static int check_password(const char* user, const char* pass)
 {
-    struct spwd *sp = getspnam(user);
+    struct spwd* sp = getspnam(user);
     if (sp && sp->sp_pwdp) {
-        const char *enc = crypt(pass, sp->sp_pwdp);
+        const char* enc = crypt(pass, sp->sp_pwdp);
         return enc && strcmp(enc, sp->sp_pwdp) == 0;
     }
 
-    struct passwd *pw = getpwnam(user);
+    struct passwd* pw = getpwnam(user);
     if (!pw || !pw->pw_passwd)
         return 0;
     if (pw->pw_passwd[0] == '\0')
@@ -81,13 +81,13 @@ static int check_password(const char *user, const char *pass)
     if (strcmp(pw->pw_passwd, "x") == 0)
         return 0;
 
-    const char *enc = crypt(pass, pw->pw_passwd);
+    const char* enc = crypt(pass, pw->pw_passwd);
     return enc && strcmp(enc, pw->pw_passwd) == 0;
 }
 
 int main(void)
 {
-    struct passwd *pw;
+    struct passwd* pw;
     struct utsname uts;
     int first = 1;
 

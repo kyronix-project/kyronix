@@ -7,8 +7,7 @@
 static uint32_t hex8(const char* s)
 {
     uint32_t v = 0;
-    for (int i = 0; i < 8; i++)
-    {
+    for (int i = 0; i < 8; i++) {
         char c = s[i];
         uint32_t d;
         if (c >= '0' && c <= '9')
@@ -24,8 +23,7 @@ static uint32_t hex8(const char* s)
     return v;
 }
 
-typedef struct __attribute__((packed))
-{
+typedef struct __attribute__((packed)) {
     char magic[6];
     char ino[8];
     char mode[8];
@@ -58,14 +56,12 @@ int cpio_load(const void* data, uint64_t total_size)
     uint64_t pos = 0;
     int count = 0;
 
-    while (pos + CPIO_HDR_SIZE <= total_size)
-    {
+    while (pos + CPIO_HDR_SIZE <= total_size) {
         const cpio_hdr_t* hdr = (const cpio_hdr_t*) (base + pos);
 
         if (hdr->magic[0] != '0' || hdr->magic[1] != '7' || hdr->magic[2] != '0' ||
             hdr->magic[3] != '7' || hdr->magic[4] != '0' ||
-            (hdr->magic[5] != '1' && hdr->magic[5] != '2'))
-        {
+            (hdr->magic[5] != '1' && hdr->magic[5] != '2')) {
             log_error("CPIO: bad magic at offset %lu", pos);
             return -1;
         }
@@ -101,12 +97,9 @@ int cpio_load(const void* data, uint64_t total_size)
             path += 2;
 
         char fullpath[512];
-        if (path[0] == '/')
-        {
+        if (path[0] == '/') {
             strncpy(fullpath, path, sizeof(fullpath) - 1);
-        }
-        else
-        {
+        } else {
             fullpath[0] = '/';
             strncpy(fullpath + 1, path, sizeof(fullpath) - 2);
         }
@@ -114,35 +107,26 @@ int cpio_load(const void* data, uint64_t total_size)
 
         uint32_t ftype = mode & S_IFMT;
 
-        if (ftype == S_IFDIR)
-        {
+        if (ftype == S_IFDIR) {
             vfs_node_t* n = vfs_mkdir_p(fullpath, mode & 07777);
-            if (n)
-            {
+            if (n) {
                 n->uid = uid;
                 n->gid = gid;
             }
-        }
-        else if (ftype == S_IFREG || ftype == 0)
-        {
+        } else if (ftype == S_IFREG || ftype == 0) {
             vfs_node_t* n = vfs_create_file(fullpath, mode & 07777, base + data_off, filesize);
-            if (n)
-            {
+            if (n) {
                 n->uid = uid;
                 n->gid = gid;
                 count++;
             }
-        }
-        else if (ftype == S_IFLNK)
-        {
-            if (filesize > 0 && filesize < 512)
-            {
+        } else if (ftype == S_IFLNK) {
+            if (filesize > 0 && filesize < 512) {
                 char target[512];
                 memcpy(target, base + data_off, filesize);
                 target[filesize] = '\0';
                 vfs_node_t* n = vfs_create_symlink(fullpath, target);
-                if (n)
-                {
+                if (n) {
                     n->uid = uid;
                     n->gid = gid;
                 }

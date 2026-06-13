@@ -21,13 +21,10 @@ void* memmove(void* dst, const void* src, size_t n)
 {
     uint8_t* d = dst;
     const uint8_t* s = src;
-    if (d < s)
-    {
+    if (d < s) {
         while (n--)
             *d++ = *s++;
-    }
-    else if (d > s)
-    {
+    } else if (d > s) {
         d += n;
         s += n;
         while (n--)
@@ -39,8 +36,7 @@ void* memmove(void* dst, const void* src, size_t n)
 int memcmp(const void* a, const void* b, size_t n)
 {
     const uint8_t *pa = a, *pb = b;
-    while (n--)
-    {
+    while (n--) {
         if (*pa != *pb)
             return *pa - *pb;
         pa++;
@@ -59,8 +55,7 @@ size_t strlen(const char* s)
 
 int strcmp(const char* a, const char* b)
 {
-    while (*a && *a == *b)
-    {
+    while (*a && *a == *b) {
         a++;
         b++;
     }
@@ -69,8 +64,7 @@ int strcmp(const char* a, const char* b)
 
 int strncmp(const char* a, const char* b, size_t n)
 {
-    while (n-- && *a && *a == *b)
-    {
+    while (n-- && *a && *a == *b) {
         a++;
         b++;
     }
@@ -107,8 +101,7 @@ char* strcat(char* dst, const char* src)
 
 char* strchr(const char* s, int c)
 {
-    while (*s)
-    {
+    while (*s) {
         if (*s == (char) c)
             return (char*) s;
         s++;

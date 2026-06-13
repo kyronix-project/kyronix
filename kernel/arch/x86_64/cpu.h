@@ -132,8 +132,7 @@ INLINE void write_cr4(uint64_t val)
     __asm__ volatile("mov %0, %%cr4" ::"r"(val) : "memory");
 }
 
-typedef struct
-{
+typedef struct {
     uint16_t limit_low;
     uint16_t base_low;
     uint8_t base_mid;
@@ -142,14 +141,12 @@ typedef struct
     uint8_t base_high;
 } PACKED gdt_entry_t;
 
-typedef struct
-{
+typedef struct {
     uint16_t limit;
     uint64_t base;
 } PACKED gdtr_t;
 
-typedef struct
-{
+typedef struct {
     uint16_t offset_low;
     uint16_t selector;
     uint8_t ist;
@@ -159,14 +156,12 @@ typedef struct
     uint32_t zero;
 } PACKED idt_entry_t;
 
-typedef struct
-{
+typedef struct {
     uint16_t limit;
     uint64_t base;
 } PACKED idtr_t;
 
-typedef struct
-{
+typedef struct {
     uint64_t r15, r14, r13, r12, r11, r10, r9, r8;
     uint64_t rbp, rdi, rsi, rdx, rcx, rbx, rax;
     uint64_t int_no, error_code;

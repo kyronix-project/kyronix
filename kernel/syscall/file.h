@@ -30,6 +30,6 @@ int64_t sys_sendfile(int outfd, int infd, uint64_t* offp, uint64_t count);
 int64_t sys_preadv(int fd, const struct iovec* iov, int n, uint64_t off);
 int64_t sys_pwritev(int fd, const struct iovec* iov, int n, uint64_t off);
 int64_t sys_memfd_create(const char* name, uint32_t flags);
-int64_t sys_copy_file_range(int infd, uint64_t* off_in, int outfd, uint64_t* off_out,
-                            uint64_t len, uint32_t flags);
+int64_t sys_copy_file_range(int infd, uint64_t* off_in, int outfd, uint64_t* off_out, uint64_t len,
+                            uint32_t flags);
 int64_t sys_statx(int dirfd, const char* path, int flags, uint32_t mask, struct statx* sx);

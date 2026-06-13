@@ -13,8 +13,7 @@ _Static_assert(sizeof(rt_sigframe_t) == 440, "rt_sigframe_t must be 440 bytes");
 
 static int sig_default_fatal(int sig)
 {
-    switch (sig)
-    {
+    switch (sig) {
     case SIGCHLD:
     case SIGCONT:
     case SIGWINCH:
@@ -97,15 +96,13 @@ static void deliver_signal(proc_t* p, int sig, syscall_frame_t* f)
     if (handler == SIG_IGN)
         return;
 
-    if (handler == SIG_DFL)
-    {
+    if (handler == SIG_DFL) {
         if (!sig_default_fatal(sig))
             return;
         proc_do_exit(-sig);
     }
 
-    if (!p->sig_actions[sig - 1].sa_restorer)
-    {
+    if (!p->sig_actions[sig - 1].sa_restorer) {
         log_warn("signal: sig %d has no restorer", sig);
         proc_do_exit(-sig);
     }

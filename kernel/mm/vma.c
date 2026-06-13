@@ -4,9 +4,9 @@
 #define ENOMEM 12
 #define EINVAL 22
 
-#define PROT_READ  0x1
+#define PROT_READ 0x1
 #define PROT_WRITE 0x2
-#define PROT_EXEC  0x4
+#define PROT_EXEC 0x4
 
 static bool range_end(uint64_t start, uint64_t len, uint64_t* end)
 {
@@ -62,8 +62,8 @@ bool vma_conflicts(vmm_space_t* sp, uint64_t start, uint64_t len)
     return false;
 }
 
-int vma_add(vmm_space_t* sp, uint64_t start, uint64_t len, uint32_t prot,
-            uint32_t map_flags, bool free_on_unmap)
+int vma_add(vmm_space_t* sp, uint64_t start, uint64_t len, uint32_t prot, uint32_t map_flags,
+            bool free_on_unmap)
 {
     uint64_t end;
     if (!sp || !range_end(start, len, &end))

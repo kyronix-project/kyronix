@@ -5,8 +5,7 @@
 
 uint64_t g_hhdm_offset;
 
-typedef struct
-{
+typedef struct {
     uint64_t* words; /* bit=1 -> page FREE, bit=0 -> page USED */
     uint64_t total_pages;
     uint64_t free_pages;
@@ -34,8 +33,7 @@ void pmm_init(struct limine_memmap_response* mmap, uint64_t hhdm_offset)
     g_hhdm_offset = hhdm_offset;
 
     uint64_t highest = 0;
-    for (uint64_t i = 0; i < mmap->entry_count; i++)
-    {
+    for (uint64_t i = 0; i < mmap->entry_count; i++) {
         struct limine_memmap_entry* e = mmap->entries[i];
         if (e->type != LIMINE_MEMMAP_USABLE)
             continue;
@@ -49,13 +47,11 @@ void pmm_init(struct limine_memmap_response* mmap, uint64_t hhdm_offset)
 
     uint64_t bitmap_bytes = PAGE_ALIGN_UP((g_pmm.total_pages + 7) / 8);
     uint64_t bitmap_phys = 0;
-    for (uint64_t i = 0; i < mmap->entry_count; i++)
-    {
+    for (uint64_t i = 0; i < mmap->entry_count; i++) {
         struct limine_memmap_entry* e = mmap->entries[i];
         if (e->type != LIMINE_MEMMAP_USABLE)
             continue;
-        if (e->length >= bitmap_bytes)
-        {
+        if (e->length >= bitmap_bytes) {
             bitmap_phys = e->base;
             break;
         }
@@ -64,16 +60,14 @@ void pmm_init(struct limine_memmap_response* mmap, uint64_t hhdm_offset)
     g_pmm.words = (uint64_t*) (bitmap_phys + hhdm_offset);
     memset(g_pmm.words, 0, bitmap_bytes);
 
-    for (uint64_t i = 0; i < mmap->entry_count; i++)
-    {
+    for (uint64_t i = 0; i < mmap->entry_count; i++) {
         struct limine_memmap_entry* e = mmap->entries[i];
         if (e->type != LIMINE_MEMMAP_USABLE)
             continue;
 
         uint64_t first = e->base >> PAGE_SHIFT;
         uint64_t count = e->length >> PAGE_SHIFT;
-        for (uint64_t p = first; p < first + count; p++)
-        {
+        for (uint64_t p = first; p < first + count; p++) {
             bitmap_set_free(p);
             g_pmm.free_pages++;
         }
@@ -81,10 +75,8 @@ void pmm_init(struct limine_memmap_response* mmap, uint64_t hhdm_offset)
 
     uint64_t bm_first = bitmap_phys >> PAGE_SHIFT;
     uint64_t bm_count = bitmap_bytes >> PAGE_SHIFT;
-    for (uint64_t p = bm_first; p < bm_first + bm_count; p++)
-    {
-        if (bitmap_is_free(p))
-        {
+    for (uint64_t p = bm_first; p < bm_first + bm_count; p++) {
+        if (bitmap_is_free(p)) {
             bitmap_set_used(p);
             g_pmm.free_pages--;
         }
@@ -99,8 +91,7 @@ void* pmm_alloc(void)
 {
     uint64_t nwords = (g_pmm.total_pages + 63) >> 6;
 
-    for (uint64_t wi = 0; wi < nwords; wi++)
-    {
+    for (uint64_t wi = 0; wi < nwords; wi++) {
         if (g_pmm.words[wi] == 0)
             continue; /* no free page in word */
 

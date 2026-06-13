@@ -17,8 +17,7 @@
 
 #define VMM_VMA_MAX 512
 
-typedef struct
-{
+typedef struct {
     uint64_t start;
     uint64_t end;
     uint32_t prot;
@@ -27,8 +26,7 @@ typedef struct
     uint8_t free_on_unmap;
 } vmm_vma_t;
 
-typedef struct
-{
+typedef struct {
     uint64_t pml4_phys;
     vmm_vma_t vmas[VMM_VMA_MAX];
 } vmm_space_t;

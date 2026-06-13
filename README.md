@@ -4,7 +4,7 @@
 
 Kyronix is a hobby x86-64 operating system focused on POSIX/Linux compatibility.
 
-![Kyronix preview](preview.png)
+![Kyronix preview](meta/screenshots/preview.png)
 
 ## Features
 

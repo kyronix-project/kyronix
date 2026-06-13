@@ -9,8 +9,7 @@
 #define MSR_SFMASK 0xC0000084
 #define MSR_KERNEL_GS_BASE 0xC0000102
 
-typedef struct
-{
+typedef struct {
     uint64_t kernel_rsp; /* offset 0 */
     uint64_t user_rsp;   /* offset 8 */
 } cpu_local_t;

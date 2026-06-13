@@ -35,8 +35,7 @@
 #define AT_RANDOM 25
 #define AT_EXECFN 31
 
-typedef struct
-{
+typedef struct {
     uint8_t e_ident[16];
     uint16_t e_type;
     uint16_t e_machine;
@@ -53,8 +52,7 @@ typedef struct
     uint16_t e_shstrndx;
 } __attribute__((packed)) Elf64_Ehdr;
 
-typedef struct
-{
+typedef struct {
     uint32_t p_type;
     uint32_t p_flags;
     uint64_t p_offset;
@@ -65,11 +63,10 @@ typedef struct
     uint64_t p_align;
 } __attribute__((packed)) Elf64_Phdr;
 
-typedef struct
-{
+typedef struct {
     vmm_space_t* space;
-    uint64_t entry;       /* jump target: interpreter entry if PT_INTERP else prog entry */
-    uint64_t prog_entry;  /* AT_ENTRY: main programs own entry point */
+    uint64_t entry;      /* jump target: interpreter entry if PT_INTERP else prog entry */
+    uint64_t prog_entry; /* AT_ENTRY: main programs own entry point */
     uint64_t brk;
     uint64_t phdr_va;
     uint16_t phentsize;
@@ -78,6 +75,6 @@ typedef struct
     char interp[256];     /* PT_INTERP path, empty if none */
 } elf_load_result_t;
 
-int elf_load_into(vmm_space_t* space, const void* data, uint64_t size,
-                  uint64_t bias, elf_load_result_t* out);
+int elf_load_into(vmm_space_t* space, const void* data, uint64_t size, uint64_t bias,
+                  elf_load_result_t* out);
 int elf_load(const void* data, uint64_t size, elf_load_result_t* out);

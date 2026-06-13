@@ -2,12 +2,12 @@
 #include <stdint.h>
 
 struct sysinfo_s {
-    int64_t  uptime;
+    int64_t uptime;
     uint64_t loads[3];
     uint64_t totalram, freeram, sharedram, bufferram;
     uint64_t totalswap, freeswap;
     uint16_t procs;
-    uint8_t  _pad[6];
+    uint8_t _pad[6];
     uint64_t totalhigh, freehigh;
     uint32_t mem_unit;
 };

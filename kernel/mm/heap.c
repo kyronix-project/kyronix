@@ -5,8 +5,7 @@
 #include "pmm.h"
 #include "vmm.h"
 
-typedef struct block_hdr
-{
+typedef struct block_hdr {
     uint64_t size;
     uint64_t free;
     struct block_hdr* prev;
@@ -26,13 +25,11 @@ static block_hdr_t* heap_grow(void)
     if (g_brk + GROW_BYTES > HEAP_MAX)
         return NULL;
 
-    for (uint64_t va = g_brk; va < g_brk + GROW_BYTES; va += PAGE_SIZE)
-    {
+    for (uint64_t va = g_brk; va < g_brk + GROW_BYTES; va += PAGE_SIZE) {
         void* phys = pmm_alloc();
         if (!phys)
             return NULL;
-        if (vmm_map(&g_kernel_space, va, (uint64_t) phys, VMM_KDATA) < 0)
-        {
+        if (vmm_map(&g_kernel_space, va, (uint64_t) phys, VMM_KDATA) < 0) {
             pmm_free(phys);
             return NULL;
         }
@@ -41,14 +38,12 @@ static block_hdr_t* heap_grow(void)
     block_hdr_t* blk = (block_hdr_t*) g_brk;
     g_brk += GROW_BYTES;
 
-    if (g_head)
-    {
+    if (g_head) {
         block_hdr_t* last = g_head;
         while (last->next)
             last = last->next;
 
-        if (last->free)
-        {
+        if (last->free) {
             last->size += GROW_BYTES;
             return last;
         }
@@ -57,9 +52,7 @@ static block_hdr_t* heap_grow(void)
         blk->prev = last;
         blk->next = NULL;
         last->next = blk;
-    }
-    else
-    {
+    } else {
         blk->size = GROW_BYTES - HDR_SIZE;
         blk->free = 1;
         blk->prev = NULL;
@@ -84,15 +77,13 @@ void* kmalloc(uint64_t size)
     size = (size + 15) & ~15ULL;
 
     block_hdr_t* blk = g_head;
-    while (blk)
-    {
+    while (blk) {
         if (blk->free && blk->size >= size)
             break;
         blk = blk->next;
     }
 
-    while (!blk || !blk->free || blk->size < size)
-    {
+    while (!blk || !blk->free || blk->size < size) {
         blk = heap_grow();
         if (!blk)
             return NULL;
@@ -100,8 +91,7 @@ void* kmalloc(uint64_t size)
             break;
     }
 
-    if (blk->size >= size + MIN_SPLIT)
-    {
+    if (blk->size >= size + MIN_SPLIT) {
         block_hdr_t* tail = (block_hdr_t*) ((uint8_t*) blk + HDR_SIZE + size);
         tail->size = blk->size - size - HDR_SIZE;
         tail->free = 1;
@@ -129,16 +119,14 @@ void kfree(void* ptr)
     }
     blk->free = 1;
 
-    if (blk->next && blk->next->free)
-    {
+    if (blk->next && blk->next->free) {
         blk->size += HDR_SIZE + blk->next->size;
         blk->next = blk->next->next;
         if (blk->next)
             blk->next->prev = blk;
     }
 
-    if (blk->prev && blk->prev->free)
-    {
+    if (blk->prev && blk->prev->free) {
         blk->prev->size += HDR_SIZE + blk->size;
         blk->prev->next = blk->next;
         if (blk->next)
@@ -159,8 +147,7 @@ void* krealloc(void* ptr, uint64_t new_size)
 {
     if (!ptr)
         return kmalloc(new_size);
-    if (!new_size)
-    {
+    if (!new_size) {
         kfree(ptr);
         return NULL;
     }
@@ -183,8 +170,7 @@ void heap_stats(void)
 {
     uint64_t free_bytes = 0, used_bytes = 0, nblocks = 0;
     block_hdr_t* b = g_head;
-    while (b)
-    {
+    while (b) {
         nblocks++;
         if (b->free)
             free_bytes += b->size;

@@ -1,9 +1,8 @@
-# .clang-format
 BasedOnStyle: LLVM
 IndentWidth: 4
 UseTab: Never
 ColumnLimit: 100
-BreakBeforeBraces: Allman
+BreakBeforeBraces: Linux
 AllowShortFunctionsOnASingleLine: false
 PointerAlignment: Left
 SpaceAfterCStyleCast: true

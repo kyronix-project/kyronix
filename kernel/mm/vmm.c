@@ -24,8 +24,7 @@ static inline uint64_t pte_addr(uint64_t pte)
 /* intermediate entries always PRESENT|WRITE|USER; leaf PTEs restrict access */
 static uint64_t* descend(uint64_t* parent, uint64_t idx)
 {
-    if (!(parent[idx] & VMM_PRESENT))
-    {
+    if (!(parent[idx] & VMM_PRESENT)) {
         uint64_t child_phys = (uint64_t) pmm_alloc_zeroed();
         if (!child_phys)
             return NULL;
@@ -87,11 +86,14 @@ uint64_t vmm_virt_to_phys(vmm_space_t* sp, uint64_t virt)
 static uint64_t vmm_leaf_pte(vmm_space_t* sp, uint64_t virt)
 {
     uint64_t* pml4 = (uint64_t*) phys_to_virt(sp->pml4_phys);
-    if (!(pml4[PML4_IDX(virt)] & VMM_PRESENT)) return 0;
+    if (!(pml4[PML4_IDX(virt)] & VMM_PRESENT))
+        return 0;
     uint64_t* pdpt = (uint64_t*) phys_to_virt(pte_addr(pml4[PML4_IDX(virt)]));
-    if (!(pdpt[PDPT_IDX(virt)] & VMM_PRESENT)) return 0;
+    if (!(pdpt[PDPT_IDX(virt)] & VMM_PRESENT))
+        return 0;
     uint64_t* pd = (uint64_t*) phys_to_virt(pte_addr(pdpt[PDPT_IDX(virt)]));
-    if (!(pd[PD_IDX(virt)] & VMM_PRESENT)) return 0;
+    if (!(pd[PD_IDX(virt)] & VMM_PRESENT))
+        return 0;
     uint64_t* pt = (uint64_t*) phys_to_virt(pte_addr(pd[PD_IDX(virt)]));
     return pt[PT_IDX(virt)];
 }
@@ -99,16 +101,22 @@ static uint64_t vmm_leaf_pte(vmm_space_t* sp, uint64_t virt)
 /* verify every page in [virt, virt+len) is mapped and user-accessible */
 bool vmm_user_range_ok(vmm_space_t* sp, uint64_t virt, uint64_t len, bool write)
 {
-    if (!sp) return false;
-    if (len == 0) return true;
-    if (virt + len < virt) return false; /* address overflow */
-    uint64_t pg   = virt & ~0xFFFULL;
+    if (!sp)
+        return false;
+    if (len == 0)
+        return true;
+    if (virt + len < virt)
+        return false; /* address overflow */
+    uint64_t pg = virt & ~0xFFFULL;
     uint64_t last = (virt + len - 1) & ~0xFFFULL;
     for (;; pg += 0x1000) {
         uint64_t pte = vmm_leaf_pte(sp, pg);
-        if (!(pte & VMM_PRESENT) || !(pte & VMM_USER)) return false;
-        if (write && !(pte & VMM_WRITE)) return false;
-        if (pg == last) break;
+        if (!(pte & VMM_PRESENT) || !(pte & VMM_USER))
+            return false;
+        if (write && !(pte & VMM_WRITE))
+            return false;
+        if (pg == last)
+            break;
     }
     return true;
 }
@@ -116,13 +124,17 @@ bool vmm_user_range_ok(vmm_space_t* sp, uint64_t virt, uint64_t len, bool write)
 int vmm_protect(vmm_space_t* sp, uint64_t virt, uint64_t flags)
 {
     uint64_t* pml4 = (uint64_t*) phys_to_virt(sp->pml4_phys);
-    if (!(pml4[PML4_IDX(virt)] & VMM_PRESENT)) return -1;
+    if (!(pml4[PML4_IDX(virt)] & VMM_PRESENT))
+        return -1;
     uint64_t* pdpt = (uint64_t*) phys_to_virt(pte_addr(pml4[PML4_IDX(virt)]));
-    if (!(pdpt[PDPT_IDX(virt)] & VMM_PRESENT)) return -1;
+    if (!(pdpt[PDPT_IDX(virt)] & VMM_PRESENT))
+        return -1;
     uint64_t* pd = (uint64_t*) phys_to_virt(pte_addr(pdpt[PDPT_IDX(virt)]));
-    if (!(pd[PD_IDX(virt)] & VMM_PRESENT)) return -1;
+    if (!(pd[PD_IDX(virt)] & VMM_PRESENT))
+        return -1;
     uint64_t* pt = (uint64_t*) phys_to_virt(pte_addr(pd[PD_IDX(virt)]));
-    if (!(pt[PT_IDX(virt)] & VMM_PRESENT)) return -1;
+    if (!(pt[PT_IDX(virt)] & VMM_PRESENT))
+        return -1;
     pt[PT_IDX(virt)] = pte_addr(pt[PT_IDX(virt)]) | (flags & PTE_FLAGS_MASK) | VMM_PRESENT;
     __asm__ volatile("invlpg (%0)" ::"r"(virt) : "memory");
     return 0;
@@ -152,10 +164,8 @@ void vmm_unmap(vmm_space_t* sp, uint64_t virt)
 vmm_space_t* vmm_space_new(void)
 {
     int slot = -1;
-    for (int i = 0; i < VMM_MAX_SPACES; i++)
-    {
-        if (!g_pool_used[i])
-        {
+    for (int i = 0; i < VMM_MAX_SPACES; i++) {
+        if (!g_pool_used[i]) {
             slot = i;
             break;
         }
@@ -217,10 +227,8 @@ void vmm_space_free(vmm_space_t* sp)
 
     pmm_free((void*) sp->pml4_phys);
 
-    for (int i = 0; i < VMM_MAX_SPACES; i++)
-    {
-        if (&g_pool[i] == sp)
-        {
+    for (int i = 0; i < VMM_MAX_SPACES; i++) {
+        if (&g_pool[i] == sp) {
             g_pool_used[i] = false;
             break;
         }
@@ -229,8 +237,7 @@ void vmm_space_free(vmm_space_t* sp)
 
 void vmm_switch(vmm_space_t* sp)
 {
-    if (sp != &g_kernel_space)
-    {
+    if (sp != &g_kernel_space) {
         /* sync any kernel mappings added after vmm_space_new */
         uint64_t* dst = (uint64_t*) phys_to_virt(sp->pml4_phys);
         uint64_t* src = (uint64_t*) phys_to_virt(g_kernel_space.pml4_phys);
@@ -245,26 +252,22 @@ int vmm_fork_user(vmm_space_t* dst, vmm_space_t* src)
     uint64_t* src_pml4 = (uint64_t*) phys_to_virt(src->pml4_phys);
     vma_copy(dst, src);
 
-    for (int i = 0; i < 256; i++)
-    {
+    for (int i = 0; i < 256; i++) {
         if (!(src_pml4[i] & VMM_PRESENT))
             continue;
         uint64_t* src_pdpt = (uint64_t*) phys_to_virt(pte_addr(src_pml4[i]));
 
-        for (int j = 0; j < 512; j++)
-        {
+        for (int j = 0; j < 512; j++) {
             if (!(src_pdpt[j] & VMM_PRESENT))
                 continue;
             uint64_t* src_pd = (uint64_t*) phys_to_virt(pte_addr(src_pdpt[j]));
 
-            for (int k = 0; k < 512; k++)
-            {
+            for (int k = 0; k < 512; k++) {
                 if (!(src_pd[k] & VMM_PRESENT))
                     continue;
                 uint64_t* src_pt = (uint64_t*) phys_to_virt(pte_addr(src_pd[k]));
 
-                for (int l = 0; l < 512; l++)
-                {
+                for (int l = 0; l < 512; l++) {
                     uint64_t pte = src_pt[l];
                     if (!(pte & VMM_PRESENT))
                         continue;
@@ -279,8 +282,7 @@ int vmm_fork_user(vmm_space_t* dst, vmm_space_t* src)
                            PAGE_SIZE);
 
                     uint64_t flags = pte & PTE_FLAGS_MASK;
-                    if (vmm_map(dst, va, (uint64_t) new_phys, flags) < 0)
-                    {
+                    if (vmm_map(dst, va, (uint64_t) new_phys, flags) < 0) {
                         pmm_free(new_phys);
                         return -1;
                     }

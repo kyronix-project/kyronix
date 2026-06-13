@@ -93,11 +93,15 @@ DEPS := $(OBJS:.o=.d)
 SRC_DIR  := .
 INITRD   := initrd.cpio
 
-.PHONY: all iso run run-serial clean user-build xorg
+.PHONY: all iso run run-serial run-uefi clean user-build xorg testrunner test-initrd test-iso test-run test-run-log fmt fmt-check
 
 all: $(TARGET) $(INITRD)
 
-user-build:
+build/libatomic_asneeded.a:
+	@mkdir -p $(@D)
+	ar rcs $@
+
+user-build: build/libatomic_asneeded.a
 	$(MAKE) -C user
 
 xorg:
@@ -124,7 +128,7 @@ $(BUILD_DIR)/%.o: %.S
 -include $(DEPS)
 
 $(LIMINE_DIR)/limine: $(LIMINE_DIR)/limine.c
-	$(MAKE) -C $(LIMINE_DIR)
+	cc $(LIMINE_DIR)/limine.c -o $@
 
 iso: $(TARGET) $(INITRD) $(LIMINE_DIR)/limine
 	rm -rf iso_root
@@ -174,8 +178,103 @@ run-serial: iso
 	    -display none               \
 	    -serial stdio
 
+OVMF ?= /usr/share/edk2/x64/OVMF.fd
+
+run-uefi: iso
+	qemu-system-x86_64              \
+	    -M q35                      \
+	    -m 2G                       \
+	    -cdrom $(ISO)               \
+	    -bios $(OVMF)               \
+	    -boot d                     \
+	    -serial stdio               \
+	    -vga qxl                    \
+	    -global qxl-vga.vgamem_mb=1024
+
+TEST_ROOTFS := test_rootfs
+TEST_INITRD := test-initrd.cpio
+TEST_ISO    := kyronix-test.iso
+
+testrunner: build/libatomic_asneeded.a
+	$(MAKE) -C user/testrunner
+
+test-initrd: $(TARGET) testrunner build/libatomic_asneeded.a
+	$(MAKE) -C user/kyrobox
+	$(MAKE) -C user/fetch
+	rm -rf $(TEST_ROOTFS) $(TEST_INITRD)
+	mkdir -p $(TEST_ROOTFS)/bin
+	cp build/bin/testrunner $(TEST_ROOTFS)/init
+	cp build/bin/ls        $(TEST_ROOTFS)/bin/
+	cp build/bin/grep      $(TEST_ROOTFS)/bin/
+	cp build/bin/echo      $(TEST_ROOTFS)/bin/
+	cp build/bin/fetch     $(TEST_ROOTFS)/bin/
+	cd $(TEST_ROOTFS) && find . | sort | cpio -o --format=newc --owner=0:0 --reproducible > ../$(TEST_INITRD) 2>/dev/null
+	@echo "  Built: $(TEST_INITRD)"
+
+test-iso: $(TARGET) test-initrd $(LIMINE_DIR)/limine
+	rm -rf iso_root
+	mkdir -p iso_root/boot/limine
+	mkdir -p iso_root/EFI/BOOT
+	cp $(TARGET)                    iso_root/boot/kernel.elf
+	cp $(TEST_INITRD)               iso_root/boot/initrd.cpio
+	cp limine.conf                  iso_root/boot/limine/limine.conf
+	cp $(LIMINE_DIR)/limine-bios.sys    iso_root/boot/limine/
+	cp $(LIMINE_DIR)/limine-bios-cd.bin iso_root/boot/limine/
+	cp $(LIMINE_DIR)/limine-uefi-cd.bin iso_root/boot/limine/
+	cp $(LIMINE_DIR)/BOOTX64.EFI        iso_root/EFI/BOOT/
+	cp $(LIMINE_DIR)/BOOTIA32.EFI       iso_root/EFI/BOOT/
+	xorriso -as mkisofs              \
+	    -b boot/limine/limine-bios-cd.bin \
+	    -no-emul-boot                \
+	    -boot-load-size 4            \
+	    -boot-info-table             \
+	    --efi-boot boot/limine/limine-uefi-cd.bin \
+	    -efi-boot-part               \
+	    --efi-boot-image             \
+	    --protective-msdos-label     \
+	    iso_root -o $(TEST_ISO)
+	./$(LIMINE_DIR)/limine bios-install $(TEST_ISO)
+	@echo ""
+	@echo "  Built: $(TEST_ISO)"
+
+test-run: test-iso
+	qemu-system-x86_64              \
+	    -M q35                      \
+	    -m 512M                     \
+	    -cdrom $(TEST_ISO)          \
+	    -display none               \
+	    -serial stdio               \
+	    -no-reboot
+
+test-run-log: test-iso
+	@qemu-system-x86_64              \
+	    -M q35                      \
+	    -m 512M                     \
+	    -cdrom $(TEST_ISO)          \
+	    -display none               \
+	    -serial file:test.log       \
+	    -no-reboot 2>/dev/null;     \
+	grep -E "(TEST|RESULT|ALL|SOME)" test.log 2>/dev/null; \
+	if grep -q "ALL TESTS PASSED" test.log 2>/dev/null; then \
+	    echo ""; \
+	    echo "PASS"; \
+	else \
+	    echo ""; \
+	    echo "FAIL"; \
+	    exit 1; \
+	fi
+
+fmt:
+	@echo "Formatting code..."
+	@find $(SRC_DIR) -type f \( -name "*.c" -o -name "*.h" \) -exec clang-format -i {} \;
+	@echo "Format complete"
+
+fmt-check:
+	@echo "Checking code style..."
+	@find $(SRC_DIR) -type f \( -name "*.c" -o -name "*.h" \) -exec clang-format --dry-run -Werror {} +
+
 clean:
-	rm -f $(TARGET) $(ISO) $(INITRD)
-	rm -rf $(BUILD_DIR) iso_root rootfs/bin
+	rm -f $(TARGET) $(ISO) $(INITRD) $(TEST_ISO) $(TEST_INITRD)
+	rm -rf $(BUILD_DIR) iso_root rootfs/bin $(TEST_ROOTFS)
 	$(MAKE) -C user clean
 	$(MAKE) -C $(LIMINE_DIR) clean 2>/dev/null; true

@@ -24,8 +24,7 @@ void proc_init(void)
 
 proc_t* proc_alloc(uint32_t ppid)
 {
-    for (int i = 0; i < PROC_MAX; i++)
-    {
+    for (int i = 0; i < PROC_MAX; i++) {
         if (g_proctable[i].state != PROC_UNUSED)
             continue;
 
@@ -40,51 +39,46 @@ proc_t* proc_alloc(uint32_t ppid)
 
         uint64_t guard_va = g_kstack_va_bump;
         g_kstack_va_bump += KSTACK_VA_STRIDE;
-        for (int pg = 0; pg < KSTACK_PAGES; pg++)
-        {
+        for (int pg = 0; pg < KSTACK_PAGES; pg++) {
             void* phys = pmm_alloc_zeroed();
-            if (!phys)
-            {
+            if (!phys) {
                 /* free already-mapped pages */
-                for (int j = 0; j < pg; j++)
-                {
+                for (int j = 0; j < pg; j++) {
                     uint64_t va = guard_va + PAGE_SIZE + (uint64_t) j * PAGE_SIZE;
                     uint64_t pa = vmm_virt_to_phys(&g_kernel_space, va);
                     vmm_unmap(&g_kernel_space, va);
-                    if (pa) pmm_free((void*) pa);
+                    if (pa)
+                        pmm_free((void*) pa);
                 }
                 p->state = PROC_UNUSED;
                 return NULL;
             }
             uint64_t va = guard_va + PAGE_SIZE + (uint64_t) pg * PAGE_SIZE;
-            if (vmm_map(&g_kernel_space, va, (uint64_t) phys, VMM_KDATA) < 0)
-            {
+            if (vmm_map(&g_kernel_space, va, (uint64_t) phys, VMM_KDATA) < 0) {
                 pmm_free(phys);
-                for (int j = 0; j < pg; j++)
-                {
+                for (int j = 0; j < pg; j++) {
                     uint64_t jva = guard_va + PAGE_SIZE + (uint64_t) j * PAGE_SIZE;
                     uint64_t pa = vmm_virt_to_phys(&g_kernel_space, jva);
                     vmm_unmap(&g_kernel_space, jva);
-                    if (pa) pmm_free((void*) pa);
+                    if (pa)
+                        pmm_free((void*) pa);
                 }
                 p->state = PROC_UNUSED;
                 return NULL;
             }
         }
         p->kstack_guard = guard_va;
-        p->kstack       = (uint8_t*)(guard_va + PAGE_SIZE);
-        p->kstack_top   = guard_va + KSTACK_VA_STRIDE;
+        p->kstack = (uint8_t*) (guard_va + PAGE_SIZE);
+        p->kstack_top = guard_va + KSTACK_VA_STRIDE;
 
         p->fds = (vfs_file_t**) kcalloc(VFS_FD_MAX, sizeof(vfs_file_t*));
-        if (!p->fds)
-        {
+        if (!p->fds) {
             proc_kstack_free(p);
             p->state = PROC_UNUSED;
             return NULL;
         }
         p->fds_refcnt = (uint32_t*) kmalloc(sizeof(uint32_t));
-        if (!p->fds_refcnt)
-        {
+        if (!p->fds_refcnt) {
             kfree(p->fds);
             p->fds = NULL;
             proc_kstack_free(p);
@@ -99,8 +93,8 @@ proc_t* proc_alloc(uint32_t ppid)
         p->cwd[1] = '\0';
 
         /* default x87 fpu + sse state: mask all exceptions */
-        ((uint16_t*)p->fpu_state)[0] = 0x037F; /* FCW */
-        ((uint32_t*)(p->fpu_state + 24))[0] = 0x1F80; /* MXCSR */
+        ((uint16_t*) p->fpu_state)[0] = 0x037F;        /* FCW */
+        ((uint32_t*) (p->fpu_state + 24))[0] = 0x1F80; /* MXCSR */
 
         return p;
     }
@@ -111,12 +105,12 @@ void proc_kstack_free(proc_t* p)
 {
     if (!p->kstack_guard)
         return;
-    for (int pg = 0; pg < KSTACK_PAGES; pg++)
-    {
+    for (int pg = 0; pg < KSTACK_PAGES; pg++) {
         uint64_t va = p->kstack_guard + PAGE_SIZE + (uint64_t) pg * PAGE_SIZE;
         uint64_t pa = vmm_virt_to_phys(&g_kernel_space, va);
         vmm_unmap(&g_kernel_space, va);
-        if (pa) pmm_free((void*) pa);
+        if (pa)
+            pmm_free((void*) pa);
     }
     p->kstack_guard = 0;
     p->kstack = NULL;
@@ -132,8 +126,7 @@ proc_t* proc_find(uint32_t pid)
 
 proc_t* proc_next_ready(proc_t* skip)
 {
-    for (int i = 0; i < PROC_MAX; i++)
-    {
+    for (int i = 0; i < PROC_MAX; i++) {
         if (&g_proctable[i] == skip)
             continue;
         if (g_proctable[i].state == PROC_READY)
@@ -147,7 +140,9 @@ void sched_yield_blocking(void)
     proc_t* p = g_current_proc;
     proc_t* next = proc_next_ready(p);
     if (!next) {
-        sti(); hlt(); cli(); /* let IRQ0/IRQ1 fire when idle */
+        sti();
+        hlt();
+        cli(); /* let IRQ0/IRQ1 fire when idle */
         return;
     }
 

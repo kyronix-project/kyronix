@@ -25,8 +25,7 @@
 
 #define LIMINE_FRAMEBUFFER_RGB 1
 
-struct limine_framebuffer
-{
+struct limine_framebuffer {
     void* address;
     uint64_t width;
     uint64_t height;
@@ -46,15 +45,13 @@ struct limine_framebuffer
     void** modes;
 };
 
-struct limine_framebuffer_response
-{
+struct limine_framebuffer_response {
     uint64_t revision;
     uint64_t framebuffer_count;
     struct limine_framebuffer** framebuffers;
 };
 
-struct limine_framebuffer_request
-{
+struct limine_framebuffer_request {
     uint64_t id[4];
     uint64_t revision;
     struct limine_framebuffer_response* response;
@@ -71,22 +68,19 @@ struct limine_framebuffer_request
 #define LIMINE_MEMMAP_KERNEL_AND_MODULES 6
 #define LIMINE_MEMMAP_FRAMEBUFFER 7
 
-struct limine_memmap_entry
-{
+struct limine_memmap_entry {
     uint64_t base;
     uint64_t length;
     uint64_t type;
 };
 
-struct limine_memmap_response
-{
+struct limine_memmap_response {
     uint64_t revision;
     uint64_t entry_count;
     struct limine_memmap_entry** entries;
 };
 
-struct limine_memmap_request
-{
+struct limine_memmap_request {
     uint64_t id[4];
     uint64_t revision;
     struct limine_memmap_response* response;
@@ -94,14 +88,12 @@ struct limine_memmap_request
 
 #define LIMINE_HHDM_REQUEST {LIMINE_COMMON_MAGIC, 0x48dcf1cb8ad2b852, 0x63984e959a98244b}
 
-struct limine_hhdm_response
-{
+struct limine_hhdm_response {
     uint64_t revision;
     uint64_t offset;
 };
 
-struct limine_hhdm_request
-{
+struct limine_hhdm_request {
     uint64_t id[4];
     uint64_t revision;
     struct limine_hhdm_response* response;
@@ -109,8 +101,7 @@ struct limine_hhdm_request
 
 #define LIMINE_MODULE_REQUEST {LIMINE_COMMON_MAGIC, 0x3e7e279702be32af, 0xca1c4f3bd1280cee}
 
-struct limine_file
-{
+struct limine_file {
     uint64_t revision;
     void* address;
     uint64_t size;
@@ -124,15 +115,13 @@ struct limine_file
     uint32_t mbr_disk_id;
 };
 
-struct limine_module_response
-{
+struct limine_module_response {
     uint64_t revision;
     uint64_t module_count;
     struct limine_file** modules;
 };
 
-struct limine_module_request
-{
+struct limine_module_request {
     uint64_t id[4];
     uint64_t revision;
     struct limine_module_response* response;
@@ -144,15 +133,13 @@ struct limine_module_request
 
 #define LIMINE_KERNEL_ADDRESS_REQUEST {LIMINE_COMMON_MAGIC, 0x71ba76863cc55f63, 0xb2644a48c516a487}
 
-struct limine_kernel_address_response
-{
+struct limine_kernel_address_response {
     uint64_t revision;
     uint64_t physical_base;
     uint64_t virtual_base;
 };
 
-struct limine_kernel_address_request
-{
+struct limine_kernel_address_request {
     uint64_t id[4];
     uint64_t revision;
     struct limine_kernel_address_response* response;

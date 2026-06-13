@@ -41,11 +41,16 @@ static char proc_state_char(proc_t* p)
     if (!p)
         return 'R';
     switch (p->state) {
-    case PROC_RUNNING: return 'R';
-    case PROC_READY:   return 'R';
-    case PROC_WAITING: return 'S';
-    case PROC_ZOMBIE:  return 'Z';
-    default:           return 'I';
+    case PROC_RUNNING:
+        return 'R';
+    case PROC_READY:
+        return 'R';
+    case PROC_WAITING:
+        return 'S';
+    case PROC_ZOMBIE:
+        return 'Z';
+    default:
+        return 'I';
     }
 }
 
@@ -101,7 +106,8 @@ static int64_t proc_cpuinfo_read(vfs_node_t* n, char* buf, uint64_t len, uint64_
                       "core id\t\t: 0\n"
                       "cpu cores\t: 1\n"
                       "apicid\t\t: 0\n"
-                      "flags\t\t: fpu tsc msr pae cx8 apic sep mtrr pge cmov pat mmx fxsr sse sse2 syscall nx lm\n\n");
+                      "flags\t\t: fpu tsc msr pae cx8 apic sep mtrr pge cmov pat mmx fxsr sse sse2 "
+                      "syscall nx lm\n\n");
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
@@ -132,8 +138,8 @@ static int64_t proc_uptime_read(vfs_node_t* n, char* buf, uint64_t len, uint64_t
     (void) n;
     uint64_t ms = g_ticks;
     char tmp[64];
-    int sz = snprintf(tmp, sizeof(tmp), "%lu.%02lu %lu.%02lu\n",
-                      ms / 1000, (ms / 10) % 100, ms / 1000, (ms / 10) % 100);
+    int sz = snprintf(tmp, sizeof(tmp), "%lu.%02lu %lu.%02lu\n", ms / 1000, (ms / 10) % 100,
+                      ms / 1000, (ms / 10) % 100);
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
@@ -143,8 +149,8 @@ static int64_t proc_loadavg_read(vfs_node_t* n, char* buf, uint64_t len, uint64_
     char tmp[96];
     int runnable = proc_count(PROC_READY) + proc_count(PROC_RUNNING);
     int alive = proc_alive_count();
-    int sz = snprintf(tmp, sizeof(tmp), "0.00 0.00 0.00 %d/%d %d\n",
-                      runnable, alive, proc_last_pid());
+    int sz =
+        snprintf(tmp, sizeof(tmp), "0.00 0.00 0.00 %d/%d %d\n", runnable, alive, proc_last_pid());
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
@@ -153,64 +159,61 @@ static int64_t proc_stat_read(vfs_node_t* n, char* buf, uint64_t len, uint64_t o
     (void) n;
     uint64_t ticks = g_ticks / 10;
     char tmp[512];
-    int sz = snprintf(tmp, sizeof(tmp),
-                      "cpu  %lu 0 %lu %lu 0 0 0 0 0 0\n"
-                      "cpu0 %lu 0 %lu %lu 0 0 0 0 0 0\n"
-                      "intr 0\n"
-                      "ctxt 0\n"
-                      "btime %lu\n"
-                      "processes %d\n"
-                      "procs_running %d\n"
-                      "procs_blocked %d\n",
-                      ticks, ticks / 4, ticks,
-                      ticks, ticks / 4, ticks,
-                      g_epoch_base,
-                      proc_last_pid(),
-                      proc_count(PROC_READY) + proc_count(PROC_RUNNING),
-                      proc_count(PROC_WAITING));
+    int sz =
+        snprintf(tmp, sizeof(tmp),
+                 "cpu  %lu 0 %lu %lu 0 0 0 0 0 0\n"
+                 "cpu0 %lu 0 %lu %lu 0 0 0 0 0 0\n"
+                 "intr 0\n"
+                 "ctxt 0\n"
+                 "btime %lu\n"
+                 "processes %d\n"
+                 "procs_running %d\n"
+                 "procs_blocked %d\n",
+                 ticks, ticks / 4, ticks, ticks, ticks / 4, ticks, g_epoch_base, proc_last_pid(),
+                 proc_count(PROC_READY) + proc_count(PROC_RUNNING), proc_count(PROC_WAITING));
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
 static int64_t proc_mounts_read(vfs_node_t* n, char* buf, uint64_t len, uint64_t off)
 {
     (void) n;
-    static const char mounts[] =
-        "ramfs / ramfs rw 0 0\n"
-        "proc /proc proc rw,nosuid,nodev,noexec 0 0\n"
-        "sysfs /sys sysfs rw,nosuid,nodev,noexec 0 0\n"
-        "devtmpfs /dev devtmpfs rw,nosuid 0 0\n";
+    static const char mounts[] = "ramfs / ramfs rw 0 0\n"
+                                 "proc /proc proc rw,nosuid,nodev,noexec 0 0\n"
+                                 "sysfs /sys sysfs rw,nosuid,nodev,noexec 0 0\n"
+                                 "devtmpfs /dev devtmpfs rw,nosuid 0 0\n";
     return read_buf(buf, len, off, mounts, sizeof(mounts) - 1);
 }
 
 static int64_t proc_filesystems_read(vfs_node_t* n, char* buf, uint64_t len, uint64_t off)
 {
     (void) n;
-    static const char filesystems[] =
-        "nodev\tproc\n"
-        "nodev\tsysfs\n"
-        "nodev\tdevtmpfs\n"
-        "\tramfs\n";
+    static const char filesystems[] = "nodev\tproc\n"
+                                      "nodev\tsysfs\n"
+                                      "nodev\tdevtmpfs\n"
+                                      "\tramfs\n";
     return read_buf(buf, len, off, filesystems, sizeof(filesystems) - 1);
 }
 
 static int64_t proc_devices_read(vfs_node_t* n, char* buf, uint64_t len, uint64_t off)
 {
     (void) n;
-    static const char devices[] =
-        "Character devices:\n"
-        "  1 mem\n"
-        "  4 tty\n"
-        "  5 /dev/tty\n"
-        " 10 misc\n"
-        " 13 input\n"
-        " 29 fb\n\n"
-        "Block devices:\n";
+    static const char devices[] = "Character devices:\n"
+                                  "  1 mem\n"
+                                  "  4 tty\n"
+                                  "  5 /dev/tty\n"
+                                  " 10 misc\n"
+                                  " 13 input\n"
+                                  " 29 fb\n\n"
+                                  "Block devices:\n";
     return read_buf(buf, len, off, devices, sizeof(devices) - 1);
 }
 
 static int64_t proc_kmsg_read(vfs_node_t* n, char* buf, uint64_t len, uint64_t off)
 {
-    (void) n; (void) buf; (void) len; (void) off;
+    (void) n;
+    (void) buf;
+    (void) len;
+    (void) off;
     return 0;
 }
 
@@ -255,7 +258,10 @@ static int64_t proc_self_cmdline_read(vfs_node_t* n, char* buf, uint64_t len, ui
 
 static int64_t proc_self_environ_read(vfs_node_t* n, char* buf, uint64_t len, uint64_t off)
 {
-    (void) n; (void) buf; (void) len; (void) off;
+    (void) n;
+    (void) buf;
+    (void) len;
+    (void) off;
     return 0;
 }
 
@@ -284,12 +290,9 @@ static int64_t proc_self_status_read(vfs_node_t* n, char* buf, uint64_t len, uin
                       "SigBlk:\t%016lx\n"
                       "VmPeak:\t0 kB\n"
                       "VmSize:\t0 kB\n",
-                      proc_name(p), proc_state_char(p),
-                      p->pid, p->pid, p->ppid,
-                      p->uid, p->euid, p->suid, p->fsuid,
-                      p->gid, p->egid, p->sgid, p->fsgid,
-                      VFS_FD_MAX, threads ? threads : 1,
-                      p->pending_sigs, p->sig_mask);
+                      proc_name(p), proc_state_char(p), p->pid, p->pid, p->ppid, p->uid, p->euid,
+                      p->suid, p->fsuid, p->gid, p->egid, p->sgid, p->fsgid, VFS_FD_MAX,
+                      threads ? threads : 1, p->pending_sigs, p->sig_mask);
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
@@ -301,9 +304,9 @@ static int64_t proc_self_stat_read(vfs_node_t* n, char* buf, uint64_t len, uint6
         return 0;
     char tmp[512];
     int sz = snprintf(tmp, sizeof(tmp),
-                      "%u (%s) %c %u %d 0 0 0 0 0 0 0 0 0 0 0 20 0 1 0 %lu 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
-                      p->pid, proc_name(p), proc_state_char(p), p->ppid, p->pgid,
-                      g_ticks / 10);
+                      "%u (%s) %c %u %d 0 0 0 0 0 0 0 0 0 0 0 20 0 1 0 %lu 0 0 0 0 0 0 0 0 0 0 0 0 "
+                      "0 0 0 0 0 0 0\n",
+                      p->pid, proc_name(p), proc_state_char(p), p->ppid, p->pgid, g_ticks / 10);
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
@@ -326,7 +329,7 @@ static int64_t proc_self_maps_read(vfs_node_t* n, char* buf, uint64_t len, uint6
 
 static int64_t proc_self_pagemap_read(vfs_node_t* n, char* buf, uint64_t len, uint64_t off)
 {
-    (void)n;
+    (void) n;
     proc_t* p = g_current_proc;
     if (p && p->euid != 0)
         return -(int64_t) EPERM;
@@ -341,7 +344,7 @@ static int64_t proc_self_pagemap_read(vfs_node_t* n, char* buf, uint64_t len, ui
         memcpy(buf + i * 8, &entry, 8);
         written += 8;
     }
-    return (int64_t)written;
+    return (int64_t) written;
 }
 
 static uint16_t dirent_record_len(const char* name)
@@ -349,8 +352,8 @@ static uint16_t dirent_record_len(const char* name)
     return (uint16_t) ((sizeof(struct linux_dirent64) + strlen(name) + 1 + 7) & ~7U);
 }
 
-static bool emit_dirent(uint8_t* out, uint64_t count, uint64_t* done,
-                        uint64_t ino, int64_t off, uint8_t type, const char* name)
+static bool emit_dirent(uint8_t* out, uint64_t count, uint64_t* done, uint64_t ino, int64_t off,
+                        uint8_t type, const char* name)
 {
     uint16_t rec = dirent_record_len(name);
     if (*done + rec > count)
@@ -383,7 +386,8 @@ bool procfs_getdents64(vfs_node_t* dir, uint64_t* pos, void* buf, uint64_t count
 
     if (idx++ >= skip && emit_dirent(dst, count, &done, dir->ino, (int64_t) idx, DT_DIR, "."))
         emitted++;
-    if (idx++ >= skip && emit_dirent(dst, count, &done, dir->parent ? dir->parent->ino : dir->ino, (int64_t) idx, DT_DIR, ".."))
+    if (idx++ >= skip && emit_dirent(dst, count, &done, dir->parent ? dir->parent->ino : dir->ino,
+                                     (int64_t) idx, DT_DIR, ".."))
         emitted++;
 
     vfs_file_t** fds = vfs_get_fdtable();
@@ -419,7 +423,7 @@ static int parse_fd_link(const char* path)
     while (*s) {
         if (*s < '0' || *s > '9')
             return -1;
-        if (fd >= 102400)  /* prevent overflow - max fd is 1024 */
+        if (fd >= 102400) /* prevent overflow - max fd is 1024 */
             return -1;
         fd = fd * 10 + (*s - '0');
         s++;

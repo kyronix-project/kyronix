@@ -39,24 +39,21 @@
 #define SIG_UNBLOCK 1
 #define SIG_SETMASK 2
 
-typedef struct
-{
+typedef struct {
     uint64_t sa_handler;
     uint64_t sa_flags;
     uint64_t sa_restorer; /* user restorer: calls rt_sigreturn(15) */
     uint64_t sa_mask;     /* extra blocked sigs during handler */
 } k_sigaction_t;
 
-typedef struct
-{
+typedef struct {
     int si_signo;
     int si_errno;
     int si_code;
     char _pad[116];
 } siginfo_t;
 
-typedef struct
-{
+typedef struct {
     uint64_t r8, r9, r10, r11, r12, r13, r14, r15;    /* 64 */
     uint64_t rdi, rsi, rbp, rbx, rdx, rax, rcx, rsp;  /* 64 */
     uint64_t rip;                                     /*  8 */
@@ -67,8 +64,7 @@ typedef struct
     uint64_t _reserved[8];                            /* 64 */
 } mcontext_t;                                         /* 256 bytes */
 
-typedef struct
-{
+typedef struct {
     uint64_t uc_flags;
     uint64_t uc_link;
     uint64_t ss_sp, ss_flags, ss_size;
@@ -76,8 +72,7 @@ typedef struct
     uint64_t uc_sigmask;
 } ucontext_t; /* 304 bytes */
 
-typedef struct
-{
+typedef struct {
     uint64_t pretcode; /* return addr -> restorer */
     siginfo_t info;    /* 128 bytes              */
     ucontext_t uc;     /* 304 bytes              */

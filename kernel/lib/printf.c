@@ -1,6 +1,6 @@
 #include "printf.h"
-#include "string.h"
 #include "../drivers/serial.h"
+#include "string.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -13,8 +13,7 @@ void printf_set_putchar(printf_putchar_fn fn, void* ctx)
     g_putchar_ctx = ctx;
 }
 
-typedef struct
-{
+typedef struct {
     char* buf;
     size_t size;
     size_t pos;
@@ -53,20 +52,15 @@ static void emit_uint(printf_putchar_fn fn, void* ctx, uint64_t val, int base, b
     const char* digits = upper ? "0123456789ABCDEF" : "0123456789abcdef";
     char buf[64];
     int len = 0;
-    if (val == 0)
-    {
+    if (val == 0) {
         buf[len++] = '0';
-    }
-    else
-    {
-        while (val)
-        {
+    } else {
+        while (val) {
             buf[len++] = digits[val % base];
             val /= base;
         }
     }
-    for (int i = 0, j = len - 1; i < j; i++, j--)
-    {
+    for (int i = 0, j = len - 1; i < j; i++, j--) {
         char tmp = buf[i];
         buf[i] = buf[j];
         buf[j] = tmp;
@@ -88,10 +82,8 @@ int vprintf_cb(printf_putchar_fn fn, void* ctx, const char* fmt, va_list ap)
 {
     int count = 0;
 
-    while (*fmt)
-    {
-        if (*fmt != '%')
-        {
+    while (*fmt) {
+        if (*fmt != '%') {
             emit(fn, ctx, *fmt++, &count);
             continue;
         }
@@ -102,8 +94,7 @@ int vprintf_cb(printf_putchar_fn fn, void* ctx, const char* fmt, va_list ap)
         int width = 0;
 
         // flags
-        while (*fmt == '-' || *fmt == '0')
-        {
+        while (*fmt == '-' || *fmt == '0') {
             if (*fmt == '-')
                 left = true;
             if (*fmt == '0')
@@ -119,33 +110,27 @@ int vprintf_cb(printf_putchar_fn fn, void* ctx, const char* fmt, va_list ap)
 
         // lmod
         bool is_long = false;
-        if (*fmt == 'l')
-        {
+        if (*fmt == 'l') {
             is_long = true;
             fmt++;
         }
-        if (*fmt == 'l')
-        {
+        if (*fmt == 'l') {
             fmt++;
         }
 
-        switch (*fmt++)
-        {
+        switch (*fmt++) {
         case 'c':
             emit(fn, ctx, (char) va_arg(ap, int), &count);
             break;
-        case 's':
-        {
+        case 's': {
             const char* s = va_arg(ap, const char*);
             emit_str(fn, ctx, s ? s : "(null)", width, left, &count);
             break;
         }
         case 'd':
-        case 'i':
-        {
+        case 'i': {
             int64_t v = is_long ? va_arg(ap, int64_t) : va_arg(ap, int);
-            if (v < 0)
-            {
+            if (v < 0) {
                 emit(fn, ctx, '-', &count);
                 v = -v;
             }
@@ -168,8 +153,7 @@ int vprintf_cb(printf_putchar_fn fn, void* ctx, const char* fmt, va_list ap)
             emit_uint(fn, ctx, is_long ? va_arg(ap, uint64_t) : va_arg(ap, unsigned), 8, false,
                       width, left, zero_pad, &count);
             break;
-        case 'p':
-        {
+        case 'p': {
             uintptr_t p = (uintptr_t) va_arg(ap, void*);
             emit(fn, ctx, '0', &count);
             emit(fn, ctx, 'x', &count);
