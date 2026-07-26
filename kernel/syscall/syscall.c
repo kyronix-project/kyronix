@@ -23,6 +23,7 @@
 #include "mm/pmm.h"
 #include "mm/shm.h"
 #include "mm/vmm.h"
+#include "mount.h"
 #include "poll.h"
 #include "proc/jail.h"
 #include "proc/proc.h"
@@ -33,7 +34,6 @@
 #include "sig.h"
 #include "socket.h"
 #include "time.h"
-#include "mount.h"
 #include "version.h"
 
 static bool copy_user_path(char *out, const char *in) {
@@ -756,9 +756,8 @@ void syscall_dispatch(syscall_frame_t *f) {
     case 164:
         ret = host_priv() ? 0 : -(int64_t) EPERM;
         break; /* settimeofday */
-    case 165: /* mount(source, target, fstype, flags, data) */
-        ret = sys_mount((const char *) a1, (const char *) a2, (const char *) a3,
-                        a4, (void *) a5);
+    case 165:  /* mount(source, target, fstype, flags, data) */
+        ret = sys_mount((const char *) a1, (const char *) a2, (const char *) a3, a4, (void *) a5);
         break;
     case 166: /* umount2(target, flags) */
         ret = sys_umount2((const char *) a1, (int) a2);

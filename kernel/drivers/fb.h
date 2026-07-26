@@ -22,15 +22,15 @@
 
 /* KFNT (Kyronix Font) header — little-endian */
 typedef struct {
-    char     magic[4];    /* "KFNT" */
-    uint16_t version;     /* 1 */
-    uint16_t width;       /* pixel width per glyph */
-    uint16_t height;      /* pixel height per glyph */
+    char magic[4];    /* "KFNT" */
+    uint16_t version; /* 1 */
+    uint16_t width;   /* pixel width per glyph */
+    uint16_t height;  /* pixel height per glyph */
     uint32_t num_glyphs;
-    uint32_t flags;       /* reserved */
-    uint32_t glyph_off;   /* byte offset to glyph data */
-    uint32_t uni_off;     /* byte offset to unicode lookup table */
-    uint32_t uni_count;   /* number of entries in unicode table */
+    uint32_t flags;     /* reserved */
+    uint32_t glyph_off; /* byte offset to glyph data */
+    uint32_t uni_off;   /* byte offset to unicode lookup table */
+    uint32_t uni_count; /* number of entries in unicode table */
 } __attribute__((packed)) kfnt_header_t;
 
 /* Unicode lookup entry — sorted by codepoint for binary search */
@@ -52,7 +52,7 @@ typedef struct {
     bool bold;
     bool cursor_visible;
     /* VT100 charset state */
-    bool vt100_graphics;  /* whether VT100 Special Graphics is active */
+    bool vt100_graphics; /* whether VT100 Special Graphics is active */
 } fb_t;
 
 extern fb_t g_fb;

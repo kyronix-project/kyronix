@@ -311,7 +311,7 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
         }                                                                                          \
     } while (0)
 
-#define COPY_EXEC_STR(dst_arr, dst_vec, idx, uptr)                                                  \
+#define COPY_EXEC_STR(dst_arr, dst_vec, idx, uptr)                                                 \
     do {                                                                                           \
         size_t _n = exec_str_len(uptr);                                                            \
         if (!_n) {                                                                                 \
