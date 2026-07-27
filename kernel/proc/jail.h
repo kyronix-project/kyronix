@@ -64,7 +64,9 @@ jail_t *jail_find(uint32_t id);
 
 int jail_create(uint32_t parent_jid, const kjail_conf_t *cfg, uint32_t creator_uid);
 void jail_ref(uint32_t jid);                   /* a new proc joined jid (fork inherit) */
-void jail_unref(uint32_t jid);                 /* a proc left jid (exit); frees dying+empty */
+void jail_unref(uint32_t jid);                 /* a live proc left jid */
+void jail_retire(uint32_t jid);                /* kernel policy: destroy after last proc exits */
+void jail_reap(uint32_t jid);                  /* release a dying jail after zombie reap */
 bool jail_can_fork(uint32_t jid);              /* false if jid is dting or at max_procs */
 void jail_enter(struct proc *p, uint32_t jid); /* transition current proc into jid */
 int jail_remove(uint32_t jid, const struct proc *requester);

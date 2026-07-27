@@ -21,6 +21,7 @@
 #include "proc/proc.h"
 #include "proc/signal.h"
 #include "proc/smp.h"
+#include "security/phantom.h"
 
 static void proc_release_fdtable(proc_t *p) {
     if (!p || !p->fds) return;
@@ -34,8 +35,22 @@ static void proc_release_fdtable(proc_t *p) {
     p->fds_refcnt = NULL;
 }
 
-static int64_t sys_fork_at(syscall_frame_t *f, uint64_t child_stack) {
-    proc_t *parent = cur();
+static void proc_discard_embryo(proc_t *p) {
+    if (!p) return;
+    proc_release_fdtable(p);
+    if (p->space && !p->is_thread) vmm_space_free(p->space);
+    proc_kstack_free(p);
+    spin_lock(&g_proctable_lock);
+    memset(p, 0, sizeof(*p));
+    p->state = PROC_UNUSED;
+    proc_clear_used(p);
+    spin_unlock(&g_proctable_lock);
+}
+
+static int64_t sys_fork_at_mode(proc_t *parent, syscall_frame_t *f,
+                                uint64_t child_stack, bool cow,
+                                uint64_t child_rax, bool publish,
+                                proc_t **prepared_child) {
     if (!parent) return -(int64_t) ENOMEM;
     if (!jail_can_fork(parent->jail_id)) return -(int64_t) EAGAIN;
 
@@ -45,7 +60,9 @@ static int64_t sys_fork_at(syscall_frame_t *f, uint64_t child_stack) {
     child->space = vmm_space_new();
     if (!child->space) goto fail_space;
 
-    if (vmm_fork_user(child->space, parent->space) < 0) goto fail_fork;
+    if ((cow ? vmm_fork_user_cow(child->space, parent->space)
+             : vmm_fork_user(child->space, parent->space)) < 0)
+        goto fail_fork;
 
     vfs_copy_fdtable(child->fds, parent->fds);
     if (child->fds_refcnt) *child->fds_refcnt = 1;
@@ -83,7 +100,7 @@ static int64_t sys_fork_at(syscall_frame_t *f, uint64_t child_stack) {
     ksp -= sizeof(syscall_frame_t);
     syscall_frame_t *cf = (syscall_frame_t *) ksp;
     *cf = *f;
-    cf->rax = 0;
+    cf->rax = child_rax;
 
     ksp -= 8;
     *(uint64_t *) ksp = (uint64_t) (uintptr_t) proc_resume_frame;
@@ -92,22 +109,139 @@ static int64_t sys_fork_at(syscall_frame_t *f, uint64_t child_stack) {
     memset(ksp, 0, 6 * 8);
 
     child->kstack_rsp = (uint64_t) ksp;
-    child->state = PROC_READY;
-    proc_set_ready(child);
+    if (prepared_child) *prepared_child = child;
+    if (publish) proc_publish_ready(child);
 
     return (int64_t) child->pid;
 
 fail_fork:
-    vmm_space_free(child->space);
 fail_space:
-    proc_kstack_free(child);
-    kfree(child->fds);
-    child->state = PROC_UNUSED;
-    proc_clear_used(child);
+    proc_discard_embryo(child);
     return -(int64_t) ENOMEM;
 }
 
+static int64_t sys_fork_at(syscall_frame_t *f, uint64_t child_stack) {
+    return sys_fork_at_mode(cur(), f, child_stack, false, 0, true, NULL);
+}
+
 int64_t sys_fork(syscall_frame_t *f) { return sys_fork_at(f, 0); }
+
+static int64_t proc_phantom_commit(proc_t *parent, proc_t *child, int64_t pid,
+                                   uint64_t fault_address, uint64_t fault_error) {
+    char root[128];
+    snprintf(root, sizeof(root), "/tmp/phantom/%u", (uint32_t) pid);
+    char path[192];
+    int jid = -1;
+
+    if (!vfs_mkdir_p("/tmp/phantom", 0755) || !vfs_mkdir_p(root, 0755))
+        goto fail_closed;
+    snprintf(path, sizeof(path), "%s/etc", root);
+    if (!vfs_mkdir_p(path, 0755)) goto fail_closed;
+    snprintf(path, sizeof(path), "%s/etc/ssl", root);
+    if (!vfs_mkdir_p(path, 0755)) goto fail_closed;
+    snprintf(path, sizeof(path), "%s/etc/hostname", root);
+    if (!vfs_create_file(path, 0644, "phantom-sandbox\n", 16)) goto fail_closed;
+    snprintf(path, sizeof(path), "%s/etc/ssl/phantom.key", root);
+    if (!vfs_create_file(path, 0600, "PHANTOM-DUMMY-KEY\n", 18)) goto fail_closed;
+
+    kjail_conf_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.flags = JAILF_ALL;
+    cfg.max_procs = 1;
+    strncpy(cfg.root, root, sizeof(cfg.root) - 1);
+    strncpy(cfg.name, "phantom", sizeof(cfg.name) - 1);
+    jid = jail_create(parent->jail_id, &cfg, parent->euid);
+    if (jid <= 0) goto fail_closed;
+    jail_enter(child, (uint32_t) jid);
+    child->jail_exempt = 0;
+    child->phantom_sandbox = 1;
+    int sanitized = vfs_phantom_sanitize_fdtable(child->fds);
+    if (sanitized < 0) goto fail_closed;
+    if (fault_error &&
+        vmm_phantom_relax_page(child->space, fault_address,
+                               (fault_error & 2u) != 0,
+                               (fault_error & 16u) != 0) < 0)
+        goto fail_closed;
+    uint32_t clone_flags = PHANTOM_CLONEF_COW | PHANTOM_CLONEF_COMMITTED;
+    if (fault_error)
+        clone_flags |= PHANTOM_CLONEF_FAULT | PHANTOM_CLONEF_WORKER;
+    phantom_record_for(parent, PHANTOM_EVENT_CLONE, clone_flags,
+                       (uint64_t) (uint32_t) pid,
+                       (uint64_t) (uint32_t) jid,
+                       fault_error ? "fault sandbox committed"
+                                   : "COW sandbox committed");
+    if (sanitized > 0)
+        phantom_record_for(parent, PHANTOM_EVENT_CLONE,
+                           PHANTOM_CLONEF_FDS_SANITIZED, 0,
+                           (uint64_t) (uint32_t) sanitized,
+                           "inherited descriptors sanitized");
+    proc_publish_ready(child);
+    return pid;
+
+fail_closed:
+    phantom_record_for(parent, PHANTOM_EVENT_CLONE,
+                       PHANTOM_CLONEF_FAILED |
+                           (fault_error ? PHANTOM_CLONEF_WORKER : 0),
+                       (uint64_t) (uint32_t) pid, 0,
+                       "sandbox setup failed closed");
+    if (jid > 0) {
+        jail_unref(child->jail_id);
+        jail_remove((uint32_t) jid, parent);
+    } else {
+        jail_unref(child->jail_id);
+    }
+    snprintf(path, sizeof(path), "%s/etc/ssl/phantom.key", root);
+    vfs_unlink(path);
+    snprintf(path, sizeof(path), "%s/etc/hostname", root);
+    vfs_unlink(path);
+    snprintf(path, sizeof(path), "%s/etc/ssl", root);
+    vfs_rmdir(path);
+    snprintf(path, sizeof(path), "%s/etc", root);
+    vfs_rmdir(path);
+    vfs_rmdir(root);
+    proc_discard_embryo(child);
+    return -(int64_t) ENOMEM;
+}
+
+int64_t proc_phantom_clone(syscall_frame_t *f) {
+    proc_t *parent = cur();
+    if (!parent) return -(int64_t) EPERM;
+    proc_t *child = NULL;
+    int64_t pid =
+        sys_fork_at_mode(parent, f, 0, true, 0, false, &child);
+    if (pid < 0) return pid;
+    return proc_phantom_commit(parent, child, pid, 0, 0);
+}
+
+int64_t proc_phantom_fault_clone(proc_t *source, const cpu_state_t *state,
+                                 uint64_t address) {
+    if (!source || !state) return -(int64_t) EPERM;
+
+    syscall_frame_t placeholder;
+    memset(&placeholder, 0, sizeof(placeholder));
+    proc_t *child = NULL;
+    int64_t pid = sys_fork_at_mode(source, &placeholder, state->rsp, true,
+                                   state->rax, false, &child);
+    if (pid < 0) return pid;
+
+    uint8_t *ksp = child->kstack + KSTACK_SIZE;
+    ksp -= sizeof(cpu_state_t);
+    *(cpu_state_t *) ksp = *state;
+    ksp -= 8;
+    *(uint64_t *) ksp = (uint64_t) (uintptr_t) proc_resume_interrupt_frame;
+    ksp -= 6 * 8;
+    memset(ksp, 0, 6 * 8);
+    child->kstack_rsp = (uint64_t) ksp;
+    child->user_rsp = state->rsp;
+
+    return proc_phantom_commit(source, child, pid, address,
+                               state->error_code);
+}
+
+int64_t sys_phantom_clone(syscall_frame_t *f) {
+    if (!host_priv()) return -(int64_t) EPERM;
+    return proc_phantom_clone(f);
+}
 
 #define CLONE_VM 0x00000100
 #define CLONE_FILES 0x00000400
@@ -190,8 +324,7 @@ int64_t sys_clone(uint64_t flags, uint64_t child_stack, uint32_t *ptid, uint32_t
     ksp -= 6 * 8;
     memset(ksp, 0, 6 * 8);
     child->kstack_rsp = (uint64_t) ksp;
-    child->state = PROC_READY;
-    proc_set_ready(child);
+    proc_publish_ready(child);
 
     log_info("[clone] parent=%u child=%u flags=0x%lx", parent->pid, child->pid, flags);
     return (int64_t) child->pid;
@@ -522,6 +655,25 @@ __attribute__((noreturn)) void proc_do_exit(int code) {
     }
 
     shm_proc_exit(p->pid);
+    if (p->phantom_sandbox) {
+        jail_t *sandbox = jail_find(p->jail_id);
+        if (sandbox) {
+            char root[JAIL_ROOT_MAX];
+            strncpy(root, sandbox->root, sizeof(root) - 1);
+            root[sizeof(root) - 1] = '\0';
+            char path[320];
+            snprintf(path, sizeof(path), "%s/etc/ssl/phantom.key", root);
+            vfs_unlink(path);
+            snprintf(path, sizeof(path), "%s/etc/hostname", root);
+            vfs_unlink(path);
+            snprintf(path, sizeof(path), "%s/etc/ssl", root);
+            vfs_rmdir(path);
+            snprintf(path, sizeof(path), "%s/etc", root);
+            vfs_rmdir(path);
+            vfs_rmdir(root);
+            jail_retire(p->jail_id);
+        }
+    }
     jail_unref(p->jail_id);
     proc_release_fdtable(p);
 
@@ -598,7 +750,7 @@ int64_t sys_wait4(int pid, int *wstatus, int options, void *rusage) {
         bool any_child = false;
         for (int i = 0; i < PROC_MAX; i++) {
             proc_t *c = &g_proctable[i];
-            if (c->state == PROC_UNUSED) continue;
+            if (c->state == PROC_UNUSED || c->state == PROC_EMBRYO) continue;
             bool is_tracee = c->tracer_pid == parent->pid;
             if (c->ppid != parent->pid && !is_tracee) continue;
             if (!jail_can_see(parent, c)) continue;
@@ -608,6 +760,7 @@ int64_t sys_wait4(int pid, int *wstatus, int options, void *rusage) {
             if (c->state == PROC_ZOMBIE) {
                 if (wstatus) *wstatus = (c->exit_code & 0xFF) << 8;
                 uint32_t cpid = c->pid;
+                uint32_t child_jid = c->jail_id;
                 spin_lock(&g_proctable_lock);
                 proc_release_fdtable(c);
                 vmm_space_free(c->space);
@@ -616,6 +769,7 @@ int64_t sys_wait4(int pid, int *wstatus, int options, void *rusage) {
                 c->state = PROC_UNUSED;
                 proc_clear_used(c);
                 spin_unlock(&g_proctable_lock);
+                jail_reap(child_jid);
                 return (int64_t) cpid;
             }
 

@@ -176,6 +176,7 @@ void vfs_cloexec_flush(void);
 void vfs_set_fdtable(vfs_file_t **fds);
 vfs_file_t **vfs_get_fdtable(void);
 void vfs_copy_fdtable(vfs_file_t **dst, vfs_file_t **src);
+int vfs_phantom_sanitize_fdtable(vfs_file_t **fds);
 void vfs_free_fdtable(vfs_file_t **fds);
 
 const char *vfs_copy_user_path(const char *path, char *kbuf);

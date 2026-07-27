@@ -11,6 +11,7 @@
 #define PTE_FLAGS_MASK (VMM_NX | 0x0000000000000FFFULL)
 
 #define VMM_PCD (1ULL << 4)
+#define VMM_COW (1ULL << 9) /* software bit: write fault must copy the page */
 
 #define VMM_KCODE (VMM_PRESENT)
 #define VMM_KDATA (VMM_PRESENT | VMM_WRITE | VMM_NX)
@@ -51,3 +52,6 @@ vmm_space_t *vmm_space_new(void);
 void vmm_space_free(vmm_space_t *sp);
 void vmm_switch(vmm_space_t *sp);
 int vmm_fork_user(vmm_space_t *dst, vmm_space_t *src);
+int vmm_fork_user_cow(vmm_space_t *dst, vmm_space_t *src);
+int vmm_handle_cow_fault(vmm_space_t *sp, uint64_t virt);
+int vmm_phantom_relax_page(vmm_space_t *sp, uint64_t virt, bool write, bool execute);

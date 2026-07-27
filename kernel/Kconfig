@@ -45,5 +45,6 @@ config PHANTOM_FORKING
 	default n
 	help
 	  Add fault/security telemetry hooks for experimental live exploit trapping.
-	  This is audit-only until a policy worker with a real COW/overlay backend is
-	  enabled. Never clone a process from an exception handler.
+	  Quarantine mode can defer supported user protection faults to a bounded
+	  kernel worker that builds a COW process with VFS/network/crypto overlays.
+	  This remains an experimental research mechanism.

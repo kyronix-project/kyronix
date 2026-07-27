@@ -8,20 +8,18 @@ all:
 	$(MAKE) -C login
 	$(MAKE) -C vi
 	$(MAKE) -C kyrobox
-	$(MAKE) -C fetch
-	$(MAKE) -C pipes
 	$(MAKE) -C pkg/client
 	$(MAKE) -C phantom-test
+	$(MAKE) -C jitter-test
 	mkdir -p $(ROOTFS)/bin
 	cp ../build/bin/kyronix-init $(ROOTFS)/bin/init
 	cp ../build/bin/ksh $(ROOTFS)/bin/
 	cp ../build/bin/login $(ROOTFS)/bin/
 	cp ../build/bin/vi $(ROOTFS)/bin/
-	cp ../build/bin/fetch $(ROOTFS)/bin/
 	cp ../build/bin/make $(ROOTFS)/bin/
 	cp ../build/bin/pkg $(ROOTFS)/bin/
 	cp ../build/bin/phantom-test $(ROOTFS)/bin/
-	cp ../build/bin/pipes $(ROOTFS)/usr/bin/
+	cp ../build/bin/jitter-test $(ROOTFS)/bin/
 	ln -sf ksh $(ROOTFS)/bin/sh
 	for app in awk basename cat chgrp chmod chown cksum clear cmp cp cut date dd diff dirname du echo env false \
 	    fdisk find grep head hostname kill killall less link ln ls mkdir mktemp mount mv nc nslookup ping printenv printf ps pwd readlink reboot rm rmdir \
@@ -39,13 +37,8 @@ clean:
 	$(MAKE) -C login clean
 	$(MAKE) -C vi clean
 	$(MAKE) -C kyrobox clean
-	$(MAKE) -C fetch clean
-	$(MAKE) -C pipes clean
 	$(MAKE) -C pkg/client clean
 	$(MAKE) -C phantom-test clean
+	$(MAKE) -C jitter-test clean
 	$(MAKE) -C extras clean
-	# keep st and cwm as blobs
-	for f in $(ROOTFS)/bin/*; do \
-	    case "$$(basename $$f)" in st|cwm) ;; *) rm -f "$$f";; esac; \
-	done
-	rm -f $(ROOTFS)/usr/bin/pipes
+	rm -f $(ROOTFS)/bin/*

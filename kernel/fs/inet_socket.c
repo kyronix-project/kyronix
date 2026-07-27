@@ -72,12 +72,14 @@ typedef struct {
 } udp_dgram_t;
 
 struct net_conn {
+    uint32_t refcount;
     int type;             /* SOCK_STREAM, SOCK_DGRAM, or SOCK_RAW */
     int proto;            /* IP protocol (SOCK_RAW only) */
     struct tcp_pcb *pcb;  /* tcp only */
     struct udp_pcb *upcb; /* udp only */
     struct raw_pcb *rpcb; /* raw only */
     bool is_server;
+    bool phantom_fake;
     bool peer_closed;
     bool error;
     int err_code;
@@ -169,6 +171,7 @@ static err_t on_accept(void *arg, struct tcp_pcb *new_pcb, err_t err) {
     }
 
     child->type = SOCK_STREAM;
+    child->refcount = 1;
     child->pcb = new_pcb;
     tcp_arg(new_pcb, child);
     tcp_recv(new_pcb, on_recv);
@@ -251,6 +254,7 @@ int fd_inet_socket(int type, int flags) {
     net_conn_t *c = (net_conn_t *) kcalloc(1, sizeof(net_conn_t));
     if (!c) return -(int) ENOMEM;
     c->type = sock_type;
+    c->refcount = 1;
     c->proto = flags; /* proto arg passed as flags for SOCK_RAW */
 
     if (sock_type == SOCK_STREAM) {
@@ -337,6 +341,10 @@ int64_t inet_fd_read(net_conn_t *c, void *buf, uint64_t len, int fd_flags) {
 
 int64_t inet_fd_write(net_conn_t *c, const void *buf, uint64_t len) {
     if (!c) return -(int64_t) ENOTCONN;
+    if (c->phantom_fake) {
+        phantom_record(PHANTOM_EVENT_NETWORK, 0, 0, len, "spoofed network write accepted");
+        return (int64_t) len;
+    }
     if (c->type == SOCK_DGRAM || c->type == SOCK_RAW) {
         if (len > DGRAM_MAX_LEN) return -(int64_t) EMSGSIZE;
     } else if (len > DGRAM_MAX_LEN) {
@@ -370,6 +378,7 @@ int64_t inet_fd_write(net_conn_t *c, const void *buf, uint64_t len) {
 
 void inet_conn_close(net_conn_t *c) {
     if (!c) return;
+    if (__atomic_fetch_sub(&c->refcount, 1, __ATOMIC_ACQ_REL) > 1) return;
     if (c->type == SOCK_DGRAM) {
         if (c->upcb) {
             udp_remove(c->upcb);
@@ -392,6 +401,21 @@ void inet_conn_close(net_conn_t *c) {
     kfree(c);
 }
 
+void inet_conn_addref(net_conn_t *c) {
+    if (c) __atomic_fetch_add(&c->refcount, 1, __ATOMIC_RELAXED);
+}
+
+net_conn_t *inet_phantom_clone(net_conn_t *source) {
+    if (!source) return NULL;
+    net_conn_t *fake = (net_conn_t *) kcalloc(1, sizeof(net_conn_t));
+    if (!fake) return NULL;
+    fake->refcount = 1;
+    fake->type = source->type;
+    fake->proto = source->proto;
+    fake->phantom_fake = true;
+    return fake;
+}
+
 bool inet_poll_in(net_conn_t *c) {
     if (!c) return false;
     if (c->type == SOCK_DGRAM || c->type == SOCK_RAW) return c->udq_head != c->udq_tail;
@@ -402,13 +426,20 @@ bool inet_poll_out(net_conn_t *c) {
     if (!c) return false;
     if (c->type == SOCK_DGRAM) return c->upcb != NULL;
     if (c->type == SOCK_RAW) return c->rpcb != NULL;
-    return c->pcb && !c->error;
+    return c->phantom_fake || (c->pcb && !c->error);
 }
 
 int inet_get_type(net_conn_t *c) { return c ? c->type : 1; }
 
 int64_t inet_connect(net_conn_t *c, const struct sockaddr_in *addr) {
     if (!c) return -(int64_t) EBADF;
+
+    if (g_current_proc && g_current_proc->phantom_sandbox) {
+        c->phantom_fake = true;
+        phantom_record(PHANTOM_EVENT_NETWORK, 0, addr->sin_addr, lwip_ntohs(addr->sin_port),
+                       "spoofed network acknowledgment");
+        return 0;
+    }
 
     ip4_addr_t dst;
     dst.addr = addr->sin_addr;

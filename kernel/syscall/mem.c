@@ -7,6 +7,7 @@
 #include "mm/vma.h"
 #include "mm/vmm.h"
 #include "proc/proc.h"
+#include "security/anti_toctou.h"
 
 #define PROT_READ 0x1
 #define PROT_WRITE 0x2
@@ -263,6 +264,7 @@ int64_t sys_mprotect(uint64_t addr, uint64_t len, uint64_t prot) {
     addr = PAGE_ALIGN_DOWN(addr);
     len = PAGE_ALIGN_UP(len);
     if (!user_map_range_ok(addr, len)) return -(int64_t) EINVAL;
+    anti_toctou_observe_memory(addr, ANTI_TOCTOU_MEM_PROTECT);
     bool tracked = vma_range_ok(p->space, addr, len);
     if (!tracked && !vmm_user_range_ok(p->space, addr, len, false)) return -(int64_t) EINVAL;
     if (tracked) {

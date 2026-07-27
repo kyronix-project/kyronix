@@ -214,7 +214,7 @@ int test_ls_grep_pipeline(void) {
         close(p1[0]);
         dup2(p2[1], STDOUT_FILENO);
         close(p2[1]);
-        execlp("grep", "grep", "fetch", NULL);
+        execlp("grep", "grep", "ksh", NULL);
         _exit(127);
     }
 
@@ -231,7 +231,7 @@ int test_ls_grep_pipeline(void) {
     waitpid(pid2, &status, 0);
     waitpid(pid1, &status, 0);
 
-    return strstr(buf, "fetch") != NULL;
+    return strstr(buf, "ksh") != NULL;
 }
 REGISTER_TEST(ls_grep_pipeline, "Infrastructure");
 
