@@ -20,6 +20,7 @@
 #include "lib/printf.h"
 #include "lib/string.h"
 #include "mem.h"
+#include "phantom.h"
 #include "mm/pmm.h"
 #include "mm/shm.h"
 #include "mm/vmm.h"
@@ -1197,6 +1198,12 @@ void syscall_dispatch(syscall_frame_t *f) {
         break;
     case SYS_jail_set_auto:
         ret = sys_jail_set_auto((int) a1);
+        break;
+    case SYS_phantom_mode:
+        ret = sys_phantom_mode((int) a1);
+        break;
+    case SYS_phantom_read:
+        ret = sys_phantom_read((void *) a1, (uint32_t) a2);
         break;
 
     default:

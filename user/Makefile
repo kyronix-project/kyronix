@@ -11,6 +11,7 @@ all:
 	$(MAKE) -C fetch
 	$(MAKE) -C pipes
 	$(MAKE) -C pkg/client
+	$(MAKE) -C phantom-test
 	mkdir -p $(ROOTFS)/bin
 	cp ../build/bin/kyronix-init $(ROOTFS)/bin/init
 	cp ../build/bin/ksh $(ROOTFS)/bin/
@@ -19,6 +20,7 @@ all:
 	cp ../build/bin/fetch $(ROOTFS)/bin/
 	cp ../build/bin/make $(ROOTFS)/bin/
 	cp ../build/bin/pkg $(ROOTFS)/bin/
+	cp ../build/bin/phantom-test $(ROOTFS)/bin/
 	cp ../build/bin/pipes $(ROOTFS)/usr/bin/
 	ln -sf ksh $(ROOTFS)/bin/sh
 	for app in awk basename cat chgrp chmod chown cksum clear cmp cp cut date dd diff dirname du echo env false \
@@ -40,6 +42,7 @@ clean:
 	$(MAKE) -C fetch clean
 	$(MAKE) -C pipes clean
 	$(MAKE) -C pkg/client clean
+	$(MAKE) -C phantom-test clean
 	$(MAKE) -C extras clean
 	# keep st and cwm as blobs
 	for f in $(ROOTFS)/bin/*; do \

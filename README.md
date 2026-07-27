@@ -82,6 +82,11 @@ provided by this kernel: a scheduler-safe deferred fork worker and per-jail
 copy-on-write VFS/network/crypto overlays. Until those exist, this feature is
 telemetry only; it must not be described as containment of an exploit.
 
+The rootfs self-test is `/bin/phantom-test`. Run it as root after boot; it
+enables audit mode, generates controlled VFS/network events, and prints the
+captured ring entries. It exits non-zero if the ring cannot be read or remains
+empty.
+
 ## Build
 
 ### Dependencies
