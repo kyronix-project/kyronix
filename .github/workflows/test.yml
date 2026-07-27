@@ -16,16 +16,10 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl-tools qemu-system-x86 xorriso autoconf automake
-          for ver in 1.18; do
-            [ ! -x "/usr/bin/aclocal-$ver" ] && sudo ln -sf /usr/bin/aclocal "/usr/bin/aclocal-$ver" || true
-            [ ! -x "/usr/bin/automake-$ver" ] && sudo ln -sf /usr/bin/automake "/usr/bin/automake-$ver" || true
-          done
-          touch user/kyrobox/make/aclocal.m4 user/kyrobox/make/configure \
-                user/kyrobox/make/Makefile.in user/kyrobox/make/config.h.in
+          sudo apt-get install -y qemu-system-x86 podman autoconf automake
       
       - name: Build test ISO
-        run: make test-iso -j $(nproc)
+        run: make test-iso -j $(nproc) CRUNTIME=podman
       
       - name: Run tests in QEMU
         run: |
