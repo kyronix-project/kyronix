@@ -9,6 +9,9 @@
 #ifdef CONFIG_KMEMLEAK
 #include "mm/kmemleak.h"
 #endif
+#ifdef CONFIG_PROFILER
+#include "prof/profiler.h"
+#endif
 #include "mm/pmm.h"
 #include "mm/vmm.h"
 #include "proc/jail.h"
@@ -308,8 +311,8 @@ static int64_t proc_mounts_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t
     int mc = mount_count();
     for (int i = 0; i < mc && sz < (int) sizeof(tmp) - 128; i++) {
         if (!mt[i].used) continue;
-        sz += snprintf(tmp + sz, sizeof(tmp) - (uint64_t) sz, "%s %s %s rw 0 0\n",
-                       mt[i].source, mt[i].target, mt[i].fstype);
+        sz += snprintf(tmp + sz, sizeof(tmp) - (uint64_t) sz, "%s %s %s rw 0 0\n", mt[i].source,
+                       mt[i].target, mt[i].fstype);
     }
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
@@ -636,6 +639,53 @@ static int64_t proc_kmemleak_read(vfs_node_t *n, char *buf, uint64_t len, uint64
 }
 #endif
 
+#ifdef CONFIG_PROFILER
+static int64_t proc_profile_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
+    (void) n;
+    static char *prof_buf = NULL;
+    static uint64_t prof_sz = 0;
+
+    if (off == 0) {
+        uint64_t sz = 16384;
+        for (;;) {
+            char *nb = krealloc(prof_buf, sz);
+            if (!nb) {
+                kfree(prof_buf);
+                prof_buf = NULL;
+                prof_sz = 0;
+                return -(int64_t) ENOMEM;
+            }
+            prof_buf = nb;
+            prof_sz = sz;
+            int written = prof_render(prof_buf, prof_sz);
+            if (written < (int) sz - 128) break;
+            if (sz >= 262144) break;
+            sz *= 2;
+        }
+    }
+    if (!prof_buf) return 0;
+    return read_buf(buf, len, off, prof_buf, strlen(prof_buf));
+}
+
+static int64_t proc_profile_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t pos) {
+    (void) n;
+    (void) pos;
+    if (g_current_proc && g_current_proc->euid != 0) return -(int64_t) EPERM;
+    if (!len || !uptr_ok(buf, 1)) return -(int64_t) EFAULT;
+
+    if (len >= 5 && memcmp(buf, "start", 5) == 0) {
+        prof_start();
+    } else if (len >= 4 && memcmp(buf, "stop", 4) == 0) {
+        prof_stop();
+    } else if (len >= 5 && memcmp(buf, "reset", 5) == 0) {
+        prof_reset();
+    } else {
+        return -(int64_t) EINVAL;
+    }
+    return (int64_t) len;
+}
+#endif
+
 static const char *klog_level_name(int level) {
     switch (level) {
     case KLOG_ERROR:
@@ -717,5 +767,10 @@ void procfs_init(void) {
 #ifdef CONFIG_KMEMLEAK
     vfs_node_t *kml = vfs_create_chr("/proc/kmemleak", proc_kmemleak_read, NULL);
     if (kml) kml->mode = S_IFCHR | 0400;
+#endif
+
+#ifdef CONFIG_PROFILER
+    vfs_node_t *pf = vfs_create_chr("/proc/profile", proc_profile_read, proc_profile_write);
+    if (pf) pf->mode = S_IFCHR | 0644;
 #endif
 }

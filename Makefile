@@ -29,7 +29,7 @@ ifdef CRUNTIME
 	fi
 
     _do_container: _build_image
-	@$(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z -w /src \
+	@$(CONTAINER_RUNTIME) run --rm -e TERM -v $(CURDIR):/src:Z -w /src \
 		$(CONTAINER_IMAGE):$(CONTAINER_IMAGE_TAG) bash -c "\
 		rm -f limine/limine && \
 		make -j$$(nproc) INSIDE_CONTAINER=1 $(_GOALS)"

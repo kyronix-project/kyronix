@@ -17,6 +17,9 @@
 #include "proc/signal.h"
 #include "proc/smp.h"
 #include "syscall/syscall.h"
+#ifdef CONFIG_PROFILER
+#include "prof/profiler.h"
+#endif
 
 #define IDT_INT_GATE 0x8E
 #define IDT_TRAP_GATE 0x8F
@@ -264,6 +267,9 @@ void isr_dispatch(cpu_state_t *state) {
         uint8_t irq = (uint8_t) (n - 32);
         if (irq == 0) {
             g_ticks++;
+#ifdef CONFIG_PROFILER
+            prof_tick(state->rip, g_current_proc ? g_current_proc->pid : 0);
+#endif
             fb_cursor_blink_tick(g_ticks);
             proc_reap_pending();
             net_poll();

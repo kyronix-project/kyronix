@@ -31,6 +31,15 @@ config LOG_LEVEL
 	  2=KLOG_INFO    (errors + warnings + info)
 	  3=KLOG_DEBUG   (all messages)
 
+config PROFILER
+	bool "In-kernel sampling profiler (/proc/profile)"
+	default y
+	help
+	  Enable a statistical sampling profiler that collects kernel PC
+	  samples on every timer tick (250 Hz).  Results are exposed via
+	  /proc/profile and can be read from GDB with the samples.gdb
+	  script.  Adds minimal overhead (~2-3 %) when active.
+
 config PHANTOM_FORKING
 	bool "Phantom exploit telemetry hooks"
 	default n

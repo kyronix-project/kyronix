@@ -21,7 +21,7 @@
 
 #define KSH_VERSION "1.0"
 #define MAX_ARGS 32
-#define MAX_LINE 512
+#define MAX_LINE 4096
 #define MAX_HISTORY 64
 #define MAX_JOBS 16
 
@@ -69,6 +69,40 @@ static void expand_env(char *buf, size_t size) {
         }
         if (*p == '$' && quote != '\'') {
             p++;
+            if (*p == '(') {
+                p++;
+                const char *start = p;
+                int depth = 1;
+                while (*p && depth > 0) {
+                    if (*p == '(') depth++;
+                    else if (*p == ')') depth--;
+                    if (depth > 0) p++;
+                }
+                size_t cmd_len = p - start;
+                if (depth == 0 && cmd_len > 0) {
+                    char cmd[MAX_LINE];
+                    size_t cp_len = cmd_len < sizeof(cmd) - 1 ? cmd_len : sizeof(cmd) - 1;
+                    memcpy(cmd, start, cp_len);
+                    cmd[cp_len] = '\0';
+                    FILE *fp = popen(cmd, "r");
+                    if (fp) {
+                        char line[1024];
+                        while (fgets(line, sizeof(line), fp)) {
+                            size_t llen = strlen(line);
+                            while (llen > 0 && (line[llen-1] == '\n' || line[llen-1] == '\r')) {
+                                line[--llen] = '\0';
+                            }
+                            size_t rem = size - pos - 1;
+                            size_t cc = llen < rem ? llen : rem;
+                            memcpy(tmp + pos, line, cc);
+                            pos += cc;
+                        }
+                        pclose(fp);
+                    }
+                    p++;
+                    continue;
+                }
+            }
             char name[64]; int ni = 0, brace = 0;
             if (*p == '{') { brace = 1; p++; }
             while (*p && ni < 63 && (isalnum(*p) || *p == '_')) { name[ni++] = *p++; } name[ni] = '\0';
@@ -1527,6 +1561,123 @@ static int run_if_block(FILE *f, const char *cond_line, int outer_status) {
     return status;
 }
 
+static int run_while_block(FILE *f, const char *cond_line, int outer_status) {
+    const char *cp = cond_line;
+    while (*cp && !isspace((unsigned char) *cp)) cp++;
+    while (*cp && isspace((unsigned char) *cp)) cp++;
+    char cond[MAX_LINE];
+    strncpy(cond, cp, sizeof(cond) - 1);
+    cond[sizeof(cond) - 1] = '\0';
+    char *semi = strstr(cond, "; do");
+    if (!semi) semi = strstr(cond, ";do");
+    if (semi) *semi = '\0';
+    else {
+        char *doe = strstr(cond, " do");
+        if (doe) *doe = '\0';
+    }
+    int cl = (int) strlen(cond);
+    while (cl > 0 && isspace((unsigned char) cond[cl - 1])) cond[--cl] = '\0';
+
+    int status = outer_status;
+    int depth = 1;
+    char body_lines[32][MAX_LINE];
+    int body_count = 0;
+    char line[MAX_LINE];
+
+    while (fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\n")] = '\0';
+        char *p = line;
+        while (isspace((unsigned char) *p)) p++;
+        if (*p == '\0' || *p == '#') continue;
+        if (strncmp(p, "while ", 6) == 0 || strcmp(p, "while") == 0) depth++;
+        else if (strncmp(p, "for ", 4) == 0) depth++;
+        else if (strcmp(p, "done") == 0) {
+            if (--depth == 0) break;
+        }
+        if (depth == 1 && body_count < 32) {
+            snprintf(body_lines[body_count], MAX_LINE, "%s", p);
+            body_count++;
+        }
+    }
+
+    int cond_status = run_line_logic(cond);
+    while (cond_status == 0) {
+        for (int i = 0; i < body_count; i++) {
+            status = run_line_logic(body_lines[i]);
+        }
+        cond_status = run_line_logic(cond);
+    }
+    return status;
+}
+
+static int run_for_block(FILE *f, const char *for_line, int outer_status) {
+    const char *cp = for_line;
+    while (*cp && !isspace((unsigned char) *cp)) cp++;
+    while (*cp && isspace((unsigned char) *cp)) cp++;
+    char var[64];
+    int vi = 0;
+    while (*cp && !isspace((unsigned char) *cp) && vi < 63) var[vi++] = *cp++;
+    var[vi] = '\0';
+    while (*cp && isspace((unsigned char) *cp)) cp++;
+
+    char items_str[MAX_LINE];
+    strncpy(items_str, cp, sizeof(items_str) - 1);
+    items_str[sizeof(items_str) - 1] = '\0';
+    char *semi = strstr(items_str, "; do");
+    if (!semi) semi = strstr(items_str, ";do");
+    if (semi) *semi = '\0';
+    else {
+        char *doe = strstr(items_str, " do");
+        if (doe) *doe = '\0';
+    }
+    int cl = (int) strlen(items_str);
+    while (cl > 0 && isspace((unsigned char) items_str[cl - 1])) items_str[--cl] = '\0';
+
+    int status = outer_status;
+    int depth = 1;
+    char body_lines[32][MAX_LINE];
+    int body_count = 0;
+    char line[MAX_LINE];
+
+    while (fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\n")] = '\0';
+        char *p = line;
+        while (isspace((unsigned char) *p)) p++;
+        if (*p == '\0' || *p == '#') continue;
+        if (strncmp(p, "while ", 6) == 0 || strcmp(p, "while") == 0) depth++;
+        else if (strncmp(p, "for ", 4) == 0) depth++;
+        else if (strcmp(p, "done") == 0) {
+            if (--depth == 0) break;
+        }
+        if (depth == 1 && body_count < 32) {
+            snprintf(body_lines[body_count], MAX_LINE, "%s", p);
+            body_count++;
+        }
+    }
+
+    if (items_str[0] == '\0') return status;
+    if (items_str[0] == '$') {
+        const char *val = getenv(items_str + 1);
+        if (!val) return status;
+        strncpy(items_str, val, sizeof(items_str) - 1);
+        items_str[sizeof(items_str) - 1] = '\0';
+    }
+
+    char *items_copy = strdup(items_str);
+    if (!items_copy) return 1;
+    char *save = NULL;
+    char *tok = strtok_r(items_copy, " \t", &save);
+    while (tok) {
+        setenv(var, tok, 1);
+        for (int i = 0; i < body_count; i++) {
+            status = run_line_logic(body_lines[i]);
+        }
+        tok = strtok_r(NULL, " \t", &save);
+    }
+    free(items_copy);
+    return status;
+}
+
 static int run_script(const char *path, int script_argc, char **script_argv) {
     g_npositional = 0;
     for (int i = 0; i < script_argc && i < MAX_POSITIONAL; i++)
@@ -1577,6 +1728,20 @@ static int run_script(const char *path, int script_argc, char **script_argv) {
             continue;
         }
 
+        /* while/do/done block */
+        if (strncmp(p, "while ", 6) == 0 || strcmp(p, "while") == 0) {
+            status = run_while_block(file, p, status);
+            logical[0] = '\0';
+            continue;
+        }
+
+        /* for/do/done block */
+        if (strncmp(p, "for ", 4) == 0) {
+            status = run_for_block(file, p, status);
+            logical[0] = '\0';
+            continue;
+        }
+
         char line_copy[MAX_LINE];
         strncpy(line_copy, p, sizeof(line_copy) - 1);
         line_copy[sizeof(line_copy) - 1] = '\0';
@@ -1603,7 +1768,7 @@ int main(int argc, char **argv) {
         setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin", 1);
 
     if (!getenv("PS1"))
-        setenv("PS1", "\\w \\$ ", 0);
+        setenv("PS1", "[\\u@kx: \\w] \\$ ", 0);
 
     if (getcwd(shell_pwd, sizeof(shell_pwd)) == NULL) {
         const char *env = getenv("PWD");
@@ -1620,7 +1785,7 @@ int main(int argc, char **argv) {
     if (argc > 2 && strcmp(argv[1], "-c") == 0) return run_command_string(argv[2]);
 
     if (argc > 1 && strcmp(argv[1], "--version") == 0) {
-        fprintf(stderr, "ksh (AT&T Research) %s\n", KSH_VERSION);
+        fprintf(stderr, "ksh (Kronix Shell) %s\n", KSH_VERSION);
         return 0;
     }
 
