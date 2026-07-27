@@ -956,9 +956,36 @@ void vfs_copy_fdtable(vfs_file_t **dst, vfs_file_t **src) {
             /* child doesnt own a listening sockets lifecycle */
             if (f->node && f->node->type == VFS_TYPE_SOCK) f->node = NULL;
             file_addref(f); /* bump node/pipe ref-counts */
+            if (f->inet) inet_conn_addref(f->inet);
         }
         dst[i] = f;
     }
+}
+
+int vfs_phantom_sanitize_fdtable(vfs_file_t **fds) {
+    if (!fds) return -1;
+    int sanitized = 0;
+    for (int i = 3; i < VFS_FD_MAX; i++) {
+        vfs_file_t *f = fds[i];
+        if (!file_valid(f)) continue;
+        if (f->inet) {
+            net_conn_t *fake = inet_phantom_clone(f->inet);
+            inet_conn_close(f->inet); /* drop only the child's inherited reference */
+            f->inet = fake;
+            if (fake) {
+                sanitized++;
+                continue;
+            }
+        }
+        /* eventfd/timerfd state has no independent refcount yet. Detach it so
+         * destroying the copied wrapper cannot free the parent's state. */
+        f->efd = NULL;
+        f->tfd = NULL;
+        file_close(f);
+        fds[i] = NULL;
+        sanitized++;
+    }
+    return sanitized;
 }
 
 void vfs_free_fdtable(vfs_file_t **fds) {

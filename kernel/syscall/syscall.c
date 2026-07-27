@@ -116,7 +116,7 @@ static int64_t sys_prctl(int op, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t
 }
 
 void syscall_dispatch(syscall_frame_t *f) {
-    phantom_safe_point();
+    phantom_safe_point(f);
     uint64_t nr = f->rax;
     uint64_t a1 = f->rdi, a2 = f->rsi, a3 = f->rdx;
     uint64_t a4 = f->r10, a5 = f->r8, a6 = f->r9;
@@ -1204,6 +1204,12 @@ void syscall_dispatch(syscall_frame_t *f) {
         break;
     case SYS_phantom_read:
         ret = sys_phantom_read((void *) a1, (uint32_t) a2);
+        break;
+    case SYS_phantom_clone:
+        ret = sys_phantom_clone(f);
+        break;
+    case SYS_phantom_control:
+        ret = sys_phantom_control((uint32_t) a1, (uint32_t) a2);
         break;
 
     default:

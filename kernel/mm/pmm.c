@@ -29,6 +29,21 @@ static uint64_t g_alloc_total;
 static uint64_t g_free_total;
 static uint64_t g_first_frame;
 
+/* Kyronix currently boots with a bounded physical address space. Keep the
+ * accounting out of the allocator metadata so COW can be introduced without
+ * changing llfree's layout. */
+#define PMM_REF_MAX_FRAMES (1u << 20) /* 4 GiB at 4 KiB pages */
+static uint16_t g_frame_refs[PMM_REF_MAX_FRAMES];
+
+static inline uint32_t pmm_ref_index(void *phys) {
+    return (uint32_t) (((uint64_t) phys >> PAGE_SHIFT) - g_first_frame);
+}
+
+static inline void pmm_ref_set(void *phys) {
+    uint32_t i = pmm_ref_index(phys);
+    if (i < PMM_REF_MAX_FRAMES) __atomic_store_n(&g_frame_refs[i], 1, __ATOMIC_RELAXED);
+}
+
 #define ZPOOL_SIZE 32
 static void *g_zpool[ZPOOL_SIZE];
 static uint64_t g_zpool_top;
@@ -120,6 +135,7 @@ void pmm_init(struct limine_memmap_response *mmap, uint64_t hhdm_offset, uint64_
     }
 
     g_free_frames = managed_frames;
+    memset(g_frame_refs, 0, sizeof(g_frame_refs));
 
     log_info("PMM: %llu MiB free  (%lu pages, %lu total)",
              (unsigned long long) (g_free_frames * PAGE_SIZE) >> 20, g_free_frames, g_total_frames);
@@ -141,6 +157,7 @@ void *pmm_alloc(void) {
     g_free_frames--;
     g_alloc_total++;
     void *phys = (void *) ((r.frame.value + g_first_frame) << PAGE_SHIFT);
+    pmm_ref_set(phys);
 #ifdef CONFIG_KMEMLEAK
     kmemleak_track_page(phys);
 #endif
@@ -154,6 +171,7 @@ void *pmm_alloc_zeroed(void) {
         g_zpool[g_zpool_top] = NULL;
         g_free_frames--;
         g_alloc_total++;
+        pmm_ref_set(phys);
 #ifdef CONFIG_KMEMLEAK
         kmemleak_track_page(phys);
 #endif
@@ -183,11 +201,28 @@ void *pmm_alloc_contiguous(uint64_t n) {
     for (uint64_t i = 0; i < n; i++)
         kmemleak_track_page((void *) ((uint64_t) phys + i * PAGE_SIZE));
 #endif
+    for (uint64_t i = 0; i < (1ULL << order); i++)
+        pmm_ref_set((void *) ((uint64_t) phys + i * PAGE_SIZE));
     return phys;
+}
+
+void pmm_retain(void *phys) {
+    if (!phys) return;
+    uint32_t i = pmm_ref_index(phys);
+    if (i < PMM_REF_MAX_FRAMES) __atomic_fetch_add(&g_frame_refs[i], 1, __ATOMIC_RELAXED);
 }
 
 void pmm_free(void *phys) {
     if (!phys) return;
+    uint32_t idx = pmm_ref_index(phys);
+    if (idx < PMM_REF_MAX_FRAMES) {
+        uint16_t old = __atomic_load_n(&g_frame_refs[idx], __ATOMIC_RELAXED);
+        if (old > 1) {
+            __atomic_fetch_sub(&g_frame_refs[idx], 1, __ATOMIC_RELAXED);
+            return;
+        }
+        __atomic_store_n(&g_frame_refs[idx], 0, __ATOMIC_RELAXED);
+    }
     uint64_t frame = ((uint64_t) phys >> PAGE_SHIFT) - g_first_frame;
     llfree_request_t req = { .order = 0, .class = 0, .local = ll_some(pmm_cpu_id()) };
     llfree_result_t r = llfree_put(&g_llfree, frame_id(frame), req);

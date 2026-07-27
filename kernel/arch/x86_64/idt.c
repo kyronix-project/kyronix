@@ -132,7 +132,12 @@ static bool page_fault_stack_growth_ok(cpu_state_t *state, uint64_t page, bool e
 static page_fault_result_t handle_user_page_fault(cpu_state_t *state) {
     if (!g_current_proc || !g_current_proc->space) return PF_SIGSEGV;
 
-    if (state->error_code & 0x1) return PF_SIGSEGV; /* protection violation */
+    if (state->error_code & 0x1) {
+        if ((state->error_code & 0x2) &&
+            vmm_handle_cow_fault(g_current_proc->space, read_cr2()) > 0)
+            return PF_HANDLED;
+        return PF_SIGSEGV; /* protection violation */
+    }
 
     uint64_t cr2 = read_cr2();
     uint64_t page = cr2 & ~0xFFFULL;
@@ -203,7 +208,9 @@ void isr_dispatch(cpu_state_t *state) {
             if (n == 14) {
                 page_fault_result_t pf = handle_user_page_fault(state);
                 if (pf == PF_HANDLED) return;
-                phantom_fault_candidate(state, read_cr2());
+                uint64_t fault_address = read_cr2();
+                bool candidate = phantom_fault_candidate(state, fault_address);
+                if (candidate && phantom_handle_fault(state, fault_address)) return;
                 sig = (pf == PF_SIGBUS) ? SIGBUS : SIGSEGV;
             }
 

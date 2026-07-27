@@ -388,6 +388,7 @@ void kmain(void) {
         }
     }
     smp_boot_aps();
+    kstatus("Starting phantom fault worker", phantom_worker_start());
 
     {
         uint8_t seed[32];
