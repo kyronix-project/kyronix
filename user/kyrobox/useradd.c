@@ -45,33 +45,94 @@ static int next_gid(void) {
     return gid;
 }
 
+static int resolve_gid(const char *name) {
+    FILE *fp = fopen("/etc/group", "r");
+    if (!fp) return -1;
+    char line[512];
+    while (fgets(line, sizeof(line), fp)) {
+        char *nl = strchr(line, '\n');
+        if (nl) *nl = '\0';
+        char gname[64] = "", pass[64] = "", gid_s[32] = "";
+        sscanf(line, "%63[^:]:%63[^:]:%31[^:]", gname, pass, gid_s);
+        if (strcmp(gname, name) == 0) {
+            fclose(fp);
+            return atoi(gid_s);
+        }
+    }
+    fclose(fp);
+    return -1;
+}
+
+static void add_to_group(const char *gname, const char *user) {
+    char tmp[PATH_MAX];
+    snprintf(tmp, sizeof(tmp), "/etc/group.tmp");
+    FILE *fin = fopen("/etc/group", "r");
+    FILE *fout = fopen(tmp, "w");
+    if (!fin || !fout) { if (fin) fclose(fin); if (fout) fclose(fout); return; }
+    char line[512];
+    while (fgets(line, sizeof(line), fin)) {
+        char *nl = strchr(line, '\n');
+        if (nl) *nl = '\0';
+        char name[64] = "", pass[64] = "", gid_s[32] = "", members[256] = "";
+        sscanf(line, "%63[^:]:%63[^:]:%31[^:]:%255s", name, pass, gid_s, members);
+        if (strcmp(name, gname) == 0) {
+            if (strstr(members, user)) {
+                fprintf(fout, "%s\n", line);
+            } else {
+                if (*members)
+                    fprintf(fout, "%s:x:%s:%s,%s\n", name, gid_s, members, user);
+                else
+                    fprintf(fout, "%s:x:%s:%s\n", name, gid_s, user);
+            }
+        } else {
+            fprintf(fout, "%s\n", line);
+        }
+    }
+    fclose(fin);
+    fflush(fout);
+    fsync(fileno(fout));
+    fclose(fout);
+    rename(tmp, "/etc/group");
+}
+
 int main(int argc, char **argv) {
     kx_prog = "useradd";
 
     const char *comment = "";
     const char *home = NULL;
     const char *shell = "/bin/ksh";
-    const char *password = "*";
+    const char *password = NULL;
     const char *supgroups = NULL;
     int create_home = 0;
     int uid = -1;
     int gid = -1;
+    int has_gid = 0;
 
     int i;
-    for (i = 1; i < argc && argv[i][0] == '-'; i++) {
-        if (strcmp(argv[i], "-m") == 0) create_home = 1;
-        else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) comment = argv[++i];
-        else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) home = argv[++i];
-        else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) shell = argv[++i];
-        else if (strcmp(argv[i], "-u") == 0 && i + 1 < argc) uid = atoi(argv[++i]);
-        else if (strcmp(argv[i], "-g") == 0 && i + 1 < argc) gid = atoi(argv[++i]);
-        else if (strcmp(argv[i], "-G") == 0 && i + 1 < argc) supgroups = argv[++i];
-        else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) password = argv[++i];
-        else usage();
+    const char *login = NULL;
+    for (i = 1; i < argc; i++) {
+        if (argv[i][0] == '-') {
+            if (strcmp(argv[i], "-m") == 0) create_home = 1;
+            else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) comment = argv[++i];
+            else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) home = argv[++i];
+            else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) shell = argv[++i];
+            else if (strcmp(argv[i], "-u") == 0 && i + 1 < argc) uid = atoi(argv[++i]);
+            else if (strcmp(argv[i], "-g") == 0 && i + 1 < argc) {
+                i++;
+                has_gid = 1;
+                int g = resolve_gid(argv[i]);
+                if (g >= 0) gid = g;
+                else gid = atoi(argv[i]);
+            }
+            else if (strcmp(argv[i], "-G") == 0 && i + 1 < argc) supgroups = argv[++i];
+            else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) password = argv[++i];
+            else usage();
+        } else {
+            login = argv[i];
+        }
     }
 
-    if (i >= argc) usage();
-    const char *login = argv[i];
+    if (!login) usage();
 
     {
         FILE *check = fopen("/etc/passwd", "r");
@@ -107,17 +168,29 @@ int main(int argc, char **argv) {
     FILE *fs = fopen("/etc/shadow", "a");
     if (!fs) { kx_warn("/etc/shadow"); exit(1); }
     long today = (long)(time(NULL) / 86400);
-    fprintf(fs, "%s:%s:%ld:0:99999:7:::\n", login, password, today);
+    if (password) {
+        char salt[64];
+        snprintf(salt, sizeof(salt), "$6$%ld$", today);
+        const char *hash = crypt(password, salt);
+        fprintf(fs, "%s:%s:%ld:0:99999:7:::\n", login, hash ? hash : password, today);
+    } else {
+        fprintf(fs, "%s::%ld:0:99999:7:::\n", login, today);
+    }
     fflush(fs);
     fsync(fileno(fs));
     fclose(fs);
 
-    FILE *fg = fopen("/etc/group", "a");
-    if (!fg) { kx_warn("/etc/group"); exit(1); }
-    fprintf(fg, "%s:x:%d:\n", login, gid);
-    fflush(fg);
-    fsync(fileno(fg));
-    fclose(fg);
+    if (!has_gid) {
+        FILE *fg = fopen("/etc/group", "a");
+        if (!fg) { kx_warn("/etc/group"); exit(1); }
+        fprintf(fg, "%s:x:%d:\n", login, gid);
+        fflush(fg);
+        fsync(fileno(fg));
+        fclose(fg);
+    }
+
+    const char *to_add[64];
+    int n_to_add = 0;
 
     if (supgroups) {
         char buf[1024];
@@ -125,48 +198,38 @@ int main(int argc, char **argv) {
         buf[sizeof(buf) - 1] = '\0';
         char *save = NULL;
         char *tok = strtok_r(buf, ",", &save);
-        while (tok) {
-            char tmp[PATH_MAX];
-            snprintf(tmp, sizeof(tmp), "/etc/group.tmp");
-            FILE *fin = fopen("/etc/group", "r");
-            FILE *fout = fopen(tmp, "w");
-            if (fin && fout) {
-                char line[512];
-                while (fgets(line, sizeof(line), fin)) {
-                    char *nl = strchr(line, '\n');
-                    if (nl) *nl = '\0';
-                    char name[64] = "", pass[64] = "", gid_s[32] = "", members[256] = "";
-                    sscanf(line, "%63[^:]:%63[^:]:%31[^:]:%255s", name, pass, gid_s, members);
-                    if (strcmp(name, tok) == 0) {
-                        if (strstr(members, login)) {
-                            fprintf(fout, "%s\n", line);
-                        } else {
-                            if (*members)
-                                fprintf(fout, "%s:x:%s:%s,%s\n", name, gid_s, members, login);
-                            else
-                                fprintf(fout, "%s:x:%s:%s\n", name, gid_s, login);
-                        }
-                    } else {
-                        fprintf(fout, "%s\n", line);
-                    }
-                }
-                fclose(fin);
-                fflush(fout);
-                fsync(fileno(fout));
-                fclose(fout);
-                rename(tmp, "/etc/group");
-            } else {
-                if (fin) fclose(fin);
-                if (fout) fclose(fout);
-            }
+        while (tok && n_to_add < 63) {
+            to_add[n_to_add++] = tok;
             tok = strtok_r(NULL, ",", &save);
         }
     }
 
+    for (int g = 0; g < n_to_add; g++)
+        add_to_group(to_add[g], login);
+
+    if (n_to_add == 0) {
+        FILE *fg = fopen("/etc/group", "r");
+        if (fg) {
+            char line[512];
+            while (fgets(line, sizeof(line), fg)) {
+                char gname[64] = "", pass[64] = "", gid_s[32] = "";
+                sscanf(line, "%63[^:]:%63[^:]:%31[^:]", gname, pass, gid_s);
+                if (atoi(gid_s) == gid && strcmp(gname, login) != 0) {
+                    add_to_group(gname, login);
+                    break;
+                }
+            }
+            fclose(fg);
+        }
+    }
+
     if (create_home) {
-        if (mkdir(home, 0755) < 0 && errno != EEXIST)
-            kx_warn(home);
-        else {
+        int home_ok = (mkdir(home, 0755) == 0 || errno == EEXIST);
+        if (!home_ok) {
+            mkdir("/home", 0755);
+            home_ok = (mkdir(home, 0755) == 0 || errno == EEXIST);
+        }
+        if (home_ok) {
             char dst[PATH_MAX * 2];
             snprintf(dst, sizeof(dst), "%s/.profile", home);
             FILE *fin = fopen("/etc/skel/.profile", "r");
@@ -183,6 +246,8 @@ int main(int argc, char **argv) {
                 }
                 fclose(fin);
             }
+        } else {
+            kx_warn(home);
         }
     }
 

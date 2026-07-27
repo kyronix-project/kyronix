@@ -1,6 +1,8 @@
+#define _DEFAULT_SOURCE
 #define _XOPEN_SOURCE 700
 #include <ctype.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <pwd.h>
 #include <shadow.h>
 #include <stdio.h>
@@ -158,8 +160,11 @@ int main(void) {
 
         if (chdir(pw->pw_dir) < 0) chdir("/");
 
+        initgroups(pw->pw_name, pw->pw_gid);
         setgid(pw->pw_gid);
         setuid(pw->pw_uid);
         execlp(pw->pw_shell, pw->pw_shell, NULL);
         putstr("login: unable to start shell\n");
-       
+        return 1;
+    }
+}

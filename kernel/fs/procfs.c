@@ -390,18 +390,28 @@ static int64_t proc_hostname_read(vfs_node_t *n, char *buf, uint64_t len, uint64
     return read_buf(buf, len, off, s, sizeof(s) - 1);
 }
 
+static proc_t *node_to_proc(vfs_node_t *n) {
+    if (n->fs_private) {
+        uint32_t pid = (uint32_t)(uintptr_t) n->fs_private;
+        return proc_find(pid);
+    }
+    return g_current_proc;
+}
+
 static int64_t proc_self_exe_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
-    (void) n;
-    proc_t *p = g_current_proc;
-    if (!p || !p->exe_path[0]) return 0;
-    return read_buf(buf, len, off, p->exe_path, strlen(p->exe_path));
+    proc_t *p = node_to_proc(n);
+    if (!p || !p->exe_path[0]) { if (p && n->fs_private) proc_unref(p); return 0; }
+    int64_t r = read_buf(buf, len, off, p->exe_path, strlen(p->exe_path));
+    if (n->fs_private) proc_unref(p);
+    return r;
 }
 
 static int64_t proc_self_cmdline_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
-    (void) n;
-    proc_t *p = g_current_proc;
-    if (!p || !p->exe_path[0]) return 0;
-    return read_buf(buf, len, off, p->exe_path, strlen(p->exe_path) + 1);
+    proc_t *p = node_to_proc(n);
+    if (!p || !p->exe_path[0]) { if (p && n->fs_private) proc_unref(p); return 0; }
+    int64_t r = read_buf(buf, len, off, p->exe_path, strlen(p->exe_path) + 1);
+    if (n->fs_private) proc_unref(p);
+    return r;
 }
 
 static int64_t proc_self_environ_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
@@ -413,8 +423,7 @@ static int64_t proc_self_environ_read(vfs_node_t *n, char *buf, uint64_t len, ui
 }
 
 static int64_t proc_self_status_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
-    (void) n;
-    proc_t *p = g_current_proc;
+    proc_t *p = node_to_proc(n);
     if (!p) return 0;
     char tmp[1024];
     int threads = 0;
@@ -441,24 +450,24 @@ static int64_t proc_self_status_read(vfs_node_t *n, char *buf, uint64_t len, uin
         p->fsuid, p->gid, p->egid, p->sgid, p->fsgid, VFS_FD_MAX, threads ? threads : 1,
         p->pending_sigs, p->sig_mask, (unsigned long) ((p->pages_alloc * PAGE_SIZE) / 1024),
         (long) ((int64_t) (p->pages_alloc - p->pages_freed) * (int64_t) (PAGE_SIZE / 1024)));
+    if (n->fs_private) proc_unref(p);
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
 static int64_t proc_self_stat_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
-    (void) n;
-    proc_t *p = g_current_proc;
+    proc_t *p = node_to_proc(n);
     if (!p) return 0;
     char tmp[512];
     int sz = snprintf(tmp, sizeof(tmp),
                       "%u (%s) %c %u %d 0 0 0 0 0 0 0 0 0 0 0 20 0 1 0 %lu 0 0 0 0 0 0 0 0 0 0 0 0 "
                       "0 0 0 0 0 0 0\n",
                       p->pid, proc_name(p), proc_state_char(p), p->ppid, p->pgid, g_ticks / 10);
+    if (n->fs_private) proc_unref(p);
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
 static int64_t proc_self_maps_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
-    (void) n;
-    proc_t *p = g_current_proc;
+    proc_t *p = node_to_proc(n);
     if (!p) return 0;
     char tmp[768];
     const char *exe = p->exe_path[0] ? p->exe_path : "";
@@ -468,14 +477,14 @@ static int64_t proc_self_maps_read(vfs_node_t *n, char *buf, uint64_t len, uint6
                       "xxxxxxxx-xxxxxxxx rw-p 00000000 00:00 0 [heap]\n"
                       "yyyyyyyy-yyyyyyyy rw-p 00000000 00:00 0 [stack]\n",
                       exe);
+    if (n->fs_private) proc_unref(p);
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
 static int64_t proc_self_pagemap_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
-    (void) n;
-    proc_t *p = g_current_proc;
-    if (p && p->euid != 0) return -(int64_t) EPERM;
-    if (!p || !p->space || len < 8) return 0;
+    proc_t *p = node_to_proc(n);
+    if (p && p->euid != 0) { if (n->fs_private) proc_unref(p); return -(int64_t) EPERM; }
+    if (!p || !p->space || len < 8) { if (p && n->fs_private) proc_unref(p); return 0; }
     uint64_t nentries = len / 8;
     uint64_t written = 0;
     for (uint64_t i = 0; i < nentries; i++) {
@@ -485,6 +494,7 @@ static int64_t proc_self_pagemap_read(vfs_node_t *n, char *buf, uint64_t len, ui
         memcpy(buf + i * 8, &entry, 8);
         written += 8;
     }
+    if (n->fs_private) proc_unref(p);
     return (int64_t) written;
 }
 
@@ -580,6 +590,28 @@ bool procfs_readlink(const char *path, char *buf, uint64_t bufsz, int *out) {
         return true;
     }
 
+    if (strncmp(path, "/proc/", 6) == 0 && strcmp(path + strlen(path) - 4, "/exe") == 0) {
+        const char *start = path + 6;
+        const char *end = path + strlen(path) - 4;
+        uint32_t pid = 0;
+        bool valid = start < end;
+        for (const char *c = start; c < end && valid; c++) {
+            if (*c < '0' || *c > '9') { valid = false; break; }
+            pid = pid * 10 + (uint32_t) (*c - '0');
+        }
+        if (valid && pid > 0) {
+            proc_t *p = proc_find(pid);
+            if (!p) { *out = -(int) ENOENT; return true; }
+            if (!p->exe_path[0]) { proc_unref(p); *out = -(int) ENOENT; return true; }
+            uint64_t n = strlen(p->exe_path);
+            if (n > bufsz) n = bufsz;
+            memcpy(buf, p->exe_path, n);
+            *out = (int) n;
+            proc_unref(p);
+            return true;
+        }
+    }
+
     int fd = parse_fd_link(path);
     if (fd < 0) return false;
     vfs_file_t *f = fd_get_file(fd);
@@ -602,6 +634,58 @@ bool procfs_readlink(const char *path, char *buf, uint64_t bufsz, int *out) {
     if (n > bufsz) n = bufsz;
     memcpy(buf, tmp, n);
     *out = (int) n;
+    return true;
+}
+
+bool procfs_try_pid_dir(vfs_node_t *parent, const char *name) {
+    if (!parent || !name || !*name) return false;
+
+    /* name must be purely numeric */
+    for (const char *c = name; *c; c++)
+        if (*c < '0' || *c > '9') return false;
+
+    uint32_t pid = 0;
+    for (const char *c = name; *c; c++)
+        pid = pid * 10 + (uint32_t) (*c - '0');
+
+    proc_t *p = proc_find(pid);
+    if (!p) return false;
+    proc_unref(p);
+
+    /* create /proc/<N>/ directory */
+    char dir_path[128];
+    snprintf(dir_path, sizeof(dir_path), "/proc/%s", name);
+    vfs_node_t *dir = vfs_mkdir_p(dir_path, 0555);
+    if (!dir) return false;
+
+    /* create stat, status, cmdline, exe inside the directory */
+    void *pid_tag = (void *) (uintptr_t) pid;
+
+    char stat_path[160];
+    snprintf(stat_path, sizeof(stat_path), "%s/stat", dir_path);
+    vfs_node_t *stat = vfs_create_chr(stat_path, proc_self_stat_read, NULL);
+    if (stat) stat->fs_private = pid_tag;
+
+    char status_path[160];
+    snprintf(status_path, sizeof(status_path), "%s/status", dir_path);
+    vfs_node_t *status = vfs_create_chr(status_path, proc_self_status_read, NULL);
+    if (status) status->fs_private = pid_tag;
+
+    char cmdline_path[160];
+    snprintf(cmdline_path, sizeof(cmdline_path), "%s/cmdline", dir_path);
+    vfs_node_t *cmdline = vfs_create_chr(cmdline_path, proc_self_cmdline_read, NULL);
+    if (cmdline) cmdline->fs_private = pid_tag;
+
+    char exe_path[160];
+    snprintf(exe_path, sizeof(exe_path), "%s/exe", dir_path);
+    vfs_node_t *exe = vfs_create_chr(exe_path, proc_self_exe_read, NULL);
+    if (exe) exe->fs_private = pid_tag;
+
+    char maps_path[160];
+    snprintf(maps_path, sizeof(maps_path), "%s/maps", dir_path);
+    vfs_node_t *maps = vfs_create_chr(maps_path, proc_self_maps_read, NULL);
+    if (maps) maps->fs_private = pid_tag;
+
     return true;
 }
 

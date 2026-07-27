@@ -82,6 +82,10 @@ typedef struct proc {
     uint8_t stop_reported; /* this stop was already handed back via wait4(WUNTRACED) */
     uint8_t job_stopped;   /* loop condition for proc_job_stop(); state alone can't be used since
                             * sched_yield_blocking() unconditionally resets state to PROC_WAITING */
+
+    /* supplementary groups */
+    uint32_t sup_groups[64];
+    int ngroups;
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX] __attribute__((aligned(16)));

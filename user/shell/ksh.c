@@ -262,6 +262,7 @@ static int cached_uid = -1;
 static char shell_pwd[MAX_LINE];
 
 static void build_prompt(char *buf, size_t size) {
+    cached_uid = getuid();
     const char *ps1 = getenv("PS1");
     if (!ps1 || !*ps1) ps1 = "\\w \\$ ";
     static char cwd[MAX_LINE];
@@ -1785,10 +1786,10 @@ int main(int argc, char **argv) {
     if (argc > 2 && strcmp(argv[1], "-c") == 0) return run_command_string(argv[2]);
 
     if (argc > 1 && strcmp(argv[1], "--version") == 0) {
-        fprintf(stderr, "ksh (Kronix Shell) %s\n", KSH_VERSION);
+        fprintf(stderr, "ksh (Kyronix Shell) %s\n", KSH_VERSION);
         return 0;
     }
-
+    
     /* skip flags like -i/-l/-s that xterm passes for interactive/login shells;
        only treat a non-flag argument as a script path */
     {

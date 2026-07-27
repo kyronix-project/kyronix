@@ -312,7 +312,12 @@ static vfs_node_t *lookup_internal(const char *path, bool follow_last, int depth
         if (cur->type != VFS_TYPE_DIR) return NULL;
         if (!may_access(cur, 1u)) return NULL;
         vfs_node_t *child = dir_find(cur, comp);
-        if (!child) return NULL;
+        if (!child) {
+            if (cur->parent == g_root && strcmp(cur->name, "proc") == 0)
+                procfs_try_pid_dir(cur, comp);
+            child = dir_find(cur, comp);
+            if (!child) return NULL;
+        }
 
         if (child->type == VFS_TYPE_SYM && (follow_last || !last)) {
             if (!child->symlink) return NULL;
