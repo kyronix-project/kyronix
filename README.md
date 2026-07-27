@@ -72,20 +72,21 @@ performance, security and stability.
 
 ### Experimental security hooks
 
-Kyronix contains an opt-in `PHANTOM_FORKING` telemetry layer. In audit mode it
-records present-page user write/execute violations, denied VFS access, and TCP
-connect outcomes in a bounded lock-free event ring. The hooks are deliberately
-disabled by default and never clone or allocate from an exception handler.
+`PHANTOM_FORKING` records suspicious faults, VFS access and network activity.
+Trap mode can create a COW sandbox with an isolated synthetic VFS, dummy crypto
+material, sanitized descriptors and simulated network replies.
 
-The full "hallucinogenic sandbox" requires two primitives that are not yet
-provided by this kernel: a scheduler-safe deferred fork worker and per-jail
-copy-on-write VFS/network/crypto overlays. Until those exist, this feature is
-telemetry only; it must not be described as containment of an exploit.
+Quarantine mode parks the source process. User write/NX faults are queued to a
+kernel worker, which builds the sandbox and resumes the exact faulting
+instruction there. Sandbox setup is atomic and fails closed.
 
-The rootfs self-test is `/bin/phantom-test`. Run it as root after boot; it
-enables audit mode, generates controlled VFS/network events, and prints the
-captured ring entries. It exits non-zero if the ring cannot be read or remains
-empty.
+Run `/bin/phantom-test` as root to test the complete path. This is an
+experimental mechanism: the queue is bounded, unsupported faults use the normal
+signal/panic path, and fault-quarantined sources cannot be safely resumed.
+
+Anti-TOCTOU jitter correlates rapid cross-thread VFS and futex/memory access,
+then delays the flagged thread's next wake-up by 25–250 µs. Run
+`/bin/jitter-test` as root to verify it.
 
 ## Build
 

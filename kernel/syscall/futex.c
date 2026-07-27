@@ -5,6 +5,7 @@
 #include "arch/x86_64/spinlock.h"
 #include "internal.h"
 #include "proc/proc.h"
+#include "security/anti_toctou.h"
 
 #define FUTEX_WAIT 0
 #define FUTEX_WAKE 1
@@ -40,6 +41,9 @@ int64_t sys_futex(uint32_t *uaddr, int op, uint32_t val, void *timeout, uint32_t
                   uint32_t val3) {
     if (!uaddr || !uptr_ok(uaddr, sizeof(*uaddr))) return -(int64_t) EFAULT;
     int cmd = op & ~(FUTEX_PRIVATE_FLAG | FUTEX_CLOCK_REALTIME);
+    anti_toctou_observe_memory(
+        (uint64_t) (uintptr_t) uaddr,
+        cmd == FUTEX_WAIT ? ANTI_TOCTOU_MEM_WAIT : ANTI_TOCTOU_MEM_WAKE);
     switch (cmd) {
     case FUTEX_WAIT: {
         if (*uaddr != val) return -(int64_t) EAGAIN;

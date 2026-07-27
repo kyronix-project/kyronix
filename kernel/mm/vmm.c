@@ -108,7 +108,10 @@ bool vmm_user_range_fault_in(vmm_space_t *sp, uint64_t virt, uint64_t len, bool 
         uint64_t pte = vmm_leaf_pte(sp, pg);
         if (pte & VMM_PRESENT) {
             if (!(pte & VMM_USER)) return false;
-            if (write && !(pte & VMM_WRITE)) return false;
+            if (write && !(pte & VMM_WRITE)) {
+                if (!(pte & VMM_COW) || vmm_handle_cow_fault(sp, pg) <= 0)
+                    return false;
+            }
         } else {
             /* not present: only ok if a vma covers it - then fault it in now */
             if (!vma_page_fault_allowed(sp, pg, write, false)) return false;
@@ -263,5 +266,89 @@ int vmm_fork_user(vmm_space_t *dst, vmm_space_t *src) {
             }
         }
     }
+    return 0;
+}
+
+int vmm_fork_user_cow(vmm_space_t *dst, vmm_space_t *src) {
+    if (!dst || !src) return -1;
+    vma_copy(dst, src);
+    uint64_t *src_pml4 = (uint64_t *) phys_to_virt(src->pml4_phys);
+
+    for (int i = 0; i < 256; i++) {
+        if (!(src_pml4[i] & VMM_PRESENT)) continue;
+        uint64_t *src_pdpt = (uint64_t *) phys_to_virt(pte_addr(src_pml4[i]));
+        for (int j = 0; j < 512; j++) {
+            if (!(src_pdpt[j] & VMM_PRESENT)) continue;
+            uint64_t *src_pd = (uint64_t *) phys_to_virt(pte_addr(src_pdpt[j]));
+            for (int k = 0; k < 512; k++) {
+                if (!(src_pd[k] & VMM_PRESENT)) continue;
+                uint64_t *src_pt = (uint64_t *) phys_to_virt(pte_addr(src_pd[k]));
+                for (int l = 0; l < 512; l++) {
+                    uint64_t pte = src_pt[l];
+                    if (!(pte & VMM_PRESENT)) continue;
+
+                    uint64_t va = ((uint64_t) i << 39) | ((uint64_t) j << 30) |
+                                  ((uint64_t) k << 21) | ((uint64_t) l << 12);
+                    uint64_t flags = pte & PTE_FLAGS_MASK;
+                    if (flags & VMM_WRITE) {
+                        flags &= ~(uint64_t) VMM_WRITE;
+                        flags |= VMM_COW;
+                        src_pt[l] = pte_addr(pte) | flags | VMM_PRESENT;
+                        __asm__ volatile("invlpg (%0)" :: "r"(va) : "memory");
+                    }
+                    pmm_retain((void *) pte_addr(pte));
+                    if (vmm_map(dst, va, pte_addr(pte), flags) < 0) return -1;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+int vmm_handle_cow_fault(vmm_space_t *sp, uint64_t virt) {
+    uint64_t pte = vmm_leaf_pte(sp, virt & PAGE_MASK);
+    if (!(pte & VMM_PRESENT) || !(pte & VMM_COW)) return 0;
+
+    void *new_phys = pmm_alloc();
+    if (!new_phys) return -1;
+    memcpy(phys_to_virt((uint64_t) new_phys), phys_to_virt(pte_addr(pte)), PAGE_SIZE);
+    uint64_t flags = (pte & PTE_FLAGS_MASK) | VMM_WRITE;
+    flags &= ~(uint64_t) VMM_COW;
+    if (vmm_protect(sp, virt & PAGE_MASK, flags) < 0) {
+        pmm_free(new_phys);
+        return -1;
+    }
+
+    uint64_t *pml4 = (uint64_t *) phys_to_virt(sp->pml4_phys);
+    uint64_t *pdpt = (uint64_t *) phys_to_virt(pte_addr(pml4[PML4_IDX(virt)]));
+    uint64_t *pd = (uint64_t *) phys_to_virt(pte_addr(pdpt[PDPT_IDX(virt)]));
+    uint64_t *pt = (uint64_t *) phys_to_virt(pte_addr(pd[PD_IDX(virt)]));
+    pt[PT_IDX(virt)] = (uint64_t) new_phys | (flags & PTE_FLAGS_MASK) | VMM_PRESENT;
+    pmm_free((void *) pte_addr(pte));
+    __asm__ volatile("invlpg (%0)" :: "r"(virt & PAGE_MASK) : "memory");
+    return 1;
+}
+
+int vmm_phantom_relax_page(vmm_space_t *sp, uint64_t virt, bool write, bool execute) {
+    if (!sp || (!write && !execute)) return -1;
+    uint64_t page = virt & PAGE_MASK;
+    uint64_t pte = vmm_leaf_pte(sp, page);
+    if (!(pte & VMM_PRESENT) || !(pte & VMM_USER)) return -1;
+
+    void *new_phys = pmm_alloc();
+    if (!new_phys) return -1;
+    memcpy(phys_to_virt((uint64_t) new_phys), phys_to_virt(pte_addr(pte)), PAGE_SIZE);
+
+    uint64_t flags = pte & PTE_FLAGS_MASK;
+    if (write || (flags & VMM_COW)) flags |= VMM_WRITE;
+    if (execute) flags &= ~(uint64_t) VMM_NX;
+    flags &= ~(uint64_t) VMM_COW;
+
+    uint64_t *pml4 = (uint64_t *) phys_to_virt(sp->pml4_phys);
+    uint64_t *pdpt = (uint64_t *) phys_to_virt(pte_addr(pml4[PML4_IDX(page)]));
+    uint64_t *pd = (uint64_t *) phys_to_virt(pte_addr(pdpt[PDPT_IDX(page)]));
+    uint64_t *pt = (uint64_t *) phys_to_virt(pte_addr(pd[PD_IDX(page)]));
+    pt[PT_IDX(page)] = (uint64_t) new_phys | flags | VMM_PRESENT;
+    pmm_free((void *) pte_addr(pte));
     return 0;
 }

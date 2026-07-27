@@ -407,6 +407,13 @@ static void scan_files_recursive(const char *dir, FILE *out) {
     closedir(d);
 }
 
+static void scan_managed_files(FILE *out) {
+    scan_files_recursive("/usr", out);
+    scan_files_recursive("/etc", out);
+    scan_files_recursive("/var/lib/xkb", out);
+    scan_files_recursive("/root/.dillo", out);
+}
+
 static int file_list_contains(const char *buf, size_t buf_sz, const char *line, size_t line_sz) {
     if (!buf || !line || line_sz == 0) return 0;
     size_t offset = 0;
@@ -594,7 +601,10 @@ static int do_install(const char *name, const char *endpoint, long download_size
     char pre_scan[1024];
     snprintf(pre_scan, sizeof(pre_scan), "%s/.pre", tmp_dir);
     FILE *pf = fopen(pre_scan, "w");
-    if (pf) { scan_files_recursive("/usr", pf); fclose(pf); }
+    if (pf) {
+        scan_managed_files(pf);
+        fclose(pf);
+    }
 
     char *sh_argv[] = { "sh", script_path, extract_dir, archive_path, checksum_path, (char *)install_dir, NULL };
     if (run_cmd(sh_argv) != 0) dief("install script failed");
@@ -621,7 +631,10 @@ static int do_install(const char *name, const char *endpoint, long download_size
     char post_file[1024];
     snprintf(post_file, sizeof(post_file), "%s/.post", tmp_dir);
     FILE *psf = fopen(post_file, "w");
-    if (psf) { scan_files_recursive("/usr", psf); fclose(psf); }
+    if (psf) {
+        scan_managed_files(psf);
+        fclose(psf);
+    }
 
     size_t post_sz = 0;
     char *post_names = read_file(post_file, &post_sz);

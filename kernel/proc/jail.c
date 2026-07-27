@@ -128,7 +128,17 @@ void jail_unref(uint32_t jid) {
     jail_t *j = jail_find(jid);
     if (!j) return;
     if (j->nprocs) j->nprocs--;
-    if (j->state == JAIL_DYING && j->nprocs == 0) j->state = JAIL_UNUSED;
+}
+
+void jail_retire(uint32_t jid) {
+    jail_t *j = jail_find(jid);
+    if (!j) return;
+    j->state = JAIL_DYING;
+}
+
+void jail_reap(uint32_t jid) {
+    jail_t *j = jail_find(jid);
+    if (j && j->state == JAIL_DYING && j->nprocs == 0) j->state = JAIL_UNUSED;
 }
 
 bool jail_can_fork(uint32_t jid) {

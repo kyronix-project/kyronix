@@ -13,6 +13,8 @@
 #define PROC_ZOMBIE 4
 #define PROC_DYING 5
 #define PROC_STOPPED 6
+#define PROC_EMBRYO 7
+#define PROC_QUARANTINED 8
 
 #define PROC_MAX 64
 #define KSTACK_PAGES 16
@@ -65,6 +67,17 @@ typedef struct proc {
     uint64_t pages_freed; /* pages freed via munmap/shrink brk */
     uint32_t jail_id;     /* 0 = host; appended at end so sched.S offsets stay fixed */
     uint8_t jail_exempt;  /* inherited; init=1, suppresses auto-isolation */
+    uint8_t phantom_sandbox; /* network/VFS simulation is enabled for this process */
+    uint8_t phantom_pending; /* trap observed; clone at the next safe syscall point */
+    uint16_t phantom_score;
+    uint8_t phantom_clone_count;
+    uint64_t phantom_score_tick;
+    uint64_t phantom_last_clone_tick;
+    uint8_t phantom_quarantined;
+    uint8_t phantom_quarantine_action;
+    uint8_t phantom_fault_quarantine;
+    uint8_t phantom_fault_job_pending;
+    uint32_t phantom_sandbox_pid;
 
     uint32_t tracer_pid;          /* 0 = not traced */
     uint8_t ptrace_stopped;       /* currently in ptrace-stop, waiting for tracer */
@@ -82,6 +95,7 @@ typedef struct proc {
     uint8_t stop_reported; /* this stop was already handed back via wait4(WUNTRACED) */
     uint8_t job_stopped;   /* loop condition for proc_job_stop(); state alone can't be used since
                             * sched_yield_blocking() unconditionally resets state to PROC_WAITING */
+    volatile uint32_t anti_toctou_pending_us; /* consumed at the next syscall safe point */
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX] __attribute__((aligned(16)));
@@ -96,8 +110,13 @@ static inline int proc_slot(proc_t *p) { return (int) (p - g_proctable); }
 
 static inline void proc_set_ready(proc_t *p) {
     int bit = proc_slot(p);
-    __atomic_fetch_or(&g_ready_mask, 1ULL << bit, __ATOMIC_RELAXED);
     __atomic_fetch_or(&g_used_mask, 1ULL << bit, __ATOMIC_RELAXED);
+    __atomic_fetch_or(&g_ready_mask, 1ULL << bit, __ATOMIC_RELEASE);
+}
+
+static inline void proc_publish_ready(proc_t *p) {
+    __atomic_store_n(&p->state, PROC_READY, __ATOMIC_RELEASE);
+    proc_set_ready(p);
 }
 
 static inline void proc_clear_ready(proc_t *p) {
@@ -141,6 +160,7 @@ static inline proc_t **__g_current_proc_slot(void) {
 void proc_init(void);
 proc_t *proc_alloc(uint32_t ppid);
 proc_t *proc_create_idle(uint32_t cpu_id, void (*entry)(void));
+proc_t *proc_create_kernel(const char *name, void (*entry)(void));
 void proc_kstack_free(proc_t *p);
 void proc_defer_thread_reap(proc_t *p);
 void proc_ptrace_stop(proc_t *p, int sig, int frame_kind, void *frame, uint64_t *rflags_slot);
@@ -151,6 +171,8 @@ proc_t *proc_next_ready(proc_t *skip);
 proc_t *sched_claim_next(proc_t *skip);
 proc_t *proc_idle_until_ready(proc_t *skip);
 void sched_switch(proc_t *next);
+void sched_block_current(void);
 void sched_yield_blocking(void);
 extern void proc_resume_frame(void);
+extern void proc_resume_interrupt_frame(void);
 __attribute__((noreturn)) void proc_do_exit(int code);

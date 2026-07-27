@@ -179,7 +179,7 @@ REGISTER_TEST(false, "Phase 9: Utilities");
 
 int test_find(void) {
     char buf[256];
-    int ret = capture_cmd((char *[]) { "find", "/bin", "-name", "fetch", NULL }, buf, sizeof(buf));
+    int ret = capture_cmd((char *[]) { "find", "/bin", "-name", "ksh", NULL }, buf, sizeof(buf));
     if (ret != 0) return 1;
     ASSERT_GT(strlen(buf), 0);
     return 1;
@@ -268,7 +268,7 @@ int test_ls(void) {
     int ret = capture_cmd((char *[]) { "ls", "/bin", NULL }, buf, sizeof(buf));
     if (ret != 0) return 1;
     ASSERT_GT(strlen(buf), 0);
-    ASSERT_NOTNULL(strstr(buf, "fetch"));
+    ASSERT_NOTNULL(strstr(buf, "ksh"));
     return 1;
 }
 REGISTER_TEST(ls, "Phase 9: Utilities");

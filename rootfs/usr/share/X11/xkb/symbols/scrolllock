@@ -1,4 +1,0 @@
-default
-xkb_symbols "mod3" {
-    modifier_map Mod3   { Scroll_Lock };
-};
