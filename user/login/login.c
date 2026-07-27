@@ -56,6 +56,23 @@ static void print_issue(void) {
     puts("");
 }
 
+static int has_password(const char *user) {
+    struct spwd *sp = getspnam(user);
+    if (sp && sp->sp_pwdp) {
+        const char *p = sp->sp_pwdp;
+        if (p[0] == '\0' || p[0] == '*' || p[0] == '!')
+            return 0;
+        return 1;
+    }
+
+    struct passwd *pw = getpwnam(user);
+    if (!pw || !pw->pw_passwd) return 0;
+    if (pw->pw_passwd[0] == '\0') return 0;
+    if (pw->pw_passwd[0] == '*' || pw->pw_passwd[0] == '!') return 0;
+
+    return 1;
+}
+
 static int check_password(const char *user, const char *pass) {
     struct spwd *sp = getspnam(user);
     if (sp && sp->sp_pwdp) {
@@ -107,15 +124,19 @@ int main(void) {
             read_line(user, sizeof(user), 1);
             if (user[0] == '\0') continue;
 
-            putstr("Password: ");
-            read_line(pass, sizeof(pass), -1);
-
             pw = getpwnam(user);
             if (!pw) {
                 putstr("Login incorrect\n");
                 sleep(1);
                 continue;
             }
+
+            if (!has_password(user)) {
+                break;
+            }
+
+            putstr("Password: ");
+            read_line(pass, sizeof(pass), -1);
 
             if (!check_password(user, pass)) {
                 putstr("Login incorrect\n");
@@ -141,6 +162,4 @@ int main(void) {
         setuid(pw->pw_uid);
         execlp(pw->pw_shell, pw->pw_shell, NULL);
         putstr("login: unable to start shell\n");
-        return 1;
-    }
-}
+       

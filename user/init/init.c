@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #define STATUS_COL 72
@@ -21,10 +22,13 @@
 struct service {
     char name[64];
     char *argv[MAX_ARGS];
+    pid_t pid;
+    int respawns;
 };
 
 static struct service services[MAX_SERVICES];
 static int nservices;
+static volatile sig_atomic_t got_signal = 0;
 
 static char *trim(char *s) {
     while (*s && isspace(*s)) s++;
@@ -51,6 +55,39 @@ static void spawn(struct service *svc) {
         status(svc->name, 0);
         _exit(127);
     }
+    if (pid > 0) {
+        svc->pid = pid;
+    }
+}
+
+static void reap_children(int sig) {
+    (void)sig;
+    got_signal = 1;
+}
+
+static void handle_reap(void) {
+    int saved_errno = errno;
+    int status_code;
+    pid_t pid;
+    while ((pid = waitpid(-1, &status_code, WNOHANG)) > 0) {
+        for (int i = 0; i < nservices; i++) {
+            if (services[i].pid == pid) {
+                char buf[128];
+                services[i].pid = 0;
+                services[i].respawns++;
+                if (services[i].respawns > 5) {
+                    snprintf(buf, sizeof(buf), "%s (too many restarts, giving up)", services[i].name);
+                    status(buf, 0);
+                    continue;
+                }
+                snprintf(buf, sizeof(buf), "Restarting %s", services[i].name);
+                spawn(&services[i]);
+                status(buf, 1);
+                break;
+            }
+        }
+    }
+    errno = saved_errno;
 }
 
 static void read_rc_conf(void) {
@@ -108,9 +145,9 @@ int main(void) {
         if (fd > STDERR_FILENO) close(fd);
     }
 
-    signal(SIGCHLD, SIG_IGN);
     signal(SIGINT, SIG_IGN);
     signal(SIGALRM, SIG_IGN);
+    signal(SIGCHLD, reap_children);
 
     setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin", 1);
     setenv("HOME", "/", 1);
@@ -131,5 +168,11 @@ int main(void) {
 
     fprintf(stderr, "\n");
 
-    for (;;) pause();
+    for (;;) {
+        pause();
+        if (got_signal) {
+            got_signal = 0;
+            handle_reap();
+        }
+    }
 }
