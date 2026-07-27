@@ -4,7 +4,7 @@ This file documents the GNU ‘make’ utility, which determines
 automatically which pieces of a large program need to be recompiled, and
 issues the commands to recompile them.
 
-   This is Edition 0.74, last updated 27 July 2026, of ‘The GNU Make
+   This is Edition 0.74, last updated 19 July 2026, of ‘The GNU Make
 Manual’, for GNU ‘make’ version 4.2.
 
    Copyright © 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,

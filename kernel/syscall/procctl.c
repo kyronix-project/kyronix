@@ -85,6 +85,9 @@ static int64_t sys_fork_at_mode(proc_t *parent, syscall_frame_t *f,
     child->sgid = parent->sgid;
     child->fsuid = parent->fsuid;
     child->fsgid = parent->fsgid;
+    child->ngroups = parent->ngroups;
+    for (int _gi = 0; _gi < parent->ngroups && _gi < 64; _gi++)
+        child->sup_groups[_gi] = parent->sup_groups[_gi];
     child->umask = parent->umask;
     memcpy(child->cwd, parent->cwd, sizeof(child->cwd));
     memcpy(child->exe_path, parent->exe_path, sizeof(child->exe_path));
@@ -294,6 +297,9 @@ int64_t sys_clone(uint64_t flags, uint64_t child_stack, uint32_t *ptid, uint32_t
     child->sgid = parent->sgid;
     child->fsuid = parent->fsuid;
     child->fsgid = parent->fsgid;
+    child->ngroups = parent->ngroups;
+    for (int _gi = 0; _gi < parent->ngroups && _gi < 64; _gi++)
+        child->sup_groups[_gi] = parent->sup_groups[_gi];
     child->umask = parent->umask;
     memcpy(child->cwd, parent->cwd, sizeof(child->cwd));
     memcpy(child->exe_path, parent->exe_path, sizeof(child->exe_path));
@@ -532,6 +538,9 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
         FREE_EXEC_STRS();
         return -(int64_t) ENOEXEC;
     }
+    uint32_t exec_mode = node->mode;
+    uint32_t exec_uid  = node->uid;
+    uint32_t exec_gid  = node->gid;
     vfs_node_unref_internal(node); /* data is now mapped; release our ref */
     node = NULL;
 
@@ -583,6 +592,14 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
     p->mmap_bump = 0x0000500000000000ULL + ((kern_rand64() & 0x1FFULL) << 21);
     strncpy(p->exe_path, exec_path, sizeof(p->exe_path) - 1);
     g_current_space = p->space;
+
+    /* setuid/setgid on exec: elevate euid/egid to file owner */
+    if (exec_mode & S_ISUID) {
+        p->suid = p->euid = p->fsuid = exec_uid;
+    }
+    if (exec_mode & S_ISGID) {
+        p->sgid = p->egid = p->fsgid = exec_gid;
+    }
 
     vmm_switch(p->space);
     vmm_space_free(old);

@@ -78,6 +78,8 @@ struct linux_dirent64 {
 
 #define S_IFSOCK 0140000U
 #define S_ISVTX 0001000U /* sticky bit: restrict deletion in a shared dir */
+#define S_ISGID 0002000U /* set-group-ID */
+#define S_ISUID 0004000U /* set-user-ID */
 
 struct block_device;
 

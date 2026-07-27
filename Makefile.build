@@ -276,6 +276,7 @@ $(DISK_IMG): $(TARGET) $(INITRD) | user-build
 	rm -rf $(DISK_ROOT)
 	mkdir -p $(DISK_ROOT)/boot/limine
 	cp -a rootfs/* $(DISK_ROOT)/
+	chmod u+s $(DISK_ROOT)/usr/bin/doas 2>/dev/null || true
 	cp $(TARGET) $(DISK_ROOT)/boot/kernel.elf
 	cp limine-disk.conf $(DISK_ROOT)/boot/limine/limine.conf
 	cp $(LIMINE_DIR)/limine-bios.sys $(DISK_ROOT)/boot/limine/
@@ -303,6 +304,7 @@ INITRD_DEPS := $(shell find rootfs -not -name '.gitignore' -type f | sort) \
 
 $(INITRD): $(INITRD_DEPS) | user-build
 	@mkdir -p $(@D)
+	@chmod u+s rootfs/usr/bin/doas 2>/dev/null || true
 	@cd rootfs && find . -not -name '.gitignore' | sort | cpio -o --format=newc --owner=0:0 --reproducible > ../$@ 2>/dev/null
 	@echo "  Built: $@"
 
