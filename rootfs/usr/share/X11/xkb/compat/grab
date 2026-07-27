@@ -1,3 +1,0 @@
-partial xkb_compatibility "break_actions" {
-    include "xfree86(grab_break)"
-};

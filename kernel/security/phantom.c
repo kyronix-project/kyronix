@@ -65,9 +65,9 @@ uint32_t phantom_event_weight(uint32_t kind, uint32_t flags) {
     case PHANTOM_EVENT_FAULT:
         return PHANTOM_SCORE_THRESHOLD;
     case PHANTOM_EVENT_ACCESS:
-        if (flags & 1u) return 50u; /* execute denial */
-        if (flags & 2u) return 30u; /* write denial */
-        return 10u;                 /* lookup/read denial */
+        if (flags & 1u) return 50u; // execute denial
+        if (flags & 2u) return 30u; // write denial
+        return 10u;   // lookup/read denial
     case PHANTOM_EVENT_NETWORK:
         return 10u;
     case PHANTOM_EVENT_CRYPTO:

@@ -80,6 +80,7 @@ SRCS := \
     kernel/mm/vmm.c                   \
     kernel/mm/vma.c                   \
     kernel/security/phantom.c         \
+    kernel/security/anti_toctou.c     \
     kernel/mm/heap.c                  \
     kernel/mm/shm.c                   \
     kernel/arch/x86_64/syscall_setup.c \
@@ -99,6 +100,7 @@ SRCS := \
     kernel/syscall/time.c             \
     kernel/syscall/mount.c            \
     kernel/syscall/phantom.c          \
+    kernel/syscall/jitter.c           \
     kernel/exec/elf.c                  \
     kernel/exec/process.c              \
     kernel/proc/proc.c                 \
@@ -192,7 +194,7 @@ KALLSYMS_OBJ := $(BUILD_DIR)/kernel/kallsyms_data.o
 
 SRC_DIR  := .
 
-.PHONY: all kernel iso run run-serial run-uefi live live-iso live-run run-disk clean user-build xorg testrunner phantom-test test-initrd test-iso test-run test-run-log fmt fmt-check disk test-disk config.h kallsyms nconfig help
+.PHONY: all kernel iso run run-serial run-uefi live live-iso live-run run-disk clean user-build testrunner phantom-test jitter-test test-initrd test-iso test-run test-run-log fmt fmt-check disk test-disk config.h kallsyms nconfig help
 
 help:
 	@echo "Usage: make <target>"
@@ -279,9 +281,6 @@ build/libatomic_asneeded.a:
 
 user-build: build/libatomic_asneeded.a
 	$(MAKE) -C user
-
-xorg:
-	@bash scripts/get-xorg.sh
 
 INITRD_DEPS := $(shell find rootfs -not -name '.gitignore' -type f | sort) \
                $(wildcard build/bin/*)
@@ -467,9 +466,11 @@ testrunner: build/libatomic_asneeded.a
 phantom-test: build/libatomic_asneeded.a
 	$(MAKE) -C user/phantom-test
 
-test-initrd: $(TARGET) testrunner phantom-test build/libatomic_asneeded.a
+jitter-test: build/libatomic_asneeded.a
+	$(MAKE) -C user/jitter-test
+
+test-initrd: $(TARGET) testrunner phantom-test jitter-test build/libatomic_asneeded.a
 	$(MAKE) -C user/kyrobox
-	$(MAKE) -C user/fetch
 	$(MAKE) -C user/shell
 	$(MAKE) -C user/extras
 	@mkdir -p $(@D)
@@ -477,6 +478,7 @@ test-initrd: $(TARGET) testrunner phantom-test build/libatomic_asneeded.a
 	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt
 	cp build/bin/testrunner $(TEST_ROOTFS)/init
 	cp build/bin/phantom-test $(TEST_ROOTFS)/bin/
+	cp build/bin/jitter-test $(TEST_ROOTFS)/bin/
 	cp build/bin/ksh        $(TEST_ROOTFS)/bin/
 	ln -sf ksh $(TEST_ROOTFS)/bin/sh
 	for app in basename cat chgrp chmod chown cksum clear cmp cp cut date dd dirname du echo env false \
@@ -491,7 +493,6 @@ test-initrd: $(TARGET) testrunner phantom-test build/libatomic_asneeded.a
 	        cp build/bin/$$bin $(TEST_ROOTFS)/bin/; \
 	    fi; \
 	done
-	cp build/bin/fetch     $(TEST_ROOTFS)/bin/
 	cp build/bin/make      $(TEST_ROOTFS)/bin/
 	cd $(TEST_ROOTFS) && find . | sort | cpio -o --format=newc --owner=0:0 --reproducible > ../$(TEST_INITRD) 2>/dev/null
 	@echo "  Built: $(TEST_INITRD)"
@@ -594,10 +595,7 @@ clean:
 	rm -rf $(DIST_DIR)
 	rm -f $(CONFIG_H) .config
 	rm -rf $(BUILD_DIR) iso_root $(TEST_ROOTFS)
-	# keep st and cwm as blobs in rootfs/bin
-	for f in rootfs/bin/*; do \
-	    case "$$(basename $$f)" in st|cwm) ;; *) rm -f "$$f";; esac; \
-	done
+	rm -f rootfs/bin/*
 	$(MAKE) -C user clean
 	$(MAKE) -C scripts/kconfig clean 2>/dev/null; true
 	$(MAKE) -C $(LIMINE_DIR) clean 2>/dev/null; true

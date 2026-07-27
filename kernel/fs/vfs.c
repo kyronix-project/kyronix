@@ -11,6 +11,7 @@
 #include "proc/jail.h"
 #include "proc/proc.h"
 #include "procfs.h"
+#include "security/anti_toctou.h"
 #include "security/phantom.h"
 #include "syscall/syscall.h"
 #include "unix_socket.h"
@@ -1139,6 +1140,12 @@ static int fd_open_impl(const char *path, int flags, int mode, bool reroot, bool
             return -(int) EEXIST;
         }
     }
+    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
+                            ANTI_TOCTOU_VFS_USE |
+                                (((flags & O_ACCMODE) != O_RDONLY ||
+                                  (flags & O_TRUNC))
+                                     ? ANTI_TOCTOU_VFS_WRITE
+                                     : 0u));
     if (n->type == VFS_TYPE_CHR && n->chr_open) {
         int r = n->chr_open(n, flags);
         node_unref(n); /* chr_open created its own fd with its own ref */
@@ -1244,6 +1251,8 @@ int64_t fd_read(int fd, void *buf, uint64_t len) {
     }
 
     vfs_node_t *n = f->node;
+    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
+                            ANTI_TOCTOU_VFS_USE);
     if (n->type == VFS_TYPE_CHR) {
         if (!n->chr_read) return 0;
         if ((f->flags & O_NONBLOCK) && n->chr_pollin && !n->chr_pollin(n)) return -(int64_t) EAGAIN;
@@ -1305,6 +1314,9 @@ static int64_t fd_write_dispatch(vfs_file_t *f, const void *buf, uint64_t len) {
     }
 
     vfs_node_t *n = f->node;
+    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
+                            ANTI_TOCTOU_VFS_USE |
+                                ANTI_TOCTOU_VFS_WRITE);
     if (n->type == VFS_TYPE_CHR) {
         if (!n->chr_write) return (int64_t) len;
         return n->chr_write(n, (const char *) buf, len, f->pos);
@@ -1407,6 +1419,8 @@ int fd_fstat(int fd, struct linux_stat *st) {
         st->st_blksize = PIPE_BUFSZ;
         return 0;
     }
+    anti_toctou_observe_vfs((uint64_t) (uintptr_t) f->node,
+                            ANTI_TOCTOU_VFS_CHECK);
     fill_stat(f->node, st);
     return 0;
 }
@@ -1421,6 +1435,8 @@ int fd_fstatat(int dirfd, const char *path, struct linux_stat *st, int flags) {
         vfs_node_t *n =
             (flags & AT_SYMLINK_NOFOLLOW) ? vfs_lookup_nofollow(path) : vfs_lookup(path);
         if (!n) return -(int) ENOENT;
+        anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
+                                ANTI_TOCTOU_VFS_CHECK);
         fill_stat(n, st);
         node_unref(n);
         return 0;
@@ -1429,6 +1445,8 @@ int fd_fstatat(int dirfd, const char *path, struct linux_stat *st, int flags) {
     if (!df || !df->node || df->node->type != VFS_TYPE_DIR) return -(int) EBADF;
     vfs_node_t *n = (flags & AT_SYMLINK_NOFOLLOW) ? vfs_lookup_nofollow(path) : vfs_lookup(path);
     if (!n) return -(int) ENOENT;
+    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
+                            ANTI_TOCTOU_VFS_CHECK);
     fill_stat(n, st);
     node_unref(n);
     return 0;
@@ -1441,6 +1459,8 @@ int fd_stat(const char *path, struct linux_stat *st) {
     if (!(path = vfs_copy_user_path(path, _pbuf))) return -(int) EFAULT;
     vfs_node_t *n = vfs_lookup(path);
     if (!n) return -(int) ENOENT;
+    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
+                            ANTI_TOCTOU_VFS_CHECK);
     fill_stat(n, st);
     node_unref(n);
     return 0;
@@ -1453,6 +1473,8 @@ int fd_lstat(const char *path, struct linux_stat *st) {
     if (!(path = vfs_copy_user_path(path, _pbuf))) return -(int) EFAULT;
     vfs_node_t *n = vfs_lookup_nofollow(path);
     if (!n) return -(int) ENOENT;
+    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
+                            ANTI_TOCTOU_VFS_CHECK);
     fill_stat(n, st);
     node_unref(n);
     return 0;
@@ -1746,6 +1768,8 @@ int vfs_access(const char *path, int mode) {
         phantom_record(PHANTOM_EVENT_ACCESS, (uint32_t) mode, 0, 0, "VFS lookup denied");
         return -(int) ENOENT;
     }
+    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
+                            ANTI_TOCTOU_VFS_CHECK);
     if (mode == 0) {
         node_unref(n);
         return 0;

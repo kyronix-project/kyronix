@@ -44,6 +44,7 @@
 #include "net/net.h"
 #include "proc/jail.h"
 #include "proc/proc.h"
+#include "security/anti_toctou.h"
 #include "security/phantom.h"
 
 #define STATUS_COL 72
@@ -389,6 +390,7 @@ void kmain(void) {
     }
     smp_boot_aps();
     kstatus("Starting phantom fault worker", phantom_worker_start());
+    kstatus("Starting Anti-TOCTOU jitter", anti_toctou_init());
 
     {
         uint8_t seed[32];

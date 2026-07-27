@@ -1,4 +1,0 @@
-partial
-xkb_compatibility "compose" {
-	include "ledcompose(compose)"
-};

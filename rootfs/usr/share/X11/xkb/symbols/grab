@@ -1,4 +1,0 @@
-default partial
-xkb_symbols "debug" {
-    include "srvr_ctrl(grab_debug)"
-};
