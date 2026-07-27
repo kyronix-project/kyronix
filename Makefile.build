@@ -79,6 +79,7 @@ SRCS := \
     kernel/mm/pmm.c                   \
     kernel/mm/vmm.c                   \
     kernel/mm/vma.c                   \
+    kernel/security/phantom.c         \
     kernel/mm/heap.c                  \
     kernel/mm/shm.c                   \
     kernel/arch/x86_64/syscall_setup.c \

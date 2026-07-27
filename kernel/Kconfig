@@ -30,3 +30,11 @@ config LOG_LEVEL
 	  1=KLOG_WARN    (errors + warnings, default)
 	  2=KLOG_INFO    (errors + warnings + info)
 	  3=KLOG_DEBUG   (all messages)
+
+config PHANTOM_FORKING
+	bool "Phantom exploit telemetry hooks"
+	default n
+	help
+	  Add fault/security telemetry hooks for experimental live exploit trapping.
+	  This is audit-only until a policy worker with a real COW/overlay backend is
+	  enabled. Never clone a process from an exception handler.

@@ -13,6 +13,7 @@
 #include "pic.h"
 #include "pit.h"
 #include "proc/proc.h"
+#include "security/phantom.h"
 #include "proc/signal.h"
 #include "proc/smp.h"
 #include "syscall/syscall.h"
@@ -202,6 +203,7 @@ void isr_dispatch(cpu_state_t *state) {
             if (n == 14) {
                 page_fault_result_t pf = handle_user_page_fault(state);
                 if (pf == PF_HANDLED) return;
+                phantom_fault_candidate(state, read_cr2());
                 sig = (pf == PF_SIGBUS) ? SIGBUS : SIGSEGV;
             }
 

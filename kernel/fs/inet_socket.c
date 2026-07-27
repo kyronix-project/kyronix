@@ -4,6 +4,7 @@
 #include "../lib/string.h"
 #include "../mm/heap.h"
 #include "../proc/proc.h"
+#include "security/phantom.h"
 #include "../syscall/syscall.h"
 #include "vfs.h"
 #include "vfs_internal.h"
@@ -136,6 +137,7 @@ static err_t on_connected(void *arg, struct tcp_pcb *pcb, err_t err) {
     if (err != ERR_OK) {
         c->error = true;
         c->err_code = -(int) ECONNREFUSED;
+        phantom_record(PHANTOM_EVENT_NETWORK, (uint32_t) err, 0, 0, "TCP connect failed");
     }
     proc_t *w = c->connect_waiter;
     if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
@@ -432,6 +434,7 @@ int64_t inet_connect(net_conn_t *c, const struct sockaddr_in *addr) {
     }
 
     if (c->error) return (int64_t) c->err_code;
+    phantom_record(PHANTOM_EVENT_NETWORK, 0, addr->sin_addr, port, "TCP connect acknowledged");
     return 0;
 }
 

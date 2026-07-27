@@ -44,6 +44,7 @@
 #include "net/net.h"
 #include "proc/jail.h"
 #include "proc/proc.h"
+#include "security/phantom.h"
 
 #define STATUS_COL 72
 #define COL_GRN "\033[0;32m"
@@ -322,6 +323,8 @@ void kmain(void) {
     kstatus("Initialising scheduler", true);
     jail_init();
     kstatus("Initialising jails", true);
+    phantom_init();
+    kstatus("Initialising phantom hooks", true);
     vfs_init();
     {
         vfs_node_t *_n = vfs_lookup("/proc");
