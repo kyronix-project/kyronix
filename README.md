@@ -72,64 +72,17 @@ performance, security and stability.
 
 ### Experimental security hooks
 
-Kyronix contains an opt-in `PHANTOM_FORKING` telemetry layer. In audit mode it
-records present-page user write/execute violations, denied VFS access, and TCP
-connect outcomes in a bounded lock-free event ring. Trap mode scores suspicious
-events per process and defers cloning to the next syscall safe point, so an
-exception handler never allocates or forks directly.
+`PHANTOM_FORKING` records suspicious faults, VFS access and network activity.
+Trap mode can create a COW sandbox with an isolated synthetic VFS, dummy crypto
+material, sanitized descriptors and simulated network replies.
 
-The deferred clone shares user pages through copy-on-write and enters a private
-FS/PID/IPC/privilege jail with a synthetic VFS root, dummy cryptographic
-material, and simulated AF_INET acknowledgements. A new process remains in the
-internal `PROC_EMBRYO` state until all isolation and descriptor setup has
-completed. Publication to the scheduler is atomic; a setup failure rolls back
-the unpublished process and records a fail-closed telemetry event.
+Quarantine mode parks the source process. User write/NX faults are queued to a
+kernel worker, which builds the sandbox and resumes the exact faulting
+instruction there. Sandbox setup is atomic and fails closed.
 
-The rootfs self-test is `/bin/phantom-test`. Run it as root after boot; it
-enables audit mode, generates controlled VFS/network events, and prints the
-captured ring entries. It also invokes the root-only Phantom COW clone syscall
-and prints the resulting child PID/jail event. It exits non-zero if the ring
-cannot be read or remains empty. In trap mode, a controlled VFS denial also
-checks the deferred automatic clone at the next syscall safe point. The test
-also exhausts the jail table temporarily to verify that a failed setup cannot
-run an unconfined child.
-
-Before a Phantom child is scheduled, inherited descriptors are sanitized:
-host files, pipes, eventfds, timerfds, and Unix sockets above stderr are
-closed, while AF_INET descriptors are replaced with independent simulated
-endpoints. Socket lifetime is reference-counted so child teardown cannot close
-the parent's live connection. Phantom jail slots and temporary VFS roots are
-retired when the sandbox exits.
-
-Trap mode uses a per-process score instead of cloning on every error. A lookup
-denial contributes 10 points, denied writes 30, denied execution 50, and a
-protection fault 100. The threshold is 100 points within five seconds, followed
-by a ten-second cooldown and a budget of four automatic clones per process.
-
-Mode 3 adds source-timeline quarantine. After the sandbox is committed, the
-original process is parked in `PROC_QUARANTINED` and cannot return to user mode.
-A host-privileged controller uses syscall 510 to query the sandbox PID and
-explicitly resume or terminate the parked source. The wake-up path waits until
-the source has left every per-CPU `current` slot before publishing its kernel
-stack back to the run queue.
-
-Present-page user write and execute protection faults are intercepted in mode
-3. Exception context copies the complete interrupt frame into a bounded static
-queue, takes a process reference, and parks the source without allocating
-memory. A dedicated `[phantom-worker]` kernel thread builds the unpublished COW
-child, gives only that child a private page with the required write or execute
-permission, commits the jail/descriptor overlays, and publishes it. The child
-returns through `iretq` to retry the exact faulting instruction. The original
-timeline remains quarantined. Because retrying it would immediately repeat the
-same fault, controller `RESUME` is rejected for fault quarantines; the
-controller must terminate that source after collecting the sandbox telemetry.
-
-This remains an experimental research mechanism, not production exploit
-containment. The fault queue has eight fixed slots and fails closed when
-saturated or when worker-side sandbox construction fails. Non-present page
-faults, kernel faults, and unsupported exceptions still follow the normal
-signal/panic path. There is also no checkpoint rollback for safely restoring a
-fault-quarantined source timeline.
+Run `/bin/phantom-test` as root to test the complete path. This is an
+experimental mechanism: the queue is bounded, unsupported faults use the normal
+signal/panic path, and fault-quarantined sources cannot be safely resumed.
 
 ## Build
 
