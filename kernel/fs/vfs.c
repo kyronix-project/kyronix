@@ -11,6 +11,7 @@
 #include "proc/jail.h"
 #include "proc/proc.h"
 #include "procfs.h"
+#include "security/phantom.h"
 #include "syscall/syscall.h"
 #include "unix_socket.h"
 
@@ -1714,16 +1715,24 @@ int vfs_truncate(const char *path, uint64_t len) {
 int vfs_access(const char *path, int mode) {
     if (mode & ~7) return -(int) EINVAL;
     vfs_node_t *n = vfs_lookup(path);
-    if (!n) return -(int) ENOENT;
+    if (!n) {
+        phantom_record(PHANTOM_EVENT_ACCESS, (uint32_t) mode, 0, 0, "VFS lookup denied");
+        return -(int) ENOENT;
+    }
     if (mode == 0) {
         node_unref(n);
         return 0;
     }
     if ((mode & 1) && !(n->mode & 0111U)) {
+        phantom_record(PHANTOM_EVENT_ACCESS, (uint32_t) mode, n->ino, 0,
+                       "VFS execute denied");
         node_unref(n);
         return -(int) EACCES;
     }
     int r = may_access(n, (uint32_t) mode) ? 0 : -(int) EACCES;
+    if (r < 0)
+        phantom_record(PHANTOM_EVENT_ACCESS, (uint32_t) mode, n->ino, 0,
+                       "VFS permission denied");
     node_unref(n);
     return r;
 }

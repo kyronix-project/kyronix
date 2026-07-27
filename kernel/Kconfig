@@ -39,3 +39,11 @@ config PROFILER
 	  samples on every timer tick (250 Hz).  Results are exposed via
 	  /proc/profile and can be read from GDB with the samples.gdb
 	  script.  Adds minimal overhead (~2-3 %) when active.
+
+config PHANTOM_FORKING
+	bool "Phantom exploit telemetry hooks"
+	default n
+	help
+	  Add fault/security telemetry hooks for experimental live exploit trapping.
+	  This is audit-only until a policy worker with a real COW/overlay backend is
+	  enabled. Never clone a process from an exception handler.

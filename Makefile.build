@@ -87,6 +87,7 @@ SRCS := \
     kernel/mm/pmm.c                   \
     kernel/mm/vmm.c                   \
     kernel/mm/vma.c                   \
+    kernel/security/phantom.c         \
     kernel/mm/heap.c                  \
     kernel/mm/shm.c                   \
     kernel/arch/x86_64/syscall_setup.c \
@@ -105,6 +106,7 @@ SRCS := \
     kernel/syscall/socket.c           \
     kernel/syscall/time.c             \
     kernel/syscall/mount.c            \
+    kernel/syscall/phantom.c          \
     kernel/exec/elf.c                  \
     kernel/exec/process.c              \
     kernel/proc/proc.c                 \
@@ -199,7 +201,7 @@ KALLSYMS_OBJ := $(BUILD_DIR)/kernel/kallsyms_data.o
 
 SRC_DIR  := .
 
-.PHONY: all kernel iso run run-serial run-uefi live live-iso live-run run-disk clean user-build xorg testrunner test-initrd test-iso test-run test-run-log fmt fmt-check disk test-disk config.h kallsyms nconfig help debug debug-run debug-gdb
+.PHONY: all kernel iso run run-serial run-uefi live live-iso live-run run-disk clean user-build xorg testrunner phantom-test test-initrd test-iso test-run test-run-log fmt fmt-check disk test-disk config.h kallsyms nconfig help debug debug-run debug-gdb
 
 help:
 	@echo "Usage: make <target>"
@@ -508,7 +510,10 @@ TEST_ROOTFS    := test_rootfs
 testrunner: build/libatomic_asneeded.a
 	$(MAKE) -C user/testrunner
 
-test-initrd: $(TARGET) testrunner build/libatomic_asneeded.a
+phantom-test: build/libatomic_asneeded.a
+	$(MAKE) -C user/phantom-test
+
+test-initrd: $(TARGET) testrunner phantom-test build/libatomic_asneeded.a
 	$(MAKE) -C user/kyrobox
 	$(MAKE) -C user/fetch
 	$(MAKE) -C user/shell
@@ -517,6 +522,7 @@ test-initrd: $(TARGET) testrunner build/libatomic_asneeded.a
 	rm -rf $(TEST_ROOTFS) $(TEST_INITRD)
 	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt
 	cp build/bin/testrunner $(TEST_ROOTFS)/init
+	cp build/bin/phantom-test $(TEST_ROOTFS)/bin/
 	cp build/bin/ksh        $(TEST_ROOTFS)/bin/
 	ln -sf ksh $(TEST_ROOTFS)/bin/sh
 	for app in basename cat chgrp chmod chown cksum clear cmp cp cut date dd dirname du echo env false \

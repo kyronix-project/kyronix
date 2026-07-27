@@ -70,6 +70,23 @@ performance, security and stability.
 - epoll, poll, select
 - Continuous integration test suite
 
+### Experimental security hooks
+
+Kyronix contains an opt-in `PHANTOM_FORKING` telemetry layer. In audit mode it
+records present-page user write/execute violations, denied VFS access, and TCP
+connect outcomes in a bounded lock-free event ring. The hooks are deliberately
+disabled by default and never clone or allocate from an exception handler.
+
+The full "hallucinogenic sandbox" requires two primitives that are not yet
+provided by this kernel: a scheduler-safe deferred fork worker and per-jail
+copy-on-write VFS/network/crypto overlays. Until those exist, this feature is
+telemetry only; it must not be described as containment of an exploit.
+
+The rootfs self-test is `/bin/phantom-test`. Run it as root after boot; it
+enables audit mode, generates controlled VFS/network events, and prints the
+captured ring entries. It exits non-zero if the ring cannot be read or remains
+empty.
+
 ## Build
 
 ### Dependencies
