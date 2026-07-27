@@ -38,3 +38,4 @@ dist/
 
 # unecessary blobs
 rootfs/usr/lib/libLLVM.so.19.1
+rootfs/usr/bin/pipes

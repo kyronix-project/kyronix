@@ -22,6 +22,8 @@ else
     LD := ld
 endif
 
+GDB ?= gdb
+
 LWIP_SRC := kernel/net/lwip/src
 
 # === Kernel configuration (Kconfig toolchain) ===
@@ -69,6 +71,12 @@ LDFLAGS := \
     -nostdlib          \
     -static            \
     -z max-page-size=0x1000
+
+# Optional: DEBUG=1 enables debug symbols and relaxed optimisation
+ifeq ($(DEBUG),1)
+    CFLAGS += -g -O1 -DNDEBUG
+    LDFLAGS += -g
+endif
 
 SRCS := \
     kernel/kernel.c                    \
@@ -172,7 +180,8 @@ SRCS := \
     kernel/mm/trees.c    \
     kernel/mm/tree.c     \
     kernel/mm/local.c    \
-    kernel/mm/child.c
+    kernel/mm/child.c \
+    kernel/prof/profiler.c
 
 ASM_SRCS := \
     kernel/arch/x86_64/idt_stubs.S    \
@@ -192,7 +201,7 @@ KALLSYMS_OBJ := $(BUILD_DIR)/kernel/kallsyms_data.o
 
 SRC_DIR  := .
 
-.PHONY: all kernel iso run run-serial run-uefi live live-iso live-run run-disk clean user-build xorg testrunner phantom-test test-initrd test-iso test-run test-run-log fmt fmt-check disk test-disk config.h kallsyms nconfig help
+.PHONY: all kernel iso run run-serial run-uefi live live-iso live-run run-disk clean user-build xorg testrunner phantom-test test-initrd test-iso test-run test-run-log fmt fmt-check disk test-disk config.h kallsyms nconfig help debug debug-run debug-gdb
 
 help:
 	@echo "Usage: make <target>"
@@ -217,6 +226,11 @@ help:
 	@echo "  test-run   QEMU: run tests"
 	@echo "  test-run-log  QEMU: run tests + check results"
 	@echo ""
+	@echo "Debug"
+	@echo "  debug      Build kernel with DEBUG=1 symbols (-g -O1)"
+	@echo "  debug-run  QEMU: serial + GDB stub (-s -S, frozen start)"
+	@echo "  debug-gdb  Attach GDB to running debug session"
+	@echo ""
 	@echo "Other"
 	@echo "  user-build Rebuild userspace programs"
 	@echo "  clean      Remove all build artifacts"
@@ -228,6 +242,8 @@ help:
 	@echo "  make iso CRUNTIME=podman"
 	@echo ""
 	@echo "Note: *-run targets do NOT rebuild. Run 'make iso' etc. first."
+	@echo "Debug workflow: make debug debug-run  (terminal 1)"
+	@echo "                make debug-gdb          (terminal 2)"
 
 all: config.h $(TARGET) $(INITRD) $(DISK_IMG) iso
 
@@ -459,6 +475,36 @@ run-uefi:
 	    -device ahci,id=ahci \
 	    -device ide-hd,drive=hd0,bus=ahci.0
 
+# === Debug: GDB + QEMU ===
+debug:
+	$(MAKE) kernel iso DEBUG=1
+	@echo "  Built: $(TARGET) (DEBUG symbols, -g -O1)"
+
+debug-run: $(ISO)
+	qemu-system-x86_64              \
+	    -M q35                      \
+	    -m 2G                       \
+	    -smp 4                      \
+	    -cdrom $(ISO)               \
+	    -boot d                     \
+	    -serial stdio               \
+	    -vga qxl                    \
+	    -global qxl-vga.vgamem_mb=1024 \
+	    -s -S                       \
+	    -drive file=$(DISK_IMG),format=raw,if=none,id=hd0,cache=writethrough \
+	    -device ahci,id=ahci \
+	    -device ide-hd,drive=hd0,bus=ahci.0
+	@echo ""
+	@echo "  GDB stub listening on localhost:1234"
+	@echo "  Run: gdb $(TARGET) -ex 'target remote :1234'"
+
+debug-gdb: $(TARGET)
+	$(GDB) $(TARGET) \
+	    -ex "source samples.gdb" \
+	    -ex "target remote :1234" \
+	    -ex "break kmain" \
+	    -ex "continue"
+
 TEST_ROOTFS    := test_rootfs
 
 testrunner: build/libatomic_asneeded.a
@@ -481,7 +527,7 @@ test-initrd: $(TARGET) testrunner phantom-test build/libatomic_asneeded.a
 	ln -sf ksh $(TEST_ROOTFS)/bin/sh
 	for app in basename cat chgrp chmod chown cksum clear cmp cp cut date dd dirname du echo env false \
 	    find grep head hostname kill killall less link ln ls mkdir mktemp mv nc nslookup ping printenv printf ps pwd readlink reboot rm rmdir \
-	    sed seq sleep sort sync tail tee test touch tr true tty uname uniq unlink wc wget which whoami yes; do \
+	    sed seq sleep sort stress sync tail tee test touch tr true tty uname uniq unlink wc wget which whoami yes; do \
 	    cp build/bin/$$app $(TEST_ROOTFS)/bin/; \
 	done
 	for bin in busybox tar gzip gunzip bzip2 bunzip2 xz unxz md5sum sha256sum install patch; do \

@@ -1,18 +1,18 @@
 #include "mount.h"
+#include "drivers/block.h"
 #include "fs/vfs.h"
 #include "fs/vfs_internal.h"
 #include "internal.h"
 #include "lib/log.h"
 #include "lib/printf.h"
 #include "lib/string.h"
-#include "drivers/block.h"
 
 #define EINVAL 22
 #define EFAULT 14
-#define EBUSY  16
+#define EBUSY 16
 #define ENODEV 19
 #define ENOENT 2
-#define EPERM  1
+#define EPERM 1
 
 static mount_entry_t g_mounts[MOUNT_MAX];
 static int g_mount_count = 0;
@@ -20,8 +20,7 @@ static int g_mount_count = 0;
 mount_entry_t *mount_table(void) { return g_mounts; }
 int mount_count(void) { return g_mount_count; }
 
-void mount_add(const char *source, const char *target, const char *fstype,
-               uint32_t flags) {
+void mount_add(const char *source, const char *target, const char *fstype, uint32_t flags) {
     if (g_mount_count >= MOUNT_MAX) return;
     mount_entry_t *m = &g_mounts[g_mount_count++];
     memset(m, 0, sizeof(*m));
@@ -44,8 +43,7 @@ void mount_remove(const char *target) {
 
 mount_entry_t *mount_find(const char *target) {
     for (int i = g_mount_count - 1; i >= 0; i--) {
-        if (g_mounts[i].used && strcmp(g_mounts[i].target, target) == 0)
-            return &g_mounts[i];
+        if (g_mounts[i].used && strcmp(g_mounts[i].target, target) == 0) return &g_mounts[i];
     }
     return NULL;
 }
@@ -65,8 +63,8 @@ static bool copy_user_string(char *out, const char *in, int max) {
     return true;
 }
 
-int64_t sys_mount(const char *source, const char *target, const char *fstype,
-                  uint64_t flags, const void *data) {
+int64_t sys_mount(const char *source, const char *target, const char *fstype, uint64_t flags,
+                  const void *data) {
     (void) data;
 
     if (!host_priv()) return -(int64_t) EPERM;

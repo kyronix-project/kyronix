@@ -14,11 +14,11 @@
 #define ENOMEM 12
 #define ENOSPC 28
 
-#define BLKGETSIZE   0x1260
+#define BLKGETSIZE 0x1260
 #define BLKGETSIZE64 0x80081272
-#define BLKSSZGET    0x1268
-#define BLKFLSBUF    0x1261
-#define BLKDISCARD   0x127F
+#define BLKSSZGET 0x1268
+#define BLKFLSBUF 0x1261
+#define BLKDISCARD 0x127F
 
 #define BLK_IO_MAX (16ULL * 1024 * 1024)
 
@@ -91,8 +91,7 @@ static int64_t blk_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t 
             uint64_t last_lba = lba + count - 1;
             uint64_t last_off = total - bd->sector_size;
             if (last_off != off_in_first) {
-                int r = bd->ops->read(bd, last_lba + bd->offset_lba, 1,
-                                      kbuf + last_off);
+                int r = bd->ops->read(bd, last_lba + bd->offset_lba, 1, kbuf + last_off);
                 if (r < 0) {
                     kfree(kbuf);
                     return -(int64_t) EINVAL;
@@ -123,21 +122,18 @@ static int64_t blk_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
     switch (req) {
     case BLKGETSIZE: {
         uint64_t size = (uint64_t) bd->sectors * bd->sector_size;
-        if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(uint64_t)))
-            return -(int64_t) EFAULT;
+        if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(uint64_t))) return -(int64_t) EFAULT;
         *(uint64_t *) (uintptr_t) arg = size;
         return 0;
     }
     case BLKGETSIZE64: {
         uint64_t size = (uint64_t) bd->sectors * bd->sector_size;
-        if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(uint64_t)))
-            return -(int64_t) EFAULT;
+        if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(uint64_t))) return -(int64_t) EFAULT;
         *(uint64_t *) (uintptr_t) arg = size;
         return 0;
     }
     case BLKSSZGET: {
-        if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(int)))
-            return -(int64_t) EFAULT;
+        if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(int))) return -(int64_t) EFAULT;
         *(int *) (uintptr_t) arg = (int) bd->sector_size;
         return 0;
     }
@@ -164,13 +160,10 @@ static void blockdev_register_one(struct block_device *bd) {
     n->fs_private = bd;
     n->size = (uint64_t) bd->sectors * bd->sector_size;
 
-    log_info("blockdev: %s  %lu sectors  (%lu MiB)", path, bd->sectors,
-             bd->sectors / 2048);
+    log_info("blockdev: %s  %lu sectors  (%lu MiB)", path, bd->sectors, bd->sectors / 2048);
 }
 
-void blockdev_init(void) {
-    vfs_mkdir_p("/dev", 0755);
-}
+void blockdev_init(void) { vfs_mkdir_p("/dev", 0755); }
 
 void blockdev_create_all(void) {
     for (int i = 0; i < block_count(); i++) {

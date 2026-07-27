@@ -22,10 +22,10 @@ static uint8_t *g_shadow;
 static uint64_t g_shadow_bytes;
 static uint32_t g_bytes_per_px = 4;
 
-static inline uint8_t *vram_at(uint64_t off) { return (uint8_t *)g_fb.addr + off; }
+static inline uint8_t *vram_at(uint64_t off) { return (uint8_t *) g_fb.addr + off; }
 
 static inline uint64_t px_off(uint32_t x, uint32_t y) {
-    return (uint64_t)y * g_fb.pitch + (uint64_t)x * g_bytes_per_px;
+    return (uint64_t) y * g_fb.pitch + (uint64_t) x * g_bytes_per_px;
 }
 
 static void cursor_draw(uint32_t col, uint32_t row, uint32_t color);
@@ -34,18 +34,18 @@ static uint32_t adjust_bold(uint32_t color);
 /* ── KFNT font state ─────────────────────────────────────────── */
 
 static const kfnt_header_t *g_kfnt;
-static const uint8_t       *g_glyph_data;
-static uint32_t              g_bpf;          /* bytes per glyph row */
-static uint32_t              g_glyph_bytes;  /* bytes per glyph (bpf * height) */
+static const uint8_t *g_glyph_data;
+static uint32_t g_bpf;         /* bytes per glyph row */
+static uint32_t g_glyph_bytes; /* bytes per glyph (bpf * height) */
 
 /* ── VT100 Special Graphics charset ──────────────────────────── */
 
 enum { CS_ASCII = 0, CS_GRAPHICS = 1 };
 
-static int g_charset_g0 = CS_ASCII;  /* G0 slot assignment */
-static int g_charset_g1 = CS_ASCII;  /* G1 slot assignment */
-static int g_gl = 0;                  /* 0 = using G0, 1 = using G1 */
-static int g_esc_charset_slot = 0;    /* saved slot for ESC_CHARSET */
+static int g_charset_g0 = CS_ASCII; /* G0 slot assignment */
+static int g_charset_g1 = CS_ASCII; /* G1 slot assignment */
+static int g_gl = 0;                /* 0 = using G0, 1 = using G1 */
+static int g_esc_charset_slot = 0;  /* saved slot for ESC_CHARSET */
 
 /* VT100 Special Graphics → Unicode codepoint mapping.
  * Index: VT100 code - 0x41 for uppercase, - 0x60 for lowercase.
@@ -57,41 +57,51 @@ static const uint32_t vt100_lower[] = {
     /* 0x60 */ 0x25C6,
     /* 0x61 */ 0x2592,
     /* 0x62-0x69: control chars, identity */
-    0, 0, 0, 0, 0, 0, 0, 0,
-    /* 0x6A */ 0x2518,  /* ┘ */
-    /* 0x6B */ 0x2510,  /* ┐ */
-    /* 0x6C */ 0x250C,  /* ┌ */
-    /* 0x6D */ 0x2514,  /* └ */
-    /* 0x6E */ 0x253C,  /* ┼ */
-    /* 0x6F */ 0x23BA,  /* ⎺  (scan 1) */
-    /* 0x70 */ 0x23BB,  /* ⎻  (scan 3) */
-    /* 0x71 */ 0x2500,  /* ─  (horiz line) */
-    /* 0x72 */ 0x23BC,  /* ⎼  (scan 7) */
-    /* 0x73 */ 0x23BD,  /* ⎽  (scan 9) */
-    /* 0x74 */ 0x251C,  /* ├ */
-    /* 0x75 */ 0x2524,  /* ┤ */
-    /* 0x76 */ 0x2534,  /* ┴ */
-    /* 0x77 */ 0x252C,  /* ┬ */
-    /* 0x78 */ 0x2502,  /* │ */
-    /* 0x79 */ 0x2264,  /* ≤ */
-    /* 0x7A */ 0x2265,  /* ≥ */
-    /* 0x7B */ 0x3C0,   /* π */
-    /* 0x7C */ 0x2260,  /* ≠ */
-    /* 0x7D */ 0x00A3,  /* £ */
-    /* 0x7E */ 0x00B7,  /* · */
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    /* 0x6A */ 0x2518, /* ┘ */
+    /* 0x6B */ 0x2510, /* ┐ */
+    /* 0x6C */ 0x250C, /* ┌ */
+    /* 0x6D */ 0x2514, /* └ */
+    /* 0x6E */ 0x253C, /* ┼ */
+    /* 0x6F */ 0x23BA, /* ⎺  (scan 1) */
+    /* 0x70 */ 0x23BB, /* ⎻  (scan 3) */
+    /* 0x71 */ 0x2500, /* ─  (horiz line) */
+    /* 0x72 */ 0x23BC, /* ⎼  (scan 7) */
+    /* 0x73 */ 0x23BD, /* ⎽  (scan 9) */
+    /* 0x74 */ 0x251C, /* ├ */
+    /* 0x75 */ 0x2524, /* ┤ */
+    /* 0x76 */ 0x2534, /* ┴ */
+    /* 0x77 */ 0x252C, /* ┬ */
+    /* 0x78 */ 0x2502, /* │ */
+    /* 0x79 */ 0x2264, /* ≤ */
+    /* 0x7A */ 0x2265, /* ≥ */
+    /* 0x7B */ 0x3C0,  /* π */
+    /* 0x7C */ 0x2260, /* ≠ */
+    /* 0x7D */ 0x00A3, /* £ */
+    /* 0x7E */ 0x00B7, /* · */
 };
 
 /* Binary search the unicode table for a codepoint.
  * Returns glyph index, or -1 if not found. */
 static int font_find_glyph(uint32_t cp) {
-    const kfnt_uni_entry_t *table = (const kfnt_uni_entry_t *)
-        ((const uint8_t *)g_kfnt + g_kfnt->uni_off);
+    const kfnt_uni_entry_t *table =
+        (const kfnt_uni_entry_t *) ((const uint8_t *) g_kfnt + g_kfnt->uni_off);
     uint32_t lo = 0, hi = g_kfnt->uni_count;
     while (lo < hi) {
         uint32_t mid = lo + (hi - lo) / 2;
-        if (table[mid].codepoint < cp) lo = mid + 1;
-        else if (table[mid].codepoint > cp) hi = mid;
-        else return table[mid].glyph_idx;
+        if (table[mid].codepoint < cp)
+            lo = mid + 1;
+        else if (table[mid].codepoint > cp)
+            hi = mid;
+        else
+            return table[mid].glyph_idx;
     }
     return -1;
 }
@@ -99,7 +109,7 @@ static int font_find_glyph(uint32_t cp) {
 /* Resolve a VT100 Special Graphics character to a Unicode codepoint.
  * Returns the codepoint, or 0 if no translation. */
 static uint32_t vt100_resolve(char c) {
-    unsigned char uc = (unsigned char)c;
+    unsigned char uc = (unsigned char) c;
     if (uc >= 0x41 && uc <= 0x47) return vt100_upper[uc - 0x41];
     if (uc >= 0x60 && uc <= 0x7E) return vt100_lower[uc - 0x60];
     return 0;
@@ -125,22 +135,20 @@ void fb_cursor_blink_tick(uint64_t ticks) {
     if (ticks - last_blink < 500) return;
     last_blink = ticks;
     g_cursor_blink_state = !g_cursor_blink_state;
-    uint32_t cols = (uint32_t)(g_fb.width / FONT_W);
-    uint32_t rows = (uint32_t)(g_fb.height / FONT_H);
+    uint32_t cols = (uint32_t) (g_fb.width / FONT_W);
+    uint32_t rows = (uint32_t) (g_fb.height / FONT_H);
     if (g_cursor_last_col < cols && g_cursor_last_row < rows)
-        cursor_draw(g_cursor_last_col, g_cursor_last_row,
-                    g_cursor_blink_state ? g_fb.fg : g_fb.bg);
+        cursor_draw(g_cursor_last_col, g_cursor_last_row, g_cursor_blink_state ? g_fb.fg : g_fb.bg);
 }
 
 void fb_cursor_update(void) {
     if (!g_cursor_enabled) return;
-    uint32_t cols = (uint32_t)(g_fb.width / FONT_W);
-    uint32_t rows = (uint32_t)(g_fb.height / FONT_H);
+    uint32_t cols = (uint32_t) (g_fb.width / FONT_W);
+    uint32_t rows = (uint32_t) (g_fb.height / FONT_H);
     if (g_cursor_last_col < cols && g_cursor_last_row < rows)
         cursor_draw(g_cursor_last_col, g_cursor_last_row, g_fb.bg);
     g_cursor_blink_state = true;
-    if (g_fb.col < cols && g_fb.row < rows)
-        cursor_draw(g_fb.col, g_fb.row, g_fb.fg);
+    if (g_fb.col < cols && g_fb.row < rows) cursor_draw(g_fb.col, g_fb.row, g_fb.fg);
     g_cursor_last_col = g_fb.col;
     g_cursor_last_row = g_fb.row;
 }
@@ -159,8 +167,8 @@ static void draw_char(uint32_t col, uint32_t row, uint32_t glyph_idx) {
     for (uint32_t ri = 0; ri < FONT_H; ri++) {
         uint8_t bits = glyph[ri * g_bpf];
         uint64_t off = px_off(px, py + ri);
-        uint32_t *v = (uint32_t *)vram_at(off);
-        uint32_t *s = g_shadow ? (uint32_t *)(g_shadow + off) : NULL;
+        uint32_t *v = (uint32_t *) vram_at(off);
+        uint32_t *s = g_shadow ? (uint32_t *) (g_shadow + off) : NULL;
         for (uint32_t b = 0; b < FONT_W; b++) {
             uint32_t color = (bits & (0x80u >> b)) ? fg : bg;
             v[b] = color;
@@ -190,21 +198,21 @@ void fb_init(struct limine_framebuffer *fb) {
     g_cursor_last_row = 0;
 
     /* Parse KFNT font header */
-    g_kfnt = (const kfnt_header_t *)g_font_data;
+    g_kfnt = (const kfnt_header_t *) g_font_data;
     g_glyph_data = g_font_data + g_kfnt->glyph_off;
     g_bpf = (g_kfnt->width + 7) / 8;
     g_glyph_bytes = g_bpf * g_kfnt->height;
 
     g_bytes_per_px = g_fb.bpp / 8 ? g_fb.bpp / 8 : 4;
-    g_shadow_bytes = (uint64_t)g_fb.pitch * g_fb.height;
+    g_shadow_bytes = (uint64_t) g_fb.pitch * g_fb.height;
     uint64_t pages = (g_shadow_bytes + PAGE_SIZE - 1) / PAGE_SIZE;
     void *phys = pmm_alloc_contiguous(pages);
-    g_shadow = phys ? (uint8_t *)phys_to_virt((uint64_t)phys) : NULL;
+    g_shadow = phys ? (uint8_t *) phys_to_virt((uint64_t) phys) : NULL;
     if (g_shadow) {
         memset(g_shadow, 0, g_shadow_bytes);
 #ifdef CONFIG_KMEMLEAK
         for (uint64_t i = 0; i < pages; i++)
-            kmemleak_untrack_page((void *)((uint64_t)phys + i * PAGE_SIZE));
+            kmemleak_untrack_page((void *) ((uint64_t) phys + i * PAGE_SIZE));
 #endif
     }
 }
@@ -212,17 +220,17 @@ void fb_init(struct limine_framebuffer *fb) {
 void fb_put_pixel(uint32_t x, uint32_t y, uint32_t color) {
     if (x >= g_fb.width || y >= g_fb.height) return;
     uint64_t off = px_off(x, y);
-    *(uint32_t *)vram_at(off) = color;
-    if (g_shadow) *(uint32_t *)(g_shadow + off) = color;
+    *(uint32_t *) vram_at(off) = color;
+    if (g_shadow) *(uint32_t *) (g_shadow + off) = color;
 }
 
 void fb_clear(uint32_t color) {
     for (uint64_t y = 0; y < g_fb.height; y++) {
-        uint64_t off = px_off(0, (uint32_t)y);
-        uint32_t *v = (uint32_t *)vram_at(off);
+        uint64_t off = px_off(0, (uint32_t) y);
+        uint32_t *v = (uint32_t *) vram_at(off);
         for (uint64_t x = 0; x < g_fb.width; x++) v[x] = color;
         if (g_shadow) {
-            uint32_t *s = (uint32_t *)(g_shadow + off);
+            uint32_t *s = (uint32_t *) (g_shadow + off);
             for (uint64_t x = 0; x < g_fb.width; x++) s[x] = color;
         }
     }
@@ -235,14 +243,14 @@ void fb_clear(uint32_t color) {
 
 void fb_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color) {
     if (x >= g_fb.width || y >= g_fb.height) return;
-    if (w > g_fb.width - x) w = (uint32_t)(g_fb.width - x);
-    if (h > g_fb.height - y) h = (uint32_t)(g_fb.height - y);
+    if (w > g_fb.width - x) w = (uint32_t) (g_fb.width - x);
+    if (h > g_fb.height - y) h = (uint32_t) (g_fb.height - y);
     for (uint32_t dy = 0; dy < h; dy++) {
         uint64_t off = px_off(x, y + dy);
-        uint32_t *v = (uint32_t *)vram_at(off);
+        uint32_t *v = (uint32_t *) vram_at(off);
         for (uint32_t dx = 0; dx < w; dx++) v[dx] = color;
         if (g_shadow) {
-            uint32_t *s = (uint32_t *)(g_shadow + off);
+            uint32_t *s = (uint32_t *) (g_shadow + off);
             for (uint32_t dx = 0; dx < w; dx++) s[dx] = color;
         }
     }
@@ -254,21 +262,21 @@ void fb_set_color(uint32_t fg, uint32_t bg) {
 }
 
 static void scroll_up(void) {
-    uint64_t line_bytes = (uint64_t)FONT_H * g_fb.pitch;
+    uint64_t line_bytes = (uint64_t) FONT_H * g_fb.pitch;
     uint64_t rows_total = g_fb.height / FONT_H;
     if (rows_total < 2) return;
     uint64_t keep_bytes = (rows_total - 1) * line_bytes;
-    uint32_t last_y = (uint32_t)((rows_total - 1) * FONT_H);
+    uint32_t last_y = (uint32_t) ((rows_total - 1) * FONT_H);
 
     if (!g_shadow) {
-        memmove(g_fb.addr, (uint8_t *)g_fb.addr + line_bytes, keep_bytes);
-        fb_fill_rect(0, last_y, (uint32_t)g_fb.width, FONT_H, g_fb.bg);
+        memmove(g_fb.addr, (uint8_t *) g_fb.addr + line_bytes, keep_bytes);
+        fb_fill_rect(0, last_y, (uint32_t) g_fb.width, FONT_H, g_fb.bg);
         return;
     }
 
     memmove(g_shadow, g_shadow + line_bytes, keep_bytes);
     for (uint32_t dy = 0; dy < FONT_H; dy++) {
-        uint32_t *s = (uint32_t *)(g_shadow + px_off(0, last_y + dy));
+        uint32_t *s = (uint32_t *) (g_shadow + px_off(0, last_y + dy));
         for (uint64_t x = 0; x < g_fb.width; x++) s[x] = g_fb.bg;
     }
     memcpy(g_fb.addr, g_shadow, keep_bytes + line_bytes);
@@ -282,18 +290,18 @@ static int g_esc_np;
 static bool g_esc_priv;
 
 static const uint32_t ansi_fg[8] = {
-    COLOR_BLACK, COLOR_RED, COLOR_GREEN, COLOR_YELLOW,
-    COLOR_BLUE, RGB(198, 120, 221), COLOR_CYAN, COLOR_WHITE,
+    COLOR_BLACK, COLOR_RED,          COLOR_GREEN, COLOR_YELLOW,
+    COLOR_BLUE,  RGB(198, 120, 221), COLOR_CYAN,  COLOR_WHITE,
 };
 
 static const uint32_t ansi_bg[8] = {
-    COLOR_BLACK, COLOR_RED, COLOR_GREEN, COLOR_YELLOW,
-    COLOR_BLUE, RGB(198, 120, 221), COLOR_CYAN, COLOR_WHITE,
+    COLOR_BLACK, COLOR_RED,          COLOR_GREEN, COLOR_YELLOW,
+    COLOR_BLUE,  RGB(198, 120, 221), COLOR_CYAN,  COLOR_WHITE,
 };
 
 static const uint32_t ansi_bright[8] = {
-    RGB(128, 128, 128), RGB(255, 85, 85), RGB(150, 255, 85), RGB(255, 255, 85),
-    RGB(85, 170, 255), RGB(215, 150, 255), RGB(85, 255, 255), RGB(255, 255, 255),
+    RGB(128, 128, 128), RGB(255, 85, 85),   RGB(150, 255, 85), RGB(255, 255, 85),
+    RGB(85, 170, 255),  RGB(215, 150, 255), RGB(85, 255, 255), RGB(255, 255, 255),
 };
 
 static uint32_t adjust_bold(uint32_t color) {
@@ -326,7 +334,7 @@ static uint32_t ansi_256(int idx) {
 }
 
 static void fb_erase_to_eol(void) {
-    uint32_t cols = (uint32_t)(g_fb.width / FONT_W);
+    uint32_t cols = (uint32_t) (g_fb.width / FONT_W);
     uint32_t c = g_fb.col;
     while (c < cols) {
         draw_char(c, g_fb.row, ' ');
@@ -423,8 +431,8 @@ static void fb_sgr(void) {
 /* ──_putchar (main entry) ────────────────────────────────────── */
 
 void fb_putchar(char c) {
-    uint32_t cols = (uint32_t)(g_fb.width / FONT_W);
-    uint32_t rows = (uint32_t)(g_fb.height / FONT_H);
+    uint32_t cols = (uint32_t) (g_fb.width / FONT_W);
+    uint32_t rows = (uint32_t) (g_fb.height / FONT_H);
 
     switch (g_esc) {
 
@@ -436,7 +444,7 @@ void fb_putchar(char c) {
             g_esc_np = 0;
             g_esc_priv = false;
         } else if (c == ']') {
-            g_esc = ESC_NONE;  /* OSC: consume until BEL/ST */
+            g_esc = ESC_NONE; /* OSC: consume until BEL/ST */
         } else if (c == '(' || c == ')') {
             /* ESC( / ESC) — charset designation, next char selects */
             g_esc_charset_slot = (c == ')') ? 1 : 0;
@@ -478,12 +486,12 @@ void fb_putchar(char c) {
                 if (g_fb.row > 0) {
                     g_fb.row--;
                 } else {
-                    uint32_t line_bytes = FONT_H * (uint32_t)g_fb.pitch;
+                    uint32_t line_bytes = FONT_H * (uint32_t) g_fb.pitch;
                     uint8_t *src = g_fb.addr;
                     uint8_t *dst = src + line_bytes;
                     uint64_t copy_bytes = (rows - 1) * line_bytes;
                     memmove(dst, src, copy_bytes);
-                    fb_fill_rect(0, 0, (uint32_t)g_fb.width, FONT_H, g_fb.bg);
+                    fb_fill_rect(0, 0, (uint32_t) g_fb.width, FONT_H, g_fb.bg);
                 }
             }
         }
@@ -494,11 +502,15 @@ void fb_putchar(char c) {
         g_esc = ESC_NONE;
         int slot = g_esc_charset_slot;
         if (c == '0') {
-            if (slot == 0) g_charset_g0 = CS_GRAPHICS;
-            else           g_charset_g1 = CS_GRAPHICS;
+            if (slot == 0)
+                g_charset_g0 = CS_GRAPHICS;
+            else
+                g_charset_g1 = CS_GRAPHICS;
         } else if (c == 'B') {
-            if (slot == 0) g_charset_g0 = CS_ASCII;
-            else           g_charset_g1 = CS_ASCII;
+            if (slot == 0)
+                g_charset_g0 = CS_ASCII;
+            else
+                g_charset_g1 = CS_ASCII;
         }
         /* Update active graphics state */
         int active = (g_gl == 0) ? g_charset_g0 : g_charset_g1;
@@ -575,8 +587,7 @@ void fb_putchar(char c) {
                 for (uint32_t c2 = 0; c2 <= g_fb.col && c2 < cols; c2++)
                     draw_char(c2, g_fb.row, ' ');
             } else if (n == 2) {
-                for (uint32_t c2 = 0; c2 < cols; c2++)
-                    draw_char(c2, g_fb.row, ' ');
+                for (uint32_t c2 = 0; c2 < cols; c2++) draw_char(c2, g_fb.row, ' ');
             }
         } else if (c == 'A') {
             int n = g_esc_params[0] > 0 ? g_esc_params[0] : 1;
@@ -593,26 +604,24 @@ void fb_putchar(char c) {
             int n = g_esc_params[0] > 0 ? g_esc_params[0] : 1;
             while (n-- > 0 && g_fb.col > 0) g_fb.col--;
         } else if (c == 'G') {
-            uint32_t co = (uint32_t)(g_esc_params[0] > 0 ? g_esc_params[0] - 1 : 0);
+            uint32_t co = (uint32_t) (g_esc_params[0] > 0 ? g_esc_params[0] - 1 : 0);
             if (co < cols) g_fb.col = co;
         } else if (c == 'H' || c == 'f') {
-            uint32_t row = (uint32_t)(g_esc_params[0] > 0 ? g_esc_params[0] - 1 : 0);
-            uint32_t col = (uint32_t)(g_esc_params[1] > 0 ? g_esc_params[1] - 1 : 0);
+            uint32_t row = (uint32_t) (g_esc_params[0] > 0 ? g_esc_params[0] - 1 : 0);
+            uint32_t col = (uint32_t) (g_esc_params[1] > 0 ? g_esc_params[1] - 1 : 0);
             if (col < cols) g_fb.col = col;
             if (row < rows) g_fb.row = row;
         } else if (c == 'J') {
             switch (g_esc_params[0]) {
             case 0:
-                for (uint32_t c2 = g_fb.col; c2 < cols; c2++)
-                    draw_char(c2, g_fb.row, ' ');
+                for (uint32_t c2 = g_fb.col; c2 < cols; c2++) draw_char(c2, g_fb.row, ' ');
                 for (uint32_t r = g_fb.row + 1; r < rows; r++)
                     for (uint32_t c2 = 0; c2 < cols; c2++) draw_char(c2, r, ' ');
                 break;
             case 1:
                 for (uint32_t r = 0; r < g_fb.row; r++)
                     for (uint32_t c2 = 0; c2 < cols; c2++) draw_char(c2, r, ' ');
-                for (uint32_t c2 = 0; c2 <= g_fb.col; c2++)
-                    draw_char(c2, g_fb.row, ' ');
+                for (uint32_t c2 = 0; c2 <= g_fb.col; c2++) draw_char(c2, g_fb.row, ' ');
                 break;
             case 2:
             case 3:
@@ -673,14 +682,14 @@ void fb_putchar(char c) {
             draw_char(g_fb.col, g_fb.row, ' ');
         }
     } else {
-        uint32_t glyph_idx = (unsigned char)c;
+        uint32_t glyph_idx = (unsigned char) c;
 
         /* VT100 Special Graphics translation */
         if (g_fb.vt100_graphics) {
             uint32_t ucp = vt100_resolve(c);
             if (ucp) {
                 int gi = font_find_glyph(ucp);
-                if (gi >= 0) glyph_idx = (uint32_t)gi;
+                if (gi >= 0) glyph_idx = (uint32_t) gi;
             }
         }
 

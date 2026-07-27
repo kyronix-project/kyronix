@@ -6,7 +6,7 @@
 #include "../mm/heap.h"
 
 #define MBR_SIGNATURE_OFFSET 510
-#define MBR_SIGNATURE_MAGIC   0x55AA
+#define MBR_SIGNATURE_MAGIC 0x55AA
 #define MBR_PARTITION_ENTRIES_OFFSET 446
 #define MBR_PARTITION_ENTRY_SIZE 16
 #define MBR_NUM_PARTITIONS 4
@@ -25,7 +25,8 @@ static int partition_read(struct block_device *dev, uint64_t lba, uint32_t count
     return parent->ops->read(parent, dev->offset_lba + lba, count, buf);
 }
 
-static int partition_write(struct block_device *dev, uint64_t lba, uint32_t count, const void *buf) {
+static int partition_write(struct block_device *dev, uint64_t lba, uint32_t count,
+                           const void *buf) {
     struct block_device *parent = dev->parent;
     return parent->ops->write(parent, dev->offset_lba + lba, count, buf);
 }
@@ -68,8 +69,7 @@ static void scan_disk(struct block_device *bd) {
         if (e->type == 0x00) continue;
         if (e->sector_count == 0) continue;
 
-        struct block_device *pd =
-            (struct block_device *) kmalloc(sizeof(struct block_device));
+        struct block_device *pd = (struct block_device *) kmalloc(sizeof(struct block_device));
         if (!pd) continue;
 
         memset(pd, 0, sizeof(*pd));
@@ -83,8 +83,8 @@ static void scan_disk(struct block_device *bd) {
 
         block_register(pd);
 
-        log_info("partition: %s  type=0x%02x  lba=%u  sectors=%u", pd->name,
-                 e->type, e->lba_first, e->sector_count);
+        log_info("partition: %s  type=0x%02x  lba=%u  sectors=%u", pd->name, e->type, e->lba_first,
+                 e->sector_count);
         part_num++;
     }
 
