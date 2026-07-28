@@ -21,6 +21,7 @@
 #include "lib/printf.h"
 #include "lib/string.h"
 #include "mem.h"
+#include "module/loader.h"
 #include "phantom.h"
 #include "mm/pmm.h"
 #include "mm/shm.h"
@@ -768,8 +769,10 @@ void syscall_dispatch(syscall_frame_t *f) {
     case 166: /* umount2(target, flags) */
         ret = sys_umount2((const char *) a1, (int) a2);
         break;
-    case 170:
-        ret = host_priv() ? 0 : -(int64_t) EPERM; /* sethostname */
+    case 170: /* sethostname(name, length) */
+        ret = host_priv()
+                  ? sys_sethostname((const char *) a1, a2)
+                  : -(int64_t) EPERM;
         break;
     case 171:
         ret = host_priv() ? 0 : -(int64_t) EPERM;
@@ -795,10 +798,12 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = 0;
         break;
     }
-    case 175:
-    case 176:
-        ret = -(int64_t) ENOSYS;
-        break; /* init/delete_module */
+    case 175: /* init_module(image, len, params) */
+        ret = sys_init_module((const void *) a1, a2, (const char *) a3);
+        break;
+    case 176: /* delete_module(name, flags) */
+        ret = sys_delete_module((const char *) a1, (uint32_t) a2);
+        break;
     case 188:
     case 189:
     case 190:
@@ -1115,7 +1120,7 @@ void syscall_dispatch(syscall_frame_t *f) {
         break;
     case 303:
         ret = -(int64_t) ENOSYS;
-        break; /* finit_module */
+        break; /* name_to_handle_at */
     case 304:
         ret = is_root() ? 0 : -(int64_t) EPERM;
         break; /* sched_setattr */
@@ -1139,6 +1144,9 @@ void syscall_dispatch(syscall_frame_t *f) {
     case 307:
         ret = -(int64_t) ENOSYS;
         break; /* seccomp not implemented */
+    case 313: /* finit_module(fd, params, flags) */
+        ret = sys_finit_module((int) a1, (const char *) a2, (uint32_t) a3);
+        break;
     case 318:
         ret = sys_getrandom((void *) a1, a2, (uint32_t) a3);
         break;

@@ -1,6 +1,5 @@
 #define _GNU_SOURCE
 #include "common.h"
-#include <crypt.h>
 #include <shadow.h>
 #include <time.h>
 

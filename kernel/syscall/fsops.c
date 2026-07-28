@@ -1,5 +1,6 @@
 #include "fsops.h"
 
+#include "arch/x86_64/spinlock.h"
 #include "fs/vfs.h"
 #include "fs/vfs_internal.h"
 #include "internal.h"
@@ -8,15 +9,41 @@
 #include "proc/proc.h"
 #include "version.h"
 
+static spinlock_t hostname_lock;
+static char system_hostname[65] = "kx";
+
+uint64_t system_hostname_copy(char *out, uint64_t capacity) {
+    if (!out || capacity == 0) return 0;
+    spin_lock(&hostname_lock);
+    uint64_t length = strlen(system_hostname);
+    if (length >= capacity) length = capacity - 1;
+    memcpy(out, system_hostname, length);
+    out[length] = '\0';
+    spin_unlock(&hostname_lock);
+    return length;
+}
+
 int64_t sys_uname(struct utsname *buf) {
     if (!buf) return -(int64_t) EFAULT;
     if (!uptr_ok_w(buf, sizeof(*buf))) return -(int64_t) EFAULT;
     memset(buf, 0, sizeof(*buf));
     memcpy(buf->sysname, "k9", 3);
-    memcpy(buf->nodename, "kx", 3);
+    system_hostname_copy(buf->nodename, sizeof(buf->nodename));
     memcpy(buf->release, KERNEL_VERSION, sizeof(KERNEL_VERSION));
     memcpy(buf->version, "#1 SMP", 7);
     memcpy(buf->machine, "x86_64", 7);
+    return 0;
+}
+
+int64_t sys_sethostname(const char *name, uint64_t length) {
+    if (length == 0 || length > sizeof(system_hostname) - 1)
+        return -(int64_t) EINVAL;
+    if (!name || !uptr_ok(name, length)) return -(int64_t) EFAULT;
+
+    spin_lock(&hostname_lock);
+    memcpy(system_hostname, name, length);
+    system_hostname[length] = '\0';
+    spin_unlock(&hostname_lock);
     return 0;
 }
 

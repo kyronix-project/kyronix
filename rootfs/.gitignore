@@ -1,2 +1,5 @@
 /bin/
 /init
+/usr/libexec/limine-install
+/lib/libacl.so*
+/lib/libattr.so*

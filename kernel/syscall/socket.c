@@ -78,7 +78,8 @@ int64_t sys_socket_connect(int fd, struct sockaddr_un *addr, uint64_t addrlen) {
     if (!uptr_ok(addr, sizeof(*addr))) return -(int64_t) EFAULT;
     vfs_file_t *f = fd_get_file(fd);
     if (!f) return -(int64_t) EBADF;
-    if (f->inet) return inet_connect(f->inet, (const struct sockaddr_in *) addr);
+    if (f->inet)
+        return inet_connect(f->inet, (const struct sockaddr_in *) addr, f->flags);
     char sun[109], abs[512];
     sun_path_copy(sun, addr->sun_path);
     const char *path = sun;
@@ -185,7 +186,7 @@ int64_t sys_socket_getsockopt(int fd, int level, int opt, void *val, int *optlen
         return 0;
     case SO_ERROR:
         if (*optlen < (int) sizeof(int) || !uptr_ok_w(val, sizeof(int))) return -(int64_t) EINVAL;
-        *(int *) val = 0;
+        *(int *) val = f->inet ? inet_get_error(f->inet) : 0;
         *optlen = sizeof(int);
         return 0;
     case SO_PEERCRED:

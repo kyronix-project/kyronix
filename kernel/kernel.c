@@ -26,7 +26,6 @@
 #include "drivers/serial.h"
 #include "drivers/tty.h"
 #include "drivers/uio.h"
-#include "drivers/virtio_net.h"
 #include "drivers/vt.h"
 #include "exec/process.h"
 #include "fs/cpio.h"
@@ -41,7 +40,7 @@
 #include "mm/heap.h"
 #include "mm/pmm.h"
 #include "mm/vmm.h"
-#include "net/net.h"
+#include "module/loader.h"
 #include "proc/jail.h"
 #include "proc/proc.h"
 #include "security/anti_toctou.h"
@@ -354,10 +353,6 @@ void kmain(void) {
     partition_scan_all();
     blockdev_create_all();
     kstatus("Initialising block devices", true);
-    virtnet_init();
-    kstatus("Initialising virtio-net", virtnet_ready());
-    net_init();
-    kstatus("Initialising network stack", true);
     uio_init();
     kstatus("Initialising UIO", true);
     fbdev_init();
@@ -569,6 +564,12 @@ void kmain(void) {
     if (root_on_disk) {
         bool fstab_ok = fstab_mount_all("/etc/fstab");
         kstatus("Mounting fstab entries", fstab_ok);
+    }
+
+    {
+        int result = module_load_path("/lib/modules/virtio_net.ko");
+        kstatus("Loading virtio-net module", result == 0);
+        if (result < 0) log_warn("virtio-net module load failed: %d", result);
     }
 
     {

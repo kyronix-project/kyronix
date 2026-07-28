@@ -19,7 +19,7 @@ static int g_uio_ndevs;
 static void irq_handler(int irq, void *arg) {
     uio_dev_t *uio = (uio_dev_t *) arg;
     uio->irq_count++;
-    pic_mask_irq((uint8_t) irq); /* driver re-enables via write() */
+    pic_mask_irq((uint8_t) irq); // driver re-enables via write()
     if (uio->waiter && uio->waiter->state == PROC_WAITING) {
         uio->waiter->state = PROC_READY;
         proc_set_ready(uio->waiter);
@@ -59,7 +59,7 @@ static int64_t uio_mmap(vfs_node_t *n, uint64_t off, uint64_t len, uint64_t va, 
     if (p->euid != 0) return -(int64_t) EPERM;
 
     if (off & 0xFFFULL) return -(int64_t) EINVAL;
-    uint64_t bar_idx = off >> 12; /* offset N*PAGE_SIZE -> BAR[N] */
+    uint64_t bar_idx = off >> 12; // offset N*PAGE_SIZE -> BAR[N]
     if (bar_idx >= 6) return -(int64_t) EINVAL;
     uint64_t phys = uio->pdev->bars[bar_idx];
     if (!phys) return -(int64_t) ENODEV;
@@ -70,7 +70,7 @@ static int64_t uio_mmap(vfs_node_t *n, uint64_t off, uint64_t len, uint64_t va, 
     if (!sz || sz > len) return -(int64_t) EINVAL;
     if (va >= USER_LIMIT || sz > USER_LIMIT - va) return -(int64_t) EINVAL;
 
-    /* MMIO: present + user + write, no-exec, no cache (PAT/PCD/PWT = 0 for UC) */
+    // mmio: present + user + write, no-exec, no cache
     uint64_t flags = vflags | VMM_PRESENT | VMM_USER | VMM_WRITE;
     for (uint64_t o = 0; o < sz; o += 0x1000) vmm_map(p->space, va + o, phys + o, flags);
     return (int64_t) va;

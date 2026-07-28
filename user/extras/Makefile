@@ -4,38 +4,41 @@ ROOTFS      := ../../rootfs
 TMPDIR      := /tmp/kyronix-extras
 
 APK_VERSIONS := \
-	busybox-1.36.1-r31 \
 	gzip-1.13-r0 \
 	bzip2-1.0.8-r6 \
 	xz-5.8.3-r0 \
-	coreutils-9.5-r2 \
-	patch-2.7.6-r10
+	tar-1.35-r2 \
+	libacl-2.3.2-r0 \
+	libattr-2.5.2-r0
 
 APK_FILES := $(addsuffix .apk,$(APK_VERSIONS))
-
-APPLETS   := tar gzip gunzip bunzip2 md5sum sha256sum install
-STANDALONE := bzip2 xz patch
+STANDALONE := bzip2 xz gzip tar
+ALIASES := gunzip bunzip2 unxz
 
 .PHONY: all clean install
 
-all: $(OUT)/busybox $(OUT)/unxz $(STANDALONE:%=$(OUT)/%) $(APPLETS:%=$(OUT)/%)
+all: $(STANDALONE:%=$(OUT)/%) $(ALIASES:%=$(OUT)/%)
 
-$(OUT)/busybox: $(OUT)/.extras-fetch
-	@cp $(TMPDIR)/extracted/bin/busybox $@
-	@chmod +x $@
-	@for app in $(APPLETS); do ln -sf busybox $(OUT)/$$app; done
-	@echo "  extras: busybox + $(words $(APPLETS)) applets"
-
-$(OUT)/bzip2 $(OUT)/xz $(OUT)/patch: $(OUT)/.extras-fetch
+$(OUT)/bzip2 $(OUT)/xz: $(OUT)/.extras-fetch
+	@rm -f $@
 	@cp $(TMPDIR)/extracted/usr/bin/$(notdir $@) $@
 	@chmod +x $@
 	@echo "  extras: $(notdir $@)"
 
+$(OUT)/gzip $(OUT)/tar: $(OUT)/.extras-fetch
+	@rm -f $@
+	@cp $(TMPDIR)/extracted/bin/$(notdir $@) $@
+	@chmod +x $@
+	@echo "  extras: $(notdir $@)"
+
+$(OUT)/gunzip: $(OUT)/gzip
+	@ln -sf gzip $@
+
+$(OUT)/bunzip2: $(OUT)/bzip2
+	@ln -sf bzip2 $@
+
 $(OUT)/unxz: $(OUT)/xz
 	@ln -sf xz $@
-	@echo "  extras: unxz -> xz"
-
-$(APPLETS:%=$(OUT)/%): $(OUT)/busybox
 
 $(OUT)/.extras-fetch: $(APK_FILES:%=$(TMPDIR)/%)
 	@mkdir -p $(TMPDIR)/extracted
@@ -51,24 +54,24 @@ $(TMPDIR)/%.apk:
 	@if file $@ 2>/dev/null | grep -q HTML; then rm -f $@; touch $@; fi
 
 install: all
-	@mkdir -p $(ROOTFS)/bin
-	@cp $(OUT)/busybox $(ROOTFS)/bin/
-	@for app in $(APPLETS); do \
-		if [ ! -e $(ROOTFS)/bin/$$app ]; then \
-			ln -sf busybox $(ROOTFS)/bin/$$app; \
-		fi; \
-	done
+	@mkdir -p $(ROOTFS)/bin $(ROOTFS)/lib
+	@rm -f $(ROOTFS)/bin/busybox $(ROOTFS)/bin/install \
+		$(ROOTFS)/bin/md5sum $(ROOTFS)/bin/sha256sum
 	@for bin in $(STANDALONE); do \
-		if [ ! -e $(ROOTFS)/bin/$$bin ]; then \
-			cp $(OUT)/$$bin $(ROOTFS)/bin/; \
-		fi; \
+		rm -f $(ROOTFS)/bin/$$bin; \
+		cp $(OUT)/$$bin $(ROOTFS)/bin/; \
 	done
-	@if [ ! -e $(ROOTFS)/bin/unxz ] && [ -e $(ROOTFS)/bin/xz ]; then \
-		ln -sf xz $(ROOTFS)/bin/unxz; \
-	fi
-	@echo "  extras: installed to rootfs/bin/"
+	@for alias in $(ALIASES); do \
+		rm -f $(ROOTFS)/bin/$$alias; \
+	done
+	@ln -sf gzip $(ROOTFS)/bin/gunzip
+	@ln -sf bzip2 $(ROOTFS)/bin/bunzip2
+	@ln -sf xz $(ROOTFS)/bin/unxz
+	@cp -a $(TMPDIR)/extracted/lib/libacl.so* $(ROOTFS)/lib/
+	@cp -a $(TMPDIR)/extracted/lib/libattr.so* $(ROOTFS)/lib/
+	@echo "  extras: standalone tools installed (no BusyBox)"
 
 clean:
-	rm -rf $(TMPDIR)
-	rm -f $(OUT)/busybox $(STANDALONE:%=$(OUT)/%) $(OUT)/unxz
-	rm -f $(APPLETS:%=$(OUT)/%) $(OUT)/.extras-fetch
+	rm -f $(STANDALONE:%=$(OUT)/%) $(ALIASES:%=$(OUT)/%)
+	rm -f $(OUT)/busybox $(OUT)/md5sum $(OUT)/sha256sum $(OUT)/install
+	rm -f $(ROOTFS)/lib/libacl.so* $(ROOTFS)/lib/libattr.so*

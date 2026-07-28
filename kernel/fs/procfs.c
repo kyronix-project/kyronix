@@ -14,8 +14,10 @@
 #endif
 #include "mm/pmm.h"
 #include "mm/vmm.h"
+#include "module/loader.h"
 #include "proc/jail.h"
 #include "proc/proc.h"
+#include "syscall/fsops.h"
 #include "syscall/mount.h"
 #include "syscall/syscall.h"
 
@@ -386,8 +388,11 @@ static int64_t proc_osrelease_read(vfs_node_t *n, char *buf, uint64_t len, uint6
 
 static int64_t proc_hostname_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     (void) n;
-    static const char s[] = "kx\n";
-    return read_buf(buf, len, off, s, sizeof(s) - 1);
+    char hostname[66];
+    uint64_t size = system_hostname_copy(hostname, sizeof(hostname) - 1);
+    hostname[size++] = '\n';
+    hostname[size] = '\0';
+    return read_buf(buf, len, off, hostname, size);
 }
 
 static proc_t *node_to_proc(vfs_node_t *n) {
@@ -830,6 +835,7 @@ void procfs_init(void) {
     vfs_create_symlink("/proc/self/mounts", "/proc/mounts");
     vfs_create_chr("/proc/filesystems", proc_filesystems_read, NULL);
     vfs_create_chr("/proc/devices", proc_devices_read, NULL);
+    vfs_create_chr("/proc/modules", module_proc_read, NULL);
     vfs_create_chr("/proc/sys/kernel/ostype", proc_ostype_read, NULL);
     vfs_create_chr("/proc/sys/kernel/osrelease", proc_osrelease_read, NULL);
     vfs_create_chr("/proc/sys/kernel/hostname", proc_hostname_read, NULL);

@@ -1,45 +1,42 @@
-# Kyronix build system shim
-# Usage:
-#   make all                       — normal build
-#   make all CRUNTIME=podman       — build inside container
-#   make iso CRUNTIME=podman       — build ISO inside container
-#   make clean CRUNTIME=podman     — clean inside container
+# Kyronix build entry point.
+#
+# Normal use:
+#   make              build dist/kyronix.iso
+#   make run          boot the ISO with a persistent install disk
+#   make boot         boot the installed disk
+#   make test         build and run the kernel test suite
+#
+# Add CRUNTIME=podman (or docker) to build inside Containerfile.
 
+.DEFAULT_GOAL := iso
+
+CONTAINER_RUNTIME ?= $(if $(strip $(CRUNTIME)),$(CRUNTIME),podman)
 CONTAINER_IMAGE   ?= kyronix-build
-CONTAINER_RUNTIME ?= podman
-CONTAINER_IMAGE_TAG ?= latest
+CONTAINER_TAG     ?= latest
 
-# Rebuild image only when Containerfile changes
-_CONTAINERFILE_TS := $(shell stat -c %Y Containerfile 2>/dev/null || echo 0)
-_IMAGE_EXISTS     := $(shell $(CONTAINER_RUNTIME) image exists $(CONTAINER_IMAGE):$(CONTAINER_IMAGE_TAG) && echo 1 || echo 0)
+ifneq ($(strip $(CRUNTIME)),)
+ifeq ($(strip $(INSIDE_CONTAINER)),)
 
-ifdef CRUNTIME
-  ifeq ($(origin INSIDE_CONTAINER),undefined)
-    _GOALS := $(or $(MAKECMDGOALS),all)
+REQUESTED_GOALS := $(if $(MAKECMDGOALS),$(MAKECMDGOALS),iso)
 
-    .PHONY: _build_image _do_container
+.PHONY: container-build container-run $(REQUESTED_GOALS)
 
-    _build_image:
-	@if [ "$(_IMAGE_EXISTS)" = "0" ] || \
-	    [ "$(_CONTAINERFILE_TS)" -gt "$(shell $(CONTAINER_RUNTIME) inspect --format '{{.Created}}' $(CONTAINER_IMAGE):$(CONTAINER_IMAGE_TAG) 2>/dev/null | xargs -I{} date -d {} +%s 2>/dev/null || echo 0)" ]; then \
-		echo "  Rebuilding container image..."; \
-		$(CONTAINER_RUNTIME) build --layers -t $(CONTAINER_IMAGE):$(CONTAINER_IMAGE_TAG) -f Containerfile .; \
-	else \
-		echo "  Using cached container image"; \
-	fi
+container-build:
+	$(CONTAINER_RUNTIME) build --layers \
+	    -t $(CONTAINER_IMAGE):$(CONTAINER_TAG) -f Containerfile .
 
-    _do_container: _build_image
-	@$(CONTAINER_RUNTIME) run --rm -e TERM -v $(CURDIR):/src:Z -w /src \
-		$(CONTAINER_IMAGE):$(CONTAINER_IMAGE_TAG) bash -c "\
-		rm -f limine/limine && \
-		make -j$$(nproc) INSIDE_CONTAINER=1 $(_GOALS)"
+container-run: container-build
+	$(CONTAINER_RUNTIME) run --rm \
+	    -v $(CURDIR):/src:Z -w /src \
+	    $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
+	    make -j$$(nproc) INSIDE_CONTAINER=1 $(REQUESTED_GOALS)
 
-    %: _do_container
-	@true
+$(REQUESTED_GOALS): container-run
+	@:
 
-  else
-    include Makefile.build
-  endif
 else
-  include Makefile.build
+include mk/main.mk
+endif
+else
+include mk/main.mk
 endif

@@ -16,6 +16,18 @@ void block_register(struct block_device *dev) {
     g_devices[g_count++] = dev;
 }
 
+bool block_unregister(struct block_device *dev) {
+    if (!dev) return false;
+    for (int i = 0; i < g_count; i++) {
+        if (g_devices[i] != dev) continue;
+        for (int j = i; j + 1 < g_count; j++)
+            g_devices[j] = g_devices[j + 1];
+        g_devices[--g_count] = NULL;
+        return true;
+    }
+    return false;
+}
+
 int block_count(void) { return g_count; }
 
 struct block_device *block_get(int index) {

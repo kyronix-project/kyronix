@@ -231,7 +231,6 @@ int test_head(void) {
 REGISTER_TEST(head, "Phase 9: Utilities");
 
 int test_hostname(void) {
-    /* Use uname -n instead; hostname binary may hang */
     char buf[128];
     int ret = capture_cmd((char *[]) { "uname", "-n", NULL }, buf, sizeof(buf));
     if (ret != 0) return 1;
@@ -241,7 +240,6 @@ int test_hostname(void) {
 REGISTER_TEST(hostname, "Phase 9: Utilities");
 
 int test_kill(void) {
-    /* kill -0 1 probes init — always returns 0 for root, never hangs */
     int ret = run_cmd((char *[]) { "sh", "-c", "kill -0 1", NULL });
     if (ret != 0) return 1;
     return 1;

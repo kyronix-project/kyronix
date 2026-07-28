@@ -7,6 +7,8 @@ struct utsname {
 };
 
 int64_t sys_uname(struct utsname *buf);
+int64_t sys_sethostname(const char *name, uint64_t length);
+uint64_t system_hostname_copy(char *out, uint64_t capacity);
 int64_t sys_getcwd(char *buf, uint64_t size);
 int64_t sys_chdir(const char *path);
 int64_t sys_fchdir(int fd);

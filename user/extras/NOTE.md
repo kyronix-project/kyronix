@@ -1,1 +1,1 @@
-it is temporarllly shit for post-install scripts works
+Only standalone archive tools live here. Core utilities belong to kyrobox.
