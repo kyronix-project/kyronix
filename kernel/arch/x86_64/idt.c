@@ -292,7 +292,7 @@ void isr_dispatch(cpu_state_t *state) {
     } else if (n < 48) {
         uint8_t irq = (uint8_t) (n - 32);
         if (irq == 0) {
-            g_ticks++;
+            g_ticks += PIT_TICK_MS;
 #ifdef CONFIG_PROFILER
             prof_tick(state->rip, g_current_proc ? g_current_proc->pid : 0);
 #endif
@@ -331,8 +331,9 @@ void isr_dispatch(cpu_state_t *state) {
                     still_active |= (1ULL << b);
                 tm &= tm - 1;
             }
-            if (still_active != timer_mask)
-                __atomic_store_n(&g_timer_mask, still_active, __ATOMIC_RELAXED);
+            uint64_t finished = timer_mask & ~still_active;
+            if (finished)
+                __atomic_fetch_and(&g_timer_mask, ~finished, __ATOMIC_RELAXED);
             if ((state->cs & 3) == 3 && g_current_proc) {
                 proc_t *p = g_current_proc;
                 proc_t *next = sched_claim_next(p);

@@ -4,7 +4,7 @@
 #include "mm/heap.h"
 #include "vfs.h"
 
-static uint32_t hex8(const char *s) {
+static bool hex8(const char *s, uint32_t *out) {
     uint32_t v = 0;
     for (int i = 0; i < 8; i++) {
         char c = s[i];
@@ -16,10 +16,11 @@ static uint32_t hex8(const char *s) {
         else if (c >= 'a' && c <= 'f')
             d = (uint32_t) (c - 'a') + 10;
         else
-            break;
+            return false;
         v = (v << 4) | d;
     }
-    return v;
+    *out = v;
+    return true;
 }
 
 typedef struct __attribute__((packed)) {
@@ -43,6 +44,19 @@ typedef struct __attribute__((packed)) {
 
 static inline uint64_t align4(uint64_t x) { return (x + 3) & ~3ULL; }
 
+static bool archive_path_safe(const char *path, size_t len) {
+    if (!path || !len || path[0] == '/') return false;
+    size_t pos = 0;
+    while (pos < len) {
+        while (pos < len && path[pos] == '/') pos++;
+        size_t start = pos;
+        while (pos < len && path[pos] != '/') pos++;
+        size_t n = pos - start;
+        if (n == 2 && path[start] == '.' && path[start + 1] == '.') return false;
+    }
+    return true;
+}
+
 int cpio_load(const void *data, uint64_t total_size) {
     if (!data || total_size < CPIO_HDR_SIZE) return -1;
 
@@ -50,7 +64,7 @@ int cpio_load(const void *data, uint64_t total_size) {
     uint64_t pos = 0;
     int count = 0;
 
-    while (pos + CPIO_HDR_SIZE <= total_size) {
+    while (pos <= total_size - CPIO_HDR_SIZE) {
         const cpio_hdr_t *hdr = (const cpio_hdr_t *) (base + pos);
 
         if (hdr->magic[0] != '0' || hdr->magic[1] != '7' || hdr->magic[2] != '0' ||
@@ -60,32 +74,41 @@ int cpio_load(const void *data, uint64_t total_size) {
             return -1;
         }
 
-        uint32_t namesize = hex8(hdr->namesize);
-        uint32_t filesize = hex8(hdr->filesize);
-        uint32_t mode = hex8(hdr->mode);
-        uint32_t uid = hex8(hdr->uid);
-        uint32_t gid = hex8(hdr->gid);
+        uint32_t namesize, filesize, mode, uid, gid;
+        if (!hex8(hdr->namesize, &namesize) || !hex8(hdr->filesize, &filesize) ||
+            !hex8(hdr->mode, &mode) || !hex8(hdr->uid, &uid) || !hex8(hdr->gid, &gid))
+            return -1;
+        if (!namesize) return -1;
 
         uint64_t name_off = pos + CPIO_HDR_SIZE;
-        if (name_off + namesize > total_size) break;
+        if (namesize > total_size - name_off) return -1;
 
         const char *name = (const char *) (base + name_off);
+        if (name[namesize - 1] != '\0') return -1;
 
-        /* data offdet: align (CPIO_HDR_SIZE + namesize) to 4 */
-        uint64_t data_off = pos + align4((uint64_t) CPIO_HDR_SIZE + namesize);
-        if (data_off + filesize > total_size && filesize > 0) break;
+        uint64_t record_prefix = align4((uint64_t) CPIO_HDR_SIZE + namesize);
+        if (record_prefix > total_size - pos) return -1;
+        uint64_t data_off = pos + record_prefix;
+        if (filesize > total_size - data_off) return -1;
 
-        /* next record offset: align data end to 4 */
-        uint64_t next_pos = align4(data_off + filesize);
+        uint64_t data_end = data_off + filesize;
+        if (data_end > UINT64_MAX - 3) return -1;
+        uint64_t next_pos = align4(data_end);
+        if (next_pos <= pos) return -1;
 
         if (namesize >= 10 && memcmp(name, "TRAILER!!!", 10) == 0) break;
 
         if (namesize <= 1 || (namesize == 2 && name[0] == '.')) goto next;
 
-        const char *path = name;
-        if (path[0] == '.' && path[1] == '/') path += 2;
-
         char fullpath[512];
+        const char *path = name;
+        size_t path_capacity = namesize;
+        if (path_capacity >= 2 && path[0] == '.' && path[1] == '/') {
+            path += 2;
+            path_capacity -= 2;
+        }
+        size_t path_len = strnlen(path, path_capacity);
+        if (!archive_path_safe(path, path_len) || path_len > sizeof(fullpath) - 2) return -1;
         if (path[0] == '/') {
             strncpy(fullpath, path, sizeof(fullpath) - 1);
         } else {

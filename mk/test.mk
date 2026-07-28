@@ -48,6 +48,7 @@ $(TEST_ISO): $(KERNEL) $(TEST_INITRD) limine-test.conf \
 	$(call build_iso,$(TEST_ISO_ROOT),limine-test.conf,$(TEST_INITRD),$(TEST_ISO))
 
 .PHONY: test
+test: INSTRUMENT=1
 test: $(TEST_ISO)
 	@mkdir -p $(BUILD)
 	truncate -s 16M $(TEST_DISK)

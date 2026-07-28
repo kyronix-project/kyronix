@@ -43,6 +43,7 @@ static int g_filesystem_cnt;
 #define EINVAL 22
 #define EMFILE 24
 #define ENOTTY 25
+#define EFBIG 27
 #define ENOSPC 28
 #define ESPIPE 29
 #define ENOTEMPTY 39
@@ -733,8 +734,18 @@ int64_t fd_pread(int fd, void *buf, uint64_t len, uint64_t off) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int64_t) EBADF;
     if (f->pipe) return -(int64_t) ESPIPE;
+    if ((f->flags & O_ACCMODE) == O_WRONLY) return -(int64_t) EBADF;
     if (len == 0) return 0;
     if (!uptr_ok_w(buf, len)) return -(int64_t) EFAULT; /* kernel writes into buf */
+    return fd_pread_kbuf(fd, buf, len, off);
+}
+
+int64_t fd_pread_kbuf(int fd, void *buf, uint64_t len, uint64_t off) {
+    vfs_file_t *f = fd_get(fd);
+    if (!f) return -(int64_t) EBADF;
+    if (f->pipe) return -(int64_t) ESPIPE;
+    if ((f->flags & O_ACCMODE) == O_WRONLY) return -(int64_t) EBADF;
+    if (len == 0) return 0;
     vfs_node_t *n = f->node;
     if (!n || n->type != VFS_TYPE_REG) return -(int64_t) EINVAL;
     if (n->fs_ops && n->fs_ops->read) return n->fs_ops->read(n, (char *) buf, off, len);
@@ -749,13 +760,17 @@ int64_t fd_pwrite(int fd, const void *buf, uint64_t len, uint64_t off) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int64_t) EBADF;
     if (f->pipe) return -(int64_t) ESPIPE;
+    if ((f->flags & O_ACCMODE) == O_RDONLY) return -(int64_t) EBADF;
     if (len == 0) return 0;
     if (!uptr_ok(buf, len)) return -(int64_t) EFAULT;
     vfs_node_t *n = f->node;
     if (!n || n->type != VFS_TYPE_REG) return -(int64_t) EINVAL;
+    if (off > INT64_MAX) return -(int64_t) EINVAL;
+    if (len > (uint64_t) INT64_MAX - off) return -(int64_t) EFBIG;
     if (n->fs_ops && n->fs_ops->write) return n->fs_ops->write(n, (const char *) buf, off, len);
     uint64_t end = off + len;
     if (end > n->capacity) {
+        if (end > UINT64_MAX - 4095) return -(int64_t) EFBIG;
         uint64_t newcap = (end + 4095) & ~4095ULL;
         uint8_t *newdata = (uint8_t *) kmalloc(newcap);
         if (!newdata) return -(int64_t) ENOSPC;
@@ -776,12 +791,16 @@ int64_t fd_pwrite_kbuf(int fd, const void *buf, uint64_t len, uint64_t off) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int64_t) EBADF;
     if (f->pipe) return -(int64_t) ESPIPE;
+    if ((f->flags & O_ACCMODE) == O_RDONLY) return -(int64_t) EBADF;
     if (len == 0) return 0;
     vfs_node_t *n = f->node;
     if (!n || n->type != VFS_TYPE_REG) return -(int64_t) EINVAL;
+    if (off > INT64_MAX) return -(int64_t) EINVAL;
+    if (len > (uint64_t) INT64_MAX - off) return -(int64_t) EFBIG;
     if (n->fs_ops && n->fs_ops->write) return n->fs_ops->write(n, (const char *) buf, off, len);
     uint64_t end = off + len;
     if (end > n->capacity) {
+        if (end > UINT64_MAX - 4095) return -(int64_t) EFBIG;
         uint64_t newcap = (end + 4095) & ~4095ULL;
         uint8_t *newdata = (uint8_t *) kmalloc(newcap);
         if (!newdata) return -(int64_t) ENOSPC;
@@ -820,6 +839,8 @@ bool fd_pollin(int fd) {
 bool fd_pollout(int fd) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return false;
+    if (f->efd) return f->efd->counter < UINT64_MAX - 1u;
+    if (f->tfd) return false;
     if (f->inet) return inet_poll_out(f->inet);
     if (f->wpipe) /* socket - writable when write-pipe has space */
         return f->wpipe->count < PIPE_BUFSZ && f->wpipe->read_refs > 0;
@@ -839,6 +860,11 @@ bool fd_pollhup(int fd) {
     return false;
 }
 
+uint64_t fd_poll_deadline(int fd) {
+    vfs_file_t *f = fd_get(fd);
+    return (f && f->tfd && f->tfd->next_tick) ? f->tfd->next_tick : UINT64_MAX;
+}
+
 static void pipe_drop_write(pipe_t *p) {
     if (!p) return;
     if (p->write_refs) p->write_refs--;
@@ -856,13 +882,13 @@ void vfs_pipe_maybe_free(pipe_t *p) { pipe_maybe_free(p); }
 static void file_close(vfs_file_t *f) {
     if (!file_valid(f)) return;
     if (f->efd) {
-        kfree(f->efd);
+        if (__sync_sub_and_fetch(&f->efd->refcnt, 1) == 0) kfree(f->efd);
         f->magic = 0;
         kfree(f);
         return;
     }
     if (f->tfd) {
-        kfree(f->tfd);
+        if (__sync_sub_and_fetch(&f->tfd->refcnt, 1) == 0) kfree(f->tfd);
         f->magic = 0;
         kfree(f);
         return;
@@ -907,6 +933,9 @@ void vfs_file_close(vfs_file_t *f) { file_close(f); }
 
 static void file_addref(vfs_file_t *f) {
     if (!f) return;
+    if (f->efd) __sync_add_and_fetch(&f->efd->refcnt, 1);
+    if (f->tfd) __sync_add_and_fetch(&f->tfd->refcnt, 1);
+    if (f->inet) inet_conn_addref(f->inet);
     if (f->node) node_ref(f->node);
     if (!f->pipe) return;
     if (f->wpipe) {
@@ -921,6 +950,25 @@ static void file_addref(vfs_file_t *f) {
 }
 
 void vfs_file_addref(vfs_file_t *f) { file_addref(f); }
+
+vfs_file_t *vfs_file_clone(vfs_file_t *f) {
+    if (!file_valid(f)) return NULL;
+    vfs_file_t *copy = file_alloc();
+    if (!copy) return NULL;
+    *copy = *f;
+    copy->magic = VFS_FILE_MAGIC;
+    copy->cloexec = 0;
+    file_addref(copy);
+    return copy;
+}
+
+int vfs_fd_adopt(vfs_file_t *f) {
+    if (!file_valid(f)) return -(int) EBADF;
+    int fd = fd_alloc_from(0);
+    if (fd < 0) return -(int) EMFILE;
+    vfs_cur_fds()[fd] = f;
+    return fd;
+}
 
 void vfs_set_fdtable(vfs_file_t **fds) {
     if (fds) g_cur_fds = fds;
@@ -962,7 +1010,6 @@ void vfs_copy_fdtable(vfs_file_t **dst, vfs_file_t **src) {
             /* child doesnt own a listening sockets lifecycle */
             if (f->node && f->node->type == VFS_TYPE_SOCK) f->node = NULL;
             file_addref(f); /* bump node/pipe ref-counts */
-            if (f->inet) inet_conn_addref(f->inet);
         }
         dst[i] = f;
     }
@@ -983,10 +1030,6 @@ int vfs_phantom_sanitize_fdtable(vfs_file_t **fds) {
                 continue;
             }
         }
-        /* eventfd/timerfd state has no independent refcount yet. Detach it so
-         * destroying the copied wrapper cannot free the parent's state. */
-        f->efd = NULL;
-        f->tfd = NULL;
         file_close(f);
         fds[i] = NULL;
         sanitized++;
@@ -1091,6 +1134,8 @@ const char *vfs_copy_user_path(const char *path, char *kbuf) {
         kbuf[i] = c;
         if (!c) return kbuf;
     }
+    const char *last = path + 511;
+    if (!uptr_ok(last, 1) || *last) return NULL;
     kbuf[511] = '\0';
     return kbuf;
 }
@@ -1213,12 +1258,10 @@ int fd_open_kpath(const char *path, int flags, int mode) {
 }
 
 int fd_openat(int dirfd, const char *path, int flags, int mode) {
-    char _pbuf[512];
-    if (!(path = vfs_copy_user_path(path, _pbuf))) return -(int) EFAULT;
-    if (path[0] == '/' || dirfd == AT_FDCWD) return fd_open_kpath(path, flags, mode);
-    vfs_file_t *df = fd_get(dirfd);
-    if (!df || !df->node || df->node->type != VFS_TYPE_DIR) return -(int) EBADF;
-    return fd_open_kpath(path, flags, mode);
+    char resolved[512];
+    int rc = at_resolve(dirfd, path, resolved, sizeof(resolved));
+    if (rc < 0) return rc;
+    return fd_open_host(resolved, flags, mode);
 }
 
 int fd_close(int fd) {
@@ -1335,8 +1378,11 @@ static int64_t fd_write_dispatch(vfs_file_t *f, const void *buf, uint64_t len) {
             if (r > 0) f->pos += (uint64_t) r;
             return r;
         }
+        if (f->pos > INT64_MAX || len > (uint64_t) INT64_MAX - f->pos)
+            return -(int64_t) EFBIG;
         uint64_t end = f->pos + len;
         if (end > n->capacity) {
+            if (end > UINT64_MAX - 4095) return -(int64_t) EFBIG;
             uint64_t newcap = (end + 4095) & ~4095ULL;
             uint8_t *newdata = (uint8_t *) kmalloc(newcap);
             if (!newdata) return -(int64_t) ENOSPC;

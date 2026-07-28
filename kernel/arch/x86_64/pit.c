@@ -2,10 +2,28 @@
 #include "cpu.h"
 #include "pic.h"
 
-#define PIT_DIVISOR 4772
-
 volatile uint64_t g_ticks = 0;
 uint64_t g_epoch_base = 0;
+static int64_t g_realtime_offset_ms = 0;
+
+uint64_t realtime_now_ms(void) {
+    uint64_t raw = g_epoch_base * 1000ULL + g_ticks;
+    int64_t offset = __atomic_load_n(&g_realtime_offset_ms, __ATOMIC_RELAXED);
+    if (offset >= 0) {
+        uint64_t add = (uint64_t) offset;
+        return raw > UINT64_MAX - add ? UINT64_MAX : raw + add;
+    }
+    uint64_t sub = (uint64_t) (-(offset + 1)) + 1;
+    return raw >= sub ? raw - sub : 0;
+}
+
+bool realtime_set_ms(uint64_t value) {
+    uint64_t raw = g_epoch_base * 1000ULL + g_ticks;
+    if (value > (uint64_t) INT64_MAX || raw > (uint64_t) INT64_MAX) return false;
+    int64_t offset = (int64_t) value - (int64_t) raw;
+    __atomic_store_n(&g_realtime_offset_ms, offset, __ATOMIC_RELAXED);
+    return true;
+}
 
 static uint8_t cmos_read(uint8_t reg) {
     outb(0x70, reg);

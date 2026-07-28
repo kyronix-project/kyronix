@@ -26,6 +26,7 @@ struct service {
     char *argv[MAX_ARGS];
     pid_t pid;
     int respawns;
+    int start_fd;
 };
 
 static struct service services[MAX_SERVICES];
@@ -47,9 +48,20 @@ static void status(const char *msg, int ok) {
 
 static void info(const char *msg) { fprintf(stderr, "%s\n", msg); }
 
-static void spawn(struct service *svc) {
+static int spawn_held(struct service *svc) {
+    int gate[2];
+    if (pipe(gate) < 0) return -1;
+
     pid_t pid = fork();
     if (pid == 0) {
+        close(gate[1]);
+        for (int i = 0; i < nservices; i++) {
+            if (services[i].start_fd >= 0) close(services[i].start_fd);
+        }
+        char token;
+        while (read(gate[0], &token, 1) < 0 && errno == EINTR) {}
+        close(gate[0]);
+
         signal(SIGCHLD, SIG_DFL);
         signal(SIGINT, SIG_DFL);
         setsid();
@@ -57,9 +69,20 @@ static void spawn(struct service *svc) {
         status(svc->name, 0);
         _exit(127);
     }
+    close(gate[0]);
     if (pid > 0) {
         svc->pid = pid;
+        svc->start_fd = gate[1];
+        return 0;
     }
+    close(gate[1]);
+    return -1;
+}
+
+static void release_service(struct service *svc) {
+    if (svc->start_fd < 0) return;
+    close(svc->start_fd);
+    svc->start_fd = -1;
 }
 
 static void reap_children(int sig) {
@@ -78,13 +101,16 @@ static void handle_reap(void) {
                 services[i].pid = 0;
                 services[i].respawns++;
                 if (services[i].respawns > 5) {
-                    snprintf(buf, sizeof(buf), "%s (too many restarts, giving up)", services[i].name);
+                    snprintf(buf, sizeof(buf), "%.63s (too many restarts, giving up)",
+                             services[i].name);
                     status(buf, 0);
                     continue;
                 }
-                snprintf(buf, sizeof(buf), "Restarting %s", services[i].name);
-                spawn(&services[i]);
-                status(buf, 1);
+                snprintf(buf, sizeof(buf), "Restarting %.63s", services[i].name);
+                int started = spawn_held(&services[i]) == 0;
+                status(buf, started);
+                fflush(stderr);
+                if (started) release_service(&services[i]);
                 break;
             }
         }
@@ -152,6 +178,7 @@ static void read_rc_conf(void) {
             token = strtok(NULL, " ");
         }
         services[nservices].argv[argc] = NULL;
+        services[nservices].start_fd = -1;
         nservices++;
     }
 
@@ -185,12 +212,13 @@ int main(void) {
 
     for (int i = 0; i < nservices; i++) {
         char buf[128];
-        snprintf(buf, sizeof(buf), "Starting %s", services[i].name);
-        spawn(&services[i]);
-        status(buf, 1);
+        snprintf(buf, sizeof(buf), "Starting %.63s", services[i].name);
+        status(buf, spawn_held(&services[i]) == 0);
     }
 
     fprintf(stderr, "\n");
+    fflush(stderr);
+    for (int i = 0; i < nservices; i++) release_service(&services[i]);
 
     for (;;) {
         pause();

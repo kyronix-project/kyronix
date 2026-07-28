@@ -35,18 +35,20 @@ static int64_t blk_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t pos) {
     if (!bd || !bd->ops) return -(int64_t) EINVAL;
     if (len == 0) return 0;
 
-    if (!bd->sector_size) return -(int64_t) EINVAL;
+    if (!bd->sector_size || bd->sector_size > BLK_IO_MAX) return -(int64_t) EINVAL;
+    if (bd->sectors > UINT64_MAX / bd->sector_size) return -(int64_t) EINVAL;
     uint64_t total_bytes = (uint64_t) bd->sectors * bd->sector_size;
     if (pos >= total_bytes) return 0;
-    if (pos + len > total_bytes) len = total_bytes - pos;
+    if (len > total_bytes - pos) len = total_bytes - pos;
     if (len > BLK_IO_MAX) len = BLK_IO_MAX;
     if (!uptr_ok_w(buf, len)) return -(int64_t) EFAULT;
 
-    uint64_t lba = pos / bd->sector_size;
-    uint32_t count = (uint32_t) ((len + bd->sector_size - 1) / bd->sector_size);
     uint64_t off_in_first = pos % bd->sector_size;
+    uint64_t lba = pos / bd->sector_size;
+    uint64_t covered = off_in_first + len;
+    uint32_t count = (uint32_t) ((covered + bd->sector_size - 1) / bd->sector_size);
 
-    uint32_t buf_size = count * bd->sector_size;
+    uint64_t buf_size = (uint64_t) count * bd->sector_size;
     uint8_t *kbuf = (uint8_t *) kmalloc(buf_size);
     if (!kbuf) return -(int64_t) ENOMEM;
 
@@ -67,41 +69,29 @@ static int64_t blk_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t 
     struct block_device *bd = node_to_blk(n);
     if (!bd || !bd->ops) return -(int64_t) EINVAL;
     if (len == 0) return 0;
-    if (!bd->sector_size) return -(int64_t) EINVAL;
+    if (!bd->sector_size || bd->sector_size > BLK_IO_MAX) return -(int64_t) EINVAL;
 
+    if (bd->sectors > UINT64_MAX / bd->sector_size) return -(int64_t) EINVAL;
     uint64_t total_bytes = (uint64_t) bd->sectors * bd->sector_size;
     if (pos >= total_bytes) return -(int64_t) ENOSPC;
-    if (pos + len > total_bytes) len = total_bytes - pos;
+    if (len > total_bytes - pos) len = total_bytes - pos;
     if (len > BLK_IO_MAX) len = BLK_IO_MAX;
     if (!uptr_ok(buf, len)) return -(int64_t) EFAULT;
 
-    uint64_t lba = pos / bd->sector_size;
-    uint32_t count = (uint32_t) ((len + bd->sector_size - 1) / bd->sector_size);
     uint64_t off_in_first = pos % bd->sector_size;
+    uint64_t lba = pos / bd->sector_size;
+    uint64_t covered = off_in_first + len;
+    uint32_t count = (uint32_t) ((covered + bd->sector_size - 1) / bd->sector_size);
 
     if (off_in_first != 0 || (len % bd->sector_size) != 0) {
-        uint32_t total = count * bd->sector_size;
+        uint64_t total = (uint64_t) count * bd->sector_size;
         uint8_t *kbuf = (uint8_t *) kmalloc(total);
         if (!kbuf) return -(int64_t) ENOMEM;
 
-        if (off_in_first > 0) {
-            int r = bd->ops->read(bd, lba, 1, kbuf);
-            if (r < 0) {
-                kfree(kbuf);
-                return -(int64_t) EINVAL;
-            }
-        }
-        if (count > 1) {
-            uint64_t last_lba = lba + count - 1;
-            uint64_t last_off = total - bd->sector_size;
-            if (last_off != off_in_first) {
-                int r = bd->ops->read(bd, last_lba, 1,
-                                      kbuf + last_off);
-                if (r < 0) {
-                    kfree(kbuf);
-                    return -(int64_t) EINVAL;
-                }
-            }
+        int rr = bd->ops->read(bd, lba, count, kbuf);
+        if (rr < 0) {
+            kfree(kbuf);
+            return -(int64_t) EINVAL;
         }
 
         memcpy(kbuf + off_in_first, buf, len);
@@ -126,6 +116,8 @@ static int64_t blk_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
 
     switch (req) {
     case BLKGETSIZE: {
+        if (bd->sector_size && bd->sectors > UINT64_MAX / bd->sector_size)
+            return -(int64_t) EINVAL;
         uint64_t size = (uint64_t) bd->sectors * bd->sector_size;
         if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(uint64_t))) return -(int64_t) EFAULT;
         *(uint64_t *) (uintptr_t) arg = size;
@@ -133,6 +125,8 @@ static int64_t blk_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
     }
     case BLKGETSIZE64:
     case BLKGETSIZE64_COMPAT: {
+        if (bd->sector_size && bd->sectors > UINT64_MAX / bd->sector_size)
+            return -(int64_t) EINVAL;
         uint64_t size = (uint64_t) bd->sectors * bd->sector_size;
         if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(uint64_t))) return -(int64_t) EFAULT;
         *(uint64_t *) (uintptr_t) arg = size;
@@ -169,7 +163,9 @@ void blockdev_create_node(struct block_device *bd) {
     n->mode = S_IFCHR | 0600;
     n->chr_ioctl = blk_ioctl;
     n->fs_private = bd;
-    n->size = (uint64_t) bd->sectors * bd->sector_size;
+    n->size = (bd->sector_size && bd->sectors <= UINT64_MAX / bd->sector_size)
+                  ? (uint64_t) bd->sectors * bd->sector_size
+                  : 0;
 
     log_info("blockdev: %s  %lu sectors  (%lu MiB)", path, bd->sectors, bd->sectors / 2048);
 }

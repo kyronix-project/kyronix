@@ -4,6 +4,7 @@
 #include "fs/vfs.h"
 #include "mm/vmm.h"
 #include "proc/proc.h"
+#include "syscall/poll.h"
 #include "syscall/syscall.h"
 
 #define EBADF 9
@@ -44,6 +45,26 @@ typedef struct {
 static epoll_t g_epolls[EPOLL_SLOTS];
 static int g_epoll_init;
 static spinlock_t g_epolls_lock;
+
+static bool epoll_ready(void *arg) {
+    epoll_t *ep = (epoll_t *) arg;
+    for (int i = 0; i < ep->nw; i++) {
+        int fd = ep->w[i].fd;
+        if (!fd_valid(fd)) return true;
+        if ((ep->w[i].events & EPOLLIN) && fd_pollin(fd)) return true;
+        if ((ep->w[i].events & EPOLLOUT) && fd_pollout(fd)) return true;
+        if (fd_pollhup(fd)) return true;
+    }
+    return false;
+}
+
+static uint64_t epoll_wait_deadline(epoll_t *ep, uint64_t deadline) {
+    for (int i = 0; i < ep->nw; i++) {
+        uint64_t fd_deadline = fd_poll_deadline(ep->w[i].fd);
+        if (fd_deadline < deadline) deadline = fd_deadline;
+    }
+    return deadline;
+}
 
 static epoll_t *epoll_find(int epfd) {
     proc_t *p = g_current_proc;
@@ -147,7 +168,11 @@ int64_t sys_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int 
     if (!ep || !events || maxevents <= 0) return -(int64_t) EINVAL;
     if (!uptr_ok_w(events, (uint64_t) maxevents * sizeof(*events))) return -(int64_t) EFAULT;
     proc_t *p = g_current_proc;
-    uint64_t deadline = timeout >= 0 ? g_ticks + (uint64_t) timeout : (uint64_t) -1ULL;
+    uint64_t deadline = UINT64_MAX;
+    if (timeout >= 0) {
+        uint64_t delta = (uint64_t) timeout;
+        deadline = delta < UINT64_MAX - g_ticks ? g_ticks + delta : UINT64_MAX - 1u;
+    }
     for (;;) {
         int n = 0;
         for (int i = 0; i < ep->nw && n < maxevents; i++) {
@@ -166,17 +191,8 @@ int64_t sys_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int 
                     ep->w[i].events &= ~(EPOLLIN | EPOLLOUT); /* disarm until re-armed via MOD */
             }
         }
-        if (n > 0 || timeout == 0 || g_ticks >= deadline) return n;
+        if (n > 0 || timeout == 0 || (deadline != UINT64_MAX && g_ticks >= deadline)) return n;
         if (p && (p->pending_sigs & ~p->sig_mask)) return -(int64_t) EINTR;
-        if (p) p->wakeup_tick = g_ticks + 5;
-        if (p) proc_set_timer(p);
-        if (proc_next_ready(p))
-            sched_yield_blocking();
-        else {
-            sti();
-            hlt();
-            cli();
-        }
-        if (p) p->wakeup_tick = 0;
+        poll_wait_once(epoll_wait_deadline(ep, deadline), epoll_ready, ep);
     }
 }

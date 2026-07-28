@@ -135,6 +135,7 @@ typedef struct vfs_node {
 typedef struct {
     volatile uint64_t counter;
     uint32_t semaphore;
+    uint32_t refcnt;
     void *waiter;
     spinlock_t lock;
 } eventfd_state_t;
@@ -144,6 +145,9 @@ typedef struct {
     uint64_t interval_ms;
     uint64_t next_tick;
     uint64_t overruns;
+    uint32_t refcnt;
+    void *waiter;
+    spinlock_t lock;
 } timerfd_state_t;
 
 typedef struct {
@@ -206,12 +210,14 @@ bool fd_valid(int fd);
 vfs_node_t *fd_get_node(int fd);
 vfs_file_t *fd_get_file(int fd);
 int64_t fd_pread(int fd, void *buf, uint64_t len, uint64_t off);
+int64_t fd_pread_kbuf(int fd, void *buf, uint64_t len, uint64_t off);
 int64_t fd_pwrite(int fd, const void *buf, uint64_t len, uint64_t off);
 int64_t fd_pwrite_kbuf(int fd, const void *buf, uint64_t len, uint64_t off);
 int64_t fd_peek(int fd, void *buf, uint64_t len, uint64_t skip);
 bool fd_pollin(int fd);
 bool fd_pollout(int fd);
 bool fd_pollhup(int fd);
+uint64_t fd_poll_deadline(int fd);
 int fd_pipe(int pipefd[2]);
 int fd_socketpair(int sv[2]);
 int fd_eventfd(uint32_t initval, int eflags);

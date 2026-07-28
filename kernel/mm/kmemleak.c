@@ -1,4 +1,6 @@
 #include "kmemleak.h"
+#ifdef CONFIG_KMEMLEAK
+
 #include "heap.h"
 #include "lib/kallsyms.h"
 #include "lib/printf.h"
@@ -337,3 +339,5 @@ int kmemleak_checkpoint(void) {
 void kmemleak_clear(void) {
     for (int i = 0; i < KMEMLEAK_MAX; i++) g_entries[i].used = 0;
 }
+
+#endif /* CONFIG_KMEMLEAK */

@@ -52,6 +52,8 @@ static bool copy_user_path(char *out, const char *in) {
         out[i] = c;
         if (!c) return true;
     }
+    const char *last = in + 511;
+    if (!uptr_ok(last, 1) || *last) return false;
     out[511] = '\0';
     return true;
 }
@@ -761,7 +763,8 @@ void syscall_dispatch(syscall_frame_t *f) {
         break;
     }
     case 164:
-        ret = host_priv() ? 0 : -(int64_t) EPERM;
+        ret = host_priv() ? sys_settimeofday((const void *) a1, (const void *) a2)
+                          : -(int64_t) EPERM;
         break; /* settimeofday */
     case 165:  /* mount(source, target, fstype, flags, data) */
         ret = sys_mount((const char *) a1, (const char *) a2, (const char *) a3, a4, (void *) a5);
@@ -822,7 +825,7 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = sys_gettid();
         break;
     case 201: {
-        uint64_t t = g_epoch_base + g_ticks / 1000;
+        uint64_t t = realtime_now_ms() / 1000;
         if (a1) {
             if (!uptr_ok_w((void *) a1, 8)) {
                 ret = -(int64_t) EFAULT;
@@ -868,7 +871,8 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = 0;
         break; /* timer_getoverrun */
     case 227:
-        ret = host_priv() ? 0 : -(int64_t) EPERM;
+        ret = host_priv() ? sys_clock_settime((int) a1, (const void *) a2)
+                          : -(int64_t) EPERM;
         break; /* clock_settime */
     case 232:
         ret = sys_epoll_wait((int) a1, (struct epoll_event *) a2, (int) a3, (int) a4);
@@ -941,13 +945,13 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = (int64_t) vfs_mkdir(abs, (uint32_t) a3);
         break;
     }
-    case 260: {
+    case 259: {
         char abs[512];
         if (!AT_RESOLVED(ret, a1, a2, abs)) break;
         ret = (int64_t) vfs_mknod(abs, (uint32_t) a3, a4);
         break;
     } /* mknodat */
-    case 261: {
+    case 260: {
         char abs[512];
         if (!AT_RESOLVED(ret, a1, a2, abs)) break;
         int _r = (int) a5 & AT_SYMLINK_NOFOLLOW ?
@@ -956,6 +960,22 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = _r;
         break;
     } /* fchownat */
+    case 261: {
+        char abs[512];
+        if (a3 && !uptr_ok((void *) a3, 32)) {
+            ret = -(int64_t) EFAULT;
+            break;
+        }
+        if (!AT_RESOLVED(ret, a1, a2, abs)) break;
+        vfs_node_t *n = vfs_lookup(abs);
+        if (!n) {
+            ret = -(int64_t) ENOENT;
+            break;
+        }
+        vfs_node_unref_internal(n);
+        ret = 0;
+        break;
+    } /* futimesat: timestamps are not persisted yet */
     case 262:
         ret = fd_fstatat((int) a1, (const char *) a2, (struct linux_stat *) a3, (int) a4);
         break;
@@ -1024,17 +1044,39 @@ void syscall_dispatch(syscall_frame_t *f) {
     case 275:
     case 276:
     case 277:
-        ret = -(int64_t) ENOSYS;
-        break; /* splice/tee/sync_file_range/vmsplice */
     case 278:
-        ret = -(int64_t) ENOSYS;
-        break; /* move_pages */
     case 279:
-        ret = 0; /* utimensat */
+        ret = -(int64_t) ENOSYS;
+        break; /* get_robust_list/splice/tee/sync_file_range/vmsplice/move_pages */
+    case 280: {
+        if (a3 && !uptr_ok((void *) a3, 32)) {
+            ret = -(int64_t) EFAULT;
+            break;
+        }
+        if (a4 & ~(uint64_t) AT_SYMLINK_NOFOLLOW) {
+            ret = -(int64_t) EINVAL;
+            break;
+        }
+        vfs_node_t *n = NULL;
+        if (!a2) {
+            n = fd_get_node((int) a1);
+            if (!n) {
+                ret = -(int64_t) EBADF;
+                break;
+            }
+        } else {
+            char abs[512];
+            if (!AT_RESOLVED(ret, a1, a2, abs)) break;
+            n = (a4 & AT_SYMLINK_NOFOLLOW) ? vfs_lookup_nofollow(abs) : vfs_lookup(abs);
+            if (!n) {
+                ret = -(int64_t) ENOENT;
+                break;
+            }
+            vfs_node_unref_internal(n);
+        }
+        ret = 0; /* timestamps are not persisted yet */
         break;
-    case 280:
-        ret = fd_openat((int) a1, (const char *) a2, (int) a3, (int) a4);
-        break; /* openat2 */
+    }
     case 281:
         ret = sys_epoll_wait((int) a1, (struct epoll_event *) a2, (int) a3, (int) a4);
         break; /* epoll_pwait */

@@ -38,7 +38,7 @@ typedef struct {
     void *current_space;
     void *g_fds_ptr;
     void *reap_thread;
-    uint8_t __pad1[8];
+    uint64_t current_fs_base;
 } cpu_local_t;
 
 _Static_assert(__builtin_offsetof(cpu_local_t, kernel_rsp) == 0, "gs:0");
@@ -48,6 +48,7 @@ _Static_assert(__builtin_offsetof(cpu_local_t, current) == 32, "gs:32");
 _Static_assert(__builtin_offsetof(cpu_local_t, current_space) == 48, "gs:48");
 _Static_assert(__builtin_offsetof(cpu_local_t, g_fds_ptr) == 56, "gs:56");
 _Static_assert(__builtin_offsetof(cpu_local_t, reap_thread) == 64, "gs:64");
+_Static_assert(__builtin_offsetof(cpu_local_t, current_fs_base) == 72, "gs:72");
 _Static_assert(sizeof(cpu_local_t) == 80, "cpu_local_t size");
 
 #define CPU_CURRENT_OFFSET 32

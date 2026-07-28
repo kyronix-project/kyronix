@@ -116,6 +116,24 @@ int test_dup_dup2_dup3(void) {
 }
 REGISTER_TEST(dup_dup2_dup3, "Phase 5: Pipes & IPC");
 
+int test_dup_eventfd_lifetime(void) {
+    int fd = eventfd(0, EFD_NONBLOCK);
+    if (fd < 0 && (errno == ENOSYS || errno == ENOTSUP)) return 1;
+    ASSERT_GE(fd, 0);
+    int copy = dup(fd);
+    ASSERT_GE(copy, 0);
+    ASSERT_EQ(0, close(fd));
+
+    eventfd_t value = 7;
+    ASSERT_EQ((ssize_t) sizeof(value), write(copy, &value, sizeof(value)));
+    value = 0;
+    ASSERT_EQ((ssize_t) sizeof(value), read(copy, &value, sizeof(value)));
+    ASSERT_EQ((eventfd_t) 7, value);
+    close(copy);
+    return 1;
+}
+REGISTER_TEST(dup_eventfd_lifetime, "Phase 5: Pipes & IPC");
+
 int test_socketpair(void) {
     int sv[2];
     int rc = socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
@@ -145,6 +163,70 @@ int test_socketpair(void) {
     return 1;
 }
 REGISTER_TEST(socketpair, "Phase 5: Pipes & IPC");
+
+int test_scm_rights_access_mode(void) {
+    int sv[2];
+    int rc = socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+    if (rc < 0 && (errno == ENOSYS || errno == ENOTSUP || errno == EAFNOSUPPORT)) return 1;
+    ASSERT_EQ(0, rc);
+
+    char path[PATH_MAX];
+    tmpfile_path(path, sizeof(path), "scm_rights_ro");
+    write_file(path, "rights");
+    int source = open(path, O_RDONLY);
+    ASSERT_GE(source, 0);
+
+    char byte = 'x';
+    struct iovec siov = { .iov_base = &byte, .iov_len = 1 };
+    char scontrol[CMSG_SPACE(sizeof(int))];
+    memset(scontrol, 0, sizeof(scontrol));
+    struct msghdr smsg;
+    memset(&smsg, 0, sizeof(smsg));
+    smsg.msg_iov = &siov;
+    smsg.msg_iovlen = 1;
+    smsg.msg_control = scontrol;
+    smsg.msg_controllen = sizeof(scontrol);
+    struct cmsghdr *scmsg = CMSG_FIRSTHDR(&smsg);
+    scmsg->cmsg_level = SOL_SOCKET;
+    scmsg->cmsg_type = SCM_RIGHTS;
+    scmsg->cmsg_len = CMSG_LEN(sizeof(int));
+    memcpy(CMSG_DATA(scmsg), &source, sizeof(source));
+    ASSERT_EQ((ssize_t) 1, sendmsg(sv[0], &smsg, 0));
+    close(source);
+
+    char received_byte = 0;
+    struct iovec riov = { .iov_base = &received_byte, .iov_len = 1 };
+    char rcontrol[CMSG_SPACE(sizeof(int))];
+    memset(rcontrol, 0, sizeof(rcontrol));
+    struct msghdr rmsg;
+    memset(&rmsg, 0, sizeof(rmsg));
+    rmsg.msg_iov = &riov;
+    rmsg.msg_iovlen = 1;
+    rmsg.msg_control = rcontrol;
+    rmsg.msg_controllen = sizeof(rcontrol);
+    ASSERT_EQ((ssize_t) 1, recvmsg(sv[1], &rmsg, 0));
+    ASSERT_EQ('x', received_byte);
+    struct cmsghdr *rcmsg = CMSG_FIRSTHDR(&rmsg);
+    ASSERT_NOTNULL(rcmsg);
+    ASSERT_EQ(SOL_SOCKET, rcmsg->cmsg_level);
+    ASSERT_EQ(SCM_RIGHTS, rcmsg->cmsg_type);
+    int received = -1;
+    memcpy(&received, CMSG_DATA(rcmsg), sizeof(received));
+    ASSERT_GE(received, 0);
+
+    char buf[8] = { 0 };
+    ASSERT_EQ((ssize_t) 6, read(received, buf, 6));
+    ASSERT_STREQ("rights", buf);
+    ASSERT_EQ((ssize_t) -1, write(received, "!", 1));
+    ASSERT_ERRNO(EBADF);
+
+    close(received);
+    close(sv[0]);
+    close(sv[1]);
+    unlink(path);
+    return 1;
+}
+REGISTER_TEST(scm_rights_access_mode, "Phase 5: Pipes & IPC");
 
 int test_unix_stream(void) {
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);

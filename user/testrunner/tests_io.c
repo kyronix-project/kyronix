@@ -93,6 +93,16 @@ int test_poll_nval(void) {
 }
 REGISTER_TEST(poll_nval, "Phase 7: I/O Multiplexing");
 
+int test_poll_nfds_limit(void) {
+    struct pollfd fd = { .fd = -1, .events = 0, .revents = 0 };
+    errno = 0;
+    unsigned long overflowing_nfds = UINT64_MAX / sizeof(fd) + 1;
+    ASSERT_EQ(-1, syscall(SYS_poll, &fd, overflowing_nfds, 0));
+    ASSERT_ERRNO(EINVAL);
+    return 1;
+}
+REGISTER_TEST(poll_nfds_limit, "Phase 7: I/O Multiplexing");
+
 int test_ppoll(void) {
     int p[2];
     ASSERT_EQ(0, pipe(p));

@@ -82,6 +82,29 @@ bool vma_page_owned(vmm_space_t *sp, uint64_t addr) {
     return v && v->free_on_unmap;
 }
 
+bool vma_range_info(vmm_space_t *sp, uint64_t start, uint64_t len, uint32_t *prot,
+                    uint32_t *map_flags, bool *free_on_unmap) {
+    uint64_t end;
+    if (!sp || !range_end(start, len, &end)) return false;
+    vmm_vma_t *first = containing(sp, start);
+    if (!first) return false;
+    uint32_t p = first->prot;
+    uint32_t mf = first->map_flags;
+    bool owned = first->free_on_unmap != 0;
+    uint64_t cur = start;
+    while (cur < end) {
+        vmm_vma_t *v = containing(sp, cur);
+        if (!v || v->prot != p || v->map_flags != mf ||
+            (v->free_on_unmap != 0) != owned)
+            return false;
+        cur = v->end < end ? v->end : end;
+    }
+    if (prot) *prot = p;
+    if (map_flags) *map_flags = mf;
+    if (free_on_unmap) *free_on_unmap = owned;
+    return true;
+}
+
 bool vma_page_fault_allowed(vmm_space_t *sp, uint64_t addr, bool write, bool exec) {
     vmm_vma_t *v = containing(sp, addr);
     if (!v || !v->free_on_unmap) return false;

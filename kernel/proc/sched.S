@@ -3,6 +3,7 @@
 .section .text
 
 #define PROC_SPACE      16
+#define PROC_PID        8
 #define PROC_KSTACK_TOP 32
 #define PROC_KSTACK_RSP 40
 #define PROC_USER_RSP   48
@@ -12,6 +13,7 @@
 #define CPU_KERNEL_RSP  0
 #define CPU_USER_RSP    8
 #define CPU_CURRENT     32
+#define CPU_FS_BASE     72
 
 .global sched_switch
 sched_switch:
@@ -24,14 +26,11 @@ sched_switch:
 
     movq    %gs:CPU_CURRENT, %r15
 
-    /* save fpe/sse state of outgoing process */
+    /* Kernel idle tasks never use SIMD, so their dummy state need not be saved. */
+    cmpl    $0, PROC_PID(%r15)
+    je      1f
     fxsave64 PROC_FPU_STATE(%r15)
-
-    movl    $0xC0000100, %ecx
-    rdmsr
-    shlq    $32, %rdx
-    orq     %rdx, %rax
-    movq    %rax, PROC_FS_BASE(%r15)
+1:
 
     movq    %rsp,            PROC_KSTACK_RSP(%r15)
 
@@ -46,15 +45,15 @@ sched_switch:
     movq    PROC_KSTACK_TOP(%rdi),  %rcx
     movq    %rcx,                   %gs:CPU_KERNEL_RSP
 
-    pushq   %rcx
-    pushq   %rdx
     movq    PROC_FS_BASE(%rdi),  %rax
+    cmpq    %gs:CPU_FS_BASE, %rax
+    je      2f
+    movq    %rax, %gs:CPU_FS_BASE
     movq    %rax, %rdx
     shrq    $32, %rdx
     movl    $0xC0000100, %ecx
     wrmsr
-    popq    %rdx
-    popq    %rcx
+2:
 
     movq    PROC_SPACE(%rdi),       %rdi
     call    vmm_switch
@@ -62,7 +61,10 @@ sched_switch:
     movq    %gs:CPU_CURRENT,   %rax
     movq    PROC_KSTACK_RSP(%rax),  %rsp
 
+    cmpl    $0, PROC_PID(%rax)
+    je      3f
     fxrstor64 PROC_FPU_STATE(%rax)
+3:
 
     popq    %r15
     popq    %r14
@@ -116,4 +118,3 @@ proc_resume_interrupt_frame:
     addq    $16, %rsp
     swapgs
     iretq
-

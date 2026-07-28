@@ -49,7 +49,7 @@ mount_entry_t *mount_find(const char *target) {
 }
 
 static bool copy_user_string(char *out, const char *in, int max) {
-    if (!in) return false;
+    if (!in || max <= 0) return false;
     for (int i = 0; i < max - 1; i++) {
         const char *a = in + i;
         if (i == 0 || ((uint64_t) (uintptr_t) a & 0xFFF) == 0) {
@@ -59,6 +59,8 @@ static bool copy_user_string(char *out, const char *in, int max) {
         out[i] = c;
         if (!c) return true;
     }
+    const char *last = in + max - 1;
+    if (!uptr_ok(last, 1) || *last) return false;
     out[max - 1] = '\0';
     return true;
 }

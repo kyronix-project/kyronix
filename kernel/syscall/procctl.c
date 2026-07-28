@@ -47,6 +47,20 @@ static void proc_discard_embryo(proc_t *p) {
     spin_unlock(&g_proctable_lock);
 }
 
+static bool proc_has_private_space(proc_t *p) {
+    bool private = true;
+    spin_lock(&g_proctable_lock);
+    for (int i = 0; i < PROC_MAX; i++) {
+        proc_t *other = &g_proctable[i];
+        if (other != p && other->state != PROC_UNUSED && other->space == p->space) {
+            private = false;
+            break;
+        }
+    }
+    spin_unlock(&g_proctable_lock);
+    return private;
+}
+
 static int64_t sys_fork_at_mode(proc_t *parent, syscall_frame_t *f,
                                 uint64_t child_stack, bool cow,
                                 uint64_t child_rax, bool publish,
@@ -121,7 +135,9 @@ fail_space:
 }
 
 static int64_t sys_fork_at(syscall_frame_t *f, uint64_t child_stack) {
-    return sys_fork_at_mode(cur(), f, child_stack, false, 0, true, NULL);
+    proc_t *parent = cur();
+    bool cow = parent && proc_has_private_space(parent);
+    return sys_fork_at_mode(parent, f, child_stack, cow, 0, true, NULL);
 }
 
 int64_t sys_fork(syscall_frame_t *f) { return sys_fork_at(f, 0); }
@@ -646,12 +662,7 @@ __attribute__((noreturn)) void proc_do_exit(int code) {
     /* clear stale pipe waiting pointer before slot is reused */
     if (p->blocked_pipe) {
         pipe_t *bp = (pipe_t *) p->blocked_pipe;
-        if (p->blocked_pipe_read) {
-            if (bp->waiting_reader == p) bp->waiting_reader = NULL;
-        } else {
-            if (bp->waiting_writer == p) bp->waiting_writer = NULL;
-        }
-        p->blocked_pipe = NULL;
+        pipe_cancel_wait(bp, p);
     }
 
     shm_proc_exit(p->pid);
@@ -806,6 +817,7 @@ int64_t sys_arch_prctl(int code, uint64_t addr) {
         if (addr >= USER_LIMIT) return -(int64_t) EPERM;
         wrmsr(0xC0000100, addr);
         cur()->fs_base = addr;
+        this_cpu_ptr()->current_fs_base = addr;
         return 0;
     case ARCH_SET_GS:
         if (addr >= USER_LIMIT) return -(int64_t) EPERM;

@@ -17,18 +17,20 @@ static int elf_valid(const Elf64_Ehdr *eh, uint64_t size) {
     if (eh->e_ident[EI_DATA] != ELFDATA2LSB) return 0;
     if (eh->e_type != ET_EXEC && eh->e_type != ET_DYN) return 0;
     if (eh->e_machine != EM_X86_64) return 0;
+    if (eh->e_version != 1 || eh->e_ehsize < sizeof(Elf64_Ehdr)) return 0;
     if (eh->e_phentsize < sizeof(Elf64_Phdr) || eh->e_phnum == 0) return 0;
     return 1;
 }
 
 int elf_load_into(vmm_space_t *space, const void *data, uint64_t size, uint64_t bias,
                   elf_load_result_t *out) {
-    if (!data || size < sizeof(Elf64_Ehdr)) return -1;
+    if (!space || !out || !data || size < sizeof(Elf64_Ehdr)) return -1;
     const Elf64_Ehdr *eh = (const Elf64_Ehdr *) data;
     if (!elf_valid(eh, size)) return -1;
 
     out->interp[0] = '\0';
     uint64_t brk = 0, phdr_va = 0;
+    bool have_load = false, entry_executable = false;
 
     /* the phdr array itself is attacker controlled: bound it against the file. */
     uint64_t ph_total = (uint64_t) eh->e_phnum * eh->e_phentsize;
@@ -43,19 +45,20 @@ int elf_load_into(vmm_space_t *space, const void *data, uint64_t size, uint64_t 
             if (ph->p_offset > size || ph->p_filesz > size - ph->p_offset) return -1;
             memcpy(out->interp, (const uint8_t *) data + ph->p_offset, ph->p_filesz);
             out->interp[ph->p_filesz] = '\0';
+            if (out->interp[ph->p_filesz - 1] != '\0') return -1;
             size_t n = strlen(out->interp);
             while (n > 0 && (unsigned char) out->interp[n - 1] < ' ') out->interp[--n] = '\0';
-        }
-
-        if (ph->p_type == PT_LOAD && !phdr_va) {
-            if (eh->e_phoff >= ph->p_offset && eh->e_phoff < ph->p_offset + ph->p_filesz)
-                phdr_va = bias + ph->p_vaddr + (eh->e_phoff - ph->p_offset);
         }
 
         if (ph->p_type != PT_LOAD || !ph->p_memsz) continue;
         // overflow-safe source bounds, and file part must fit the mem part
         if (ph->p_offset > size || ph->p_filesz > size - ph->p_offset) return -1;
         if (ph->p_filesz > ph->p_memsz) return -1;
+        if ((ph->p_flags & (PF_W | PF_X)) == (PF_W | PF_X)) return -1;
+        if (ph->p_align > 1 &&
+            ((ph->p_align & (ph->p_align - 1)) ||
+             (ph->p_vaddr & (ph->p_align - 1)) != (ph->p_offset & (ph->p_align - 1))))
+            return -1;
 
         uint64_t vflags = VMM_PRESENT | VMM_USER;
         if (ph->p_flags & PF_W) vflags |= VMM_WRITE | VMM_NX;
@@ -66,6 +69,13 @@ int elf_load_into(vmm_space_t *space, const void *data, uint64_t size, uint64_t 
         if (vaddr < bias) return -1;                     /* bias + p_vaddr overflow */
         if (vaddr + ph->p_memsz < vaddr) return -1;      /* vaddr + memsz overflow */
         if (vaddr + ph->p_memsz > USER_LIMIT) return -1; /* maps into kernel half */
+        have_load = true;
+        uint64_t entry = bias + eh->e_entry;
+        if ((ph->p_flags & PF_X) && entry >= vaddr && entry - vaddr < ph->p_memsz)
+            entry_executable = true;
+        if (!phdr_va && eh->e_phoff >= ph->p_offset &&
+            eh->e_phoff - ph->p_offset < ph->p_filesz)
+            phdr_va = vaddr + (eh->e_phoff - ph->p_offset);
         uint64_t page_base = PAGE_ALIGN_DOWN(vaddr);
         uint64_t page_end = PAGE_ALIGN_UP(vaddr + ph->p_memsz);
 
@@ -90,7 +100,8 @@ int elf_load_into(vmm_space_t *space, const void *data, uint64_t size, uint64_t 
         if (ph->p_flags & PF_R) prot |= PROT_READ;
         if (ph->p_flags & PF_W) prot |= PROT_WRITE;
         if (ph->p_flags & PF_X) prot |= PROT_EXEC;
-        vma_add(space, page_base, page_end - page_base, prot, 0, true);
+        if (vma_add(space, page_base, page_end - page_base, prot, 0, true) < 0)
+            return -1;
 
         uint64_t end = PAGE_ALIGN_UP(vaddr + ph->p_memsz);
         if (end > brk) brk = end;
@@ -98,6 +109,7 @@ int elf_load_into(vmm_space_t *space, const void *data, uint64_t size, uint64_t 
 
     out->prog_entry = bias + eh->e_entry;
     if (out->prog_entry < bias || out->prog_entry >= USER_LIMIT) return -1;
+    if (!have_load || !entry_executable) return -1;
     out->phdr_va = phdr_va;
     out->phentsize = eh->e_phentsize;
     out->phnum = eh->e_phnum;

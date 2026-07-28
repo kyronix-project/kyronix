@@ -1,6 +1,7 @@
 #include "profiler.h"
 #ifdef CONFIG_PROFILER
 
+#include "arch/x86_64/pit.h"
 #include "lib/kallsyms.h"
 #include "lib/printf.h"
 #include "lib/string.h"
@@ -251,7 +252,7 @@ int prof_render(char *buf, uint64_t bufsz) {
         if ((uint64_t) pos >= bufsz) return (int) pos;                                             \
     } while (0)
 
-    uint64_t ms = g_ring.total_ticks * 4; /* ~4ms per tick at 250 Hz */
+    uint64_t ms = g_ring.total_ticks * PIT_TICK_MS;
     uint64_t total = g_ring.count;
 
     EMIT("=== Kyronix Kernel Profile ===\n");
@@ -300,7 +301,7 @@ int prof_render(char *buf, uint64_t bufsz) {
 }
 
 void prof_print(void) {
-    uint64_t ms = g_ring.total_ticks * 4;
+    uint64_t ms = g_ring.total_ticks * PIT_TICK_MS;
     uint64_t total = g_ring.count;
 
     kprintf("\n=== Kyronix Kernel Profile ===\n");

@@ -7,6 +7,7 @@
 #include "mm/heap.h"
 #include "proc/jail.h"
 #include "proc/proc.h"
+#include "syscall/poll.h"
 
 #define EACCES 13
 #define EADDRINUSE 98
@@ -272,6 +273,7 @@ int fd_connect_unix(int fd, const char *path) {
         if (__sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
     }
     spin_unlock(&srv->lock);
+    poll_notify();
     vfs_node_unref_internal(sn);
     unix_sock_t *cs = (unix_sock_t *) f->node->data;
     kfree(cs);

@@ -235,22 +235,38 @@ void pmm_free_contiguous(void *phys, uint64_t n) {
 #endif
 }
 
-void pmm_retain(void *phys) {
-    if (!phys) return;
+bool pmm_retain(void *phys) {
+    if (!phys) return false;
     uint32_t i = pmm_ref_index(phys);
-    if (i < PMM_REF_MAX_FRAMES) __atomic_fetch_add(&g_frame_refs[i], 1, __ATOMIC_RELAXED);
+    if (i >= PMM_REF_MAX_FRAMES) return false;
+
+    uint16_t old = __atomic_load_n(&g_frame_refs[i], __ATOMIC_RELAXED);
+    for (;;) {
+        if (old == 0 || old == UINT16_MAX) return false;
+        if (__atomic_compare_exchange_n(&g_frame_refs[i], &old, (uint16_t) (old + 1), false,
+                                        __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+            return true;
+    }
+}
+
+uint16_t pmm_ref_count(void *phys) {
+    if (!phys) return 0;
+    uint32_t i = pmm_ref_index(phys);
+    return i < PMM_REF_MAX_FRAMES ?
+               __atomic_load_n(&g_frame_refs[i], __ATOMIC_ACQUIRE) :
+               0;
 }
 
 void pmm_free(void *phys) {
     if (!phys) return;
     uint32_t idx = pmm_ref_index(phys);
     if (idx < PMM_REF_MAX_FRAMES) {
-        uint16_t old = __atomic_load_n(&g_frame_refs[idx], __ATOMIC_RELAXED);
-        if (old > 1) {
-            __atomic_fetch_sub(&g_frame_refs[idx], 1, __ATOMIC_RELAXED);
+        uint16_t old = __atomic_fetch_sub(&g_frame_refs[idx], 1, __ATOMIC_ACQ_REL);
+        if (old == 0) {
+            __atomic_fetch_add(&g_frame_refs[idx], 1, __ATOMIC_RELAXED);
             return;
         }
-        __atomic_store_n(&g_frame_refs[idx], 0, __ATOMIC_RELAXED);
+        if (old > 1) return;
     }
     uint64_t frame = ((uint64_t) phys >> PAGE_SHIFT) - g_first_frame;
     llfree_request_t req = { .order = 0, .class = 0, .local = ll_some(pmm_cpu_id()) };

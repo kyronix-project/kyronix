@@ -1,5 +1,6 @@
 #pragma once
 #include "boot/limine.h"
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -23,7 +24,8 @@ void *pmm_alloc_zeroed(void);
 void *pmm_alloc_contiguous(uint64_t n_pages); /* n physically-consecutive pages */
 void pmm_free_contiguous(void *phys, uint64_t n_pages);
 void pmm_free(void *phys);
-void pmm_retain(void *phys);
+bool pmm_retain(void *phys);
+uint16_t pmm_ref_count(void *phys);
 
 uint64_t pmm_free_pages(void);
 uint64_t pmm_total_pages(void);
