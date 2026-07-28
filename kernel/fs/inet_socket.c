@@ -27,6 +27,7 @@
 #define ENOTSUP 95
 #define ENOTCONN 107
 #define ECONNREFUSED 111
+#define EINPROGRESS 115
 
 #define AF_INET 2
 #define SOCK_STREAM 1
@@ -419,19 +420,25 @@ net_conn_t *inet_phantom_clone(net_conn_t *source) {
 bool inet_poll_in(net_conn_t *c) {
     if (!c) return false;
     if (c->type == SOCK_DGRAM || c->type == SOCK_RAW) return c->udq_head != c->udq_tail;
-    return ring_avail(&c->rx) > 0 || c->peer_closed;
+    return ring_avail(&c->rx) > 0 || c->peer_closed || c->error;
 }
 
 bool inet_poll_out(net_conn_t *c) {
     if (!c) return false;
     if (c->type == SOCK_DGRAM) return c->upcb != NULL;
     if (c->type == SOCK_RAW) return c->rpcb != NULL;
-    return c->phantom_fake || (c->pcb && !c->error);
+    return c->phantom_fake || c->error ||
+           (c->pcb && c->pcb->state == ESTABLISHED);
 }
 
 int inet_get_type(net_conn_t *c) { return c ? c->type : 1; }
 
-int64_t inet_connect(net_conn_t *c, const struct sockaddr_in *addr) {
+int inet_get_error(net_conn_t *c) {
+    if (!c || !c->error) return 0;
+    return c->err_code < 0 ? -c->err_code : c->err_code;
+}
+
+int64_t inet_connect(net_conn_t *c, const struct sockaddr_in *addr, int fd_flags) {
     if (!c) return -(int64_t) EBADF;
 
     if (g_current_proc && g_current_proc->phantom_sandbox) {
@@ -457,6 +464,7 @@ int64_t inet_connect(net_conn_t *c, const struct sockaddr_in *addr) {
 
     err_t e = tcp_connect(c->pcb, &dst, port, on_connected);
     if (e != ERR_OK) return -(int64_t) ECONNREFUSED;
+    if (fd_flags & O_NONBLOCK) return -(int64_t) EINPROGRESS;
 
     while (!c->error && c->pcb && c->pcb->state != ESTABLISHED) {
         c->connect_waiter = g_current_proc;

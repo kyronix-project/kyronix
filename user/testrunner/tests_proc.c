@@ -416,6 +416,12 @@ int test_uname(void) {
     ASSERT_GT(strlen(buf.release), 0);
     ASSERT_GT(strlen(buf.version), 0);
     ASSERT_GT(strlen(buf.machine), 0);
+    char original[sizeof(buf.nodename)];
+    snprintf(original, sizeof(original), "%s", buf.nodename);
+    ASSERT_EQ(0, sethostname("kyronix-test", 12));
+    ASSERT_EQ(0, uname(&buf));
+    ASSERT_STREQ("kyronix-test", buf.nodename);
+    ASSERT_EQ(0, sethostname(original, strlen(original)));
     return 1;
 }
 REGISTER_TEST(uname, "Phase 3: Process & Scheduling");

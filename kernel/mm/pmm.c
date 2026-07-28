@@ -206,6 +206,35 @@ void *pmm_alloc_contiguous(uint64_t n) {
     return phys;
 }
 
+void pmm_free_contiguous(void *phys, uint64_t n) {
+    if (!phys || !n) return;
+    if (n == 1) {
+        pmm_free(phys);
+        return;
+    }
+
+    uint8_t order = order_for_pages(n);
+    if (order > LLFREE_MAX_ORDER) return;
+    uint64_t allocated = 1ULL << order;
+    for (uint64_t i = 0; i < allocated; i++) {
+        uint32_t idx = pmm_ref_index((void *) ((uint64_t) phys + i * PAGE_SIZE));
+        if (idx < PMM_REF_MAX_FRAMES)
+            __atomic_store_n(&g_frame_refs[idx], 0, __ATOMIC_RELAXED);
+    }
+
+    uint64_t frame = ((uint64_t) phys >> PAGE_SHIFT) - g_first_frame;
+    llfree_request_t req = { .order = order, .class = 0, .local = ll_some(pmm_cpu_id()) };
+    llfree_result_t r = llfree_put(&g_llfree, frame_id(frame), req);
+    if (llfree_is_ok(r)) {
+        g_free_frames += allocated;
+        g_free_total += allocated;
+    }
+#ifdef CONFIG_KMEMLEAK
+    for (uint64_t i = 0; i < n; i++)
+        kmemleak_untrack_page((void *) ((uint64_t) phys + i * PAGE_SIZE));
+#endif
+}
+
 void pmm_retain(void *phys) {
     if (!phys) return;
     uint32_t i = pmm_ref_index(phys);

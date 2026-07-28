@@ -2,29 +2,15 @@
 .claude
 .config
 .config.old
-
-# kconfig build artifacts
-scripts/kconfig/*.o
-scripts/kconfig/conf
-scripts/kconfig/nconf
-scripts/kconfig/zconf.tab.c
-scripts/kconfig/zconf.tab.h
-scripts/kconfig/zconf.lex.c
-scripts/kconfig/lex.yy.c
-scripts/kconfig/*.tab.c
-scripts/kconfig/*.tab.h
-include/config/auto.conf
-include/generated/rustc_cfg
-
-kernel/config.h
-
+include/config/
+include/generated/
+scripts/kconfig/
 # logs
 *.log
 *.d
 
 # images
 *.cpio
-*.iso
 *.iso
 *.img
 
@@ -35,6 +21,8 @@ test_rootfs/*
 build/*
 iso_root/*
 dist/
+test.log
+limine/limine
 
 # unecessary blobs
 rootfs/usr/lib/libLLVM.so.19.1

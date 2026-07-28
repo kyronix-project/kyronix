@@ -1,5 +1,6 @@
 #include "kallsyms.h"
 #include "lib/printf.h"
+#include "lib/string.h"
 
 static char g_fallback[32];
 
@@ -21,4 +22,11 @@ const char *kallsyms_lookup(uint64_t addr) {
     }
     snprintf(g_fallback, sizeof(g_fallback), "0x%016lx", addr);
     return g_fallback;
+}
+
+uint64_t kallsyms_lookup_name(const char *name) {
+    if (!name || !name[0]) return 0;
+    for (int i = 0; i < kallsyms_num; i++)
+        if (strcmp(kallsyms_table[i].name, name) == 0) return kallsyms_table[i].addr;
+    return 0;
 }

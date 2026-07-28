@@ -19,6 +19,8 @@
 #define MAX_SERVICES 32
 #define MAX_ARGS 8
 
+int sethostname(const char *name, size_t len);
+
 struct service {
     char name[64];
     char *argv[MAX_ARGS];
@@ -90,6 +92,27 @@ static void handle_reap(void) {
     errno = saved_errno;
 }
 
+static void apply_hostname(void) {
+    FILE *f = fopen("/etc/hostname", "r");
+    if (!f) return;
+
+    char line[64];
+    if (!fgets(line, sizeof(line), f)) {
+        fclose(f);
+        status("Setting hostname", 0);
+        return;
+    }
+    fclose(f);
+
+    char *hostname = trim(line);
+    if (!*hostname ||
+        sethostname(hostname, strlen(hostname)) < 0) {
+        status("Setting hostname", 0);
+        return;
+    }
+    status("Setting hostname", 1);
+}
+
 static void read_rc_conf(void) {
     FILE *f = fopen("/etc/rc.conf", "r");
     if (!f) {
@@ -154,6 +177,7 @@ int main(void) {
     setenv("SHELL", "/bin/ksh", 1);
     setenv("TERM", "xterm-color", 1);
 
+    apply_hostname();
     read_rc_conf();
     fprintf(stderr, "\n");
 

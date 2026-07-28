@@ -25,6 +25,7 @@ performance, security and stability.
 - Preemptive scheduler (~1000 Hz)
 - ELF64 loader (PIE + musl)
 - 150+ Linux-compatible syscalls
+- Loadable ELF64 kernel modules (`insmod`, `rmmod`, `lsmod`)
 - Demand paging (`mmap`, `mprotect`, `mremap`, `brk`)
 - RTC, CPUID, RDRAND
 
@@ -80,48 +81,51 @@ Quarantine mode parks the source process. User write/NX faults are queued to a
 kernel worker, which builds the sandbox and resumes the exact faulting
 instruction there. Sandbox setup is atomic and fails closed.
 
-Run `/bin/phantom-test` as root to test the complete path. This is an
-experimental mechanism: the queue is bounded, unsupported faults use the normal
-signal/panic path, and fault-quarantined sources cannot be safely resumed.
+This is an experimental mechanism: the queue is bounded, unsupported faults use
+the normal signal/panic path, and fault-quarantined sources cannot be safely
+resumed.
 
 Anti-TOCTOU jitter correlates rapid cross-thread VFS and futex/memory access,
-then delays the flagged thread's next wake-up by 25–250 µs. Run
-`/bin/jitter-test` as root to verify it.
+then delays the flagged thread's next wake-up by 25–250 µs.
 
 ## Build
 
 ### Dependencies
 
 ```sh
-gcc musl-tools qemu-system xorriso nasm
+gcc musl-tools qemu-system xorriso cpio dosfstools mtools e2fsprogs
+libncurses-dev curl file
 ```
 
 ### Quick start
 
 ```sh
-make clean && make all && make run
+make iso
+make run
 ```
 
-Without graphics:
+`make run` boots the live system and attaches a persistent 512 MiB disk. Log
+in as `root`/`root` and run `installer`. After installation, boot that disk
+directly with:
 
 ```sh
-make clean && make all && make run-serial
+make boot
 ```
+
+The installed system is stored in `dist/kyronix-disk.img`. `make clean` keeps
+this file.
 
 ### Make targets
 
 | Target | Description |
 |---------|-------------|
-| `all` | Build everything |
-| `iso` | Build ISO image |
-| `run` | Launch in QEMU |
-| `run-serial` | Launch with serial console |
-| `test-run` | Run tests |
-| `test-run-log` | Run tests with logging |
-| `user-build` | Build userspace |
-| `fmt` | Format source |
-| `fmt-check` | Check formatting |
-| `clean` | Remove build artifacts |
+| `make` / `make iso` | Build `dist/kyronix.iso` |
+| `make run` | Build and boot the ISO with the persistent disk |
+| `make boot` | Boot the installed disk without the ISO |
+| `make test` | Build and run all tests in QEMU |
+| `make clean` | Remove build output, preserving the installed disk |
+
+To build in a container, append `CRUNTIME=podman` or `CRUNTIME=docker`.
 
 ## Project structure
 
@@ -132,6 +136,9 @@ make clean && make all && make run-serial
 | `rootfs/` | Initramfs |
 | `limine/` | Bootloader |
 | `meta/` | Assets & screenshots |
+
+See [docs/kernel-modules.md](docs/kernel-modules.md) for the module ABI, build
+flags, and a minimal example.
 
 ## Support
 

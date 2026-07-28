@@ -3,9 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "commands.h"
 #include "pkg.h"
+#include "util.h"
 
 static int has_flag(int argc, char **argv, const char *name) {
     for (int i = 0; i < argc; i++) {
@@ -80,14 +82,25 @@ int main(int argc, char **argv) {
         const char *arg = NULL;
         if (argc > 3) {
             static char argbuf[2048];
+            size_t used = 0;
             argbuf[0] = '\0';
             for (int i = 3; i < argc; i++) {
                 if (argv[i][0] == '-') continue;
-                if (argbuf[0]) strcat(argbuf, " ");
-                strcat(argbuf, argv[i]);
+                size_t len = strlen(argv[i]);
+                size_t extra = len + (used ? 1 : 0);
+                if (extra >= sizeof(argbuf) - used)
+                    dief("repository arguments are too long");
+                if (used) argbuf[used++] = ' ';
+                memcpy(argbuf + used, argv[i], len + 1);
+                used += len;
             }
             if (argbuf[0]) arg = argbuf;
         }
+        if ((strcmp(subcmd ? subcmd : "", "add") == 0 ||
+             strcmp(subcmd ? subcmd : "", "remove") == 0 ||
+             strcmp(subcmd ? subcmd : "", "rm") == 0) &&
+            geteuid() != 0)
+            dief("root privileges are required");
         cmd_repo(subcmd, arg);
         return 0;
     }
@@ -98,6 +111,8 @@ int main(int argc, char **argv) {
             fprintf(stderr, "%s%serror:%s package name required\n", ANSI_RED, ANSI_BOLD, ANSI_RESET);
             return 1;
         }
+        if (!valid_pkg_name(pkg)) dief("invalid package name");
+        if (geteuid() != 0) dief("root privileges are required");
         cmd_get(pkg);
         return 0;
     }
@@ -108,6 +123,8 @@ int main(int argc, char **argv) {
             fprintf(stderr, "%s%serror:%s package name required\n", ANSI_RED, ANSI_BOLD, ANSI_RESET);
             return 1;
         }
+        if (!valid_pkg_name(pkg)) dief("invalid package name");
+        if (geteuid() != 0) dief("root privileges are required");
         cmd_remove(pkg);
         return 0;
     }
@@ -119,6 +136,7 @@ int main(int argc, char **argv) {
 
     /* autoremove */
     if (strcmp(cmd, "autoremove") == 0 || strcmp(cmd, "clean") == 0) {
+        if (geteuid() != 0) dief("root privileges are required");
         cmd_autoremove();
         return 0;
     }

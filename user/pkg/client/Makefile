@@ -1,6 +1,7 @@
 CC      := musl-gcc
-CFLAGS  ?= -std=c11 -Wall -Wextra -Werror -O2 -march=x86-64 -mtune=generic -fno-pie
-LDFLAGS ?= -static -no-pie
+CFLAGS  ?= -std=c11 -Wall -Wextra -Werror -O2 -D_FORTIFY_SOURCE=2 \
+	-fstack-protector-strong -march=x86-64 -mtune=generic -fno-pie
+LDFLAGS ?= -static -no-pie -Wl,-z,noexecstack
 OUT     := ../../../build/bin
 
 SRCS := main.c commands.c http.c md5.c util.c

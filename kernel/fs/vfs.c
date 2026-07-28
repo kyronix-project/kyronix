@@ -1324,7 +1324,9 @@ static int64_t fd_write_dispatch(vfs_file_t *f, const void *buf, uint64_t len) {
                                 ANTI_TOCTOU_VFS_WRITE);
     if (n->type == VFS_TYPE_CHR) {
         if (!n->chr_write) return (int64_t) len;
-        return n->chr_write(n, (const char *) buf, len, f->pos);
+        int64_t r = n->chr_write(n, (const char *) buf, len, f->pos);
+        if (r > 0) f->pos += (uint64_t) r;
+        return r;
     }
     if (n->type == VFS_TYPE_DIR) return -(int64_t) EISDIR;
     if (n->type == VFS_TYPE_REG) {

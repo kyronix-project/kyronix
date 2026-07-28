@@ -22,7 +22,8 @@ struct sockaddr_in {
     uint8_t sin_zero[8];
 };
 
-int64_t inet_connect(net_conn_t *c, const struct sockaddr_in *addr);
+int64_t inet_connect(net_conn_t *c, const struct sockaddr_in *addr, int fd_flags);
+int inet_get_error(net_conn_t *c);
 int64_t inet_bind(net_conn_t *c, const struct sockaddr_in *addr);
 int64_t inet_listen(net_conn_t *c, int backlog);
 int64_t inet_accept(net_conn_t *c, struct sockaddr_in *addr_out, int flags);

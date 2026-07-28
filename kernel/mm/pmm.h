@@ -21,6 +21,7 @@ void pmm_init(struct limine_memmap_response *mmap, uint64_t hhdm_offset, uint64_
 void *pmm_alloc(void);
 void *pmm_alloc_zeroed(void);
 void *pmm_alloc_contiguous(uint64_t n_pages); /* n physically-consecutive pages */
+void pmm_free_contiguous(void *phys, uint64_t n_pages);
 void pmm_free(void *phys);
 void pmm_retain(void *phys);
 

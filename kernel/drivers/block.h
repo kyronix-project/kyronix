@@ -24,6 +24,7 @@ struct block_device {
 
 void block_init(void);
 void block_register(struct block_device *dev);
+bool block_unregister(struct block_device *dev);
 int block_count(void);
 struct block_device *block_get(int index);
 struct block_device *block_by_name(const char *name);

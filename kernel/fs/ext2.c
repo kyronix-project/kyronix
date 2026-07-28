@@ -116,6 +116,24 @@ typedef struct {
 static ext2_tracked_t g_tracked[EXT2_MAX_TRACKED];
 static int g_tracked_cnt;
 
+static void clear_mount_state(void) {
+    if (g_bgdt) kfree(g_bgdt);
+    if (g_indir_buf) kfree(g_indir_buf);
+    g_dev = NULL;
+    g_block_size = 0;
+    g_blocks_per_group = 0;
+    g_inodes_per_group = 0;
+    g_inode_size = 0;
+    g_first_data_block = 0;
+    g_num_groups = 0;
+    g_has_large_file = false;
+    g_bgdt = NULL;
+    g_indir_buf = NULL;
+    memset(&g_sb, 0, sizeof(g_sb));
+    g_mount_point[0] = '\0';
+    g_tracked_cnt = 0;
+}
+
 static void track_node(uint32_t ino_nr, vfs_node_t *n) {
     if (!n || g_tracked_cnt >= EXT2_MAX_TRACKED) return;
     n->ino = ino_nr;
@@ -545,6 +563,36 @@ static uint8_t *read_file_data(const ext2_inode_t *ino, uint64_t *size_out) {
     return data;
 }
 
+static uint32_t indirect_blocks_for_data(uint32_t data_blocks) {
+    uint64_t ptrs = g_block_size / sizeof(uint32_t);
+    uint64_t remaining = data_blocks;
+    uint64_t metadata = 0;
+
+    if (remaining <= 12u) return 0;
+    remaining -= 12u;
+
+    metadata++; /* single-indirect root */
+    uint64_t used = remaining < ptrs ? remaining : ptrs;
+    remaining -= used;
+
+    if (remaining) {
+        metadata++; /* double-indirect root */
+        uint64_t capacity = ptrs * ptrs;
+        used = remaining < capacity ? remaining : capacity;
+        metadata += (used + ptrs - 1u) / ptrs;
+        remaining -= used;
+    }
+
+    if (remaining) {
+        metadata++; /* triple-indirect root */
+        uint64_t double_capacity = ptrs * ptrs;
+        metadata += (remaining + double_capacity - 1u) / double_capacity;
+        metadata += (remaining + ptrs - 1u) / ptrs;
+    }
+
+    return (uint32_t) metadata;
+}
+
 int ext2_write_file(uint32_t ino_nr, const void *data, uint64_t size) {
     if (!ino_nr) return -1;
     ext2_inode_t ino;
@@ -595,7 +643,9 @@ int ext2_write_file(uint32_t ino_nr, const void *data, uint64_t size) {
     kfree(blkbuf);
 
     ino.i_size = (uint32_t) (size & 0xFFFFFFFFu);
-    ino.i_blocks = new_blocks * (g_block_size / 512u);
+    ino.i_blocks =
+        (new_blocks + indirect_blocks_for_data(new_blocks)) *
+        (g_block_size / 512u);
     if (g_has_large_file && (ino.i_mode & EXT2_S_IFMT) == EXT2_S_IFREG)
         ino.i_dir_acl = (uint32_t) (size >> 32);
 
@@ -964,6 +1014,14 @@ static uint32_t create_disk_node(vfs_node_t *node, uint32_t parent_ino) {
         ext2_add_dirent(new_ino, ".", new_ino, EXT2_FT_DIR);
         ext2_add_dirent(new_ino, "..", parent_ino, EXT2_FT_DIR);
         ext2_add_dirent(parent_ino, node->name, new_ino, EXT2_FT_DIR);
+        ext2_inode_t parent;
+        if (read_inode(parent_ino, &parent) == 0) {
+            parent.i_links_count++;
+            write_inode(parent_ino, &parent);
+        }
+        uint32_t dir_group = (new_ino - 1u) / g_inodes_per_group;
+        g_bgdt[dir_group].bg_used_dirs_count++;
+        write_bgd(dir_group);
         track_node(new_ino, node);
         return new_ino;
     }
@@ -980,6 +1038,7 @@ static uint32_t create_disk_node(vfs_node_t *node, uint32_t parent_ino) {
             ext2_write_file(new_ino, node->symlink, slen);
         }
         ext2_add_dirent(parent_ino, node->name, new_ino, EXT2_FT_SLNK);
+        track_node(new_ino, node);
         return new_ino;
     }
 
@@ -1062,6 +1121,7 @@ static void sync_walk(vfs_node_t *node, uint32_t parent_ext2_ino) {
 }
 
 int ext2_sync(void) {
+    if (!g_dev || !g_bgdt || !g_indir_buf || !g_mount_point[0]) return 0;
     vfs_node_t *root = vfs_lookup(g_mount_point);
     if (!root) {
         log_warn("ext2: sync: mount point %s not found in VFS", g_mount_point);
@@ -1308,37 +1368,60 @@ bool ext2_check_root(struct block_device *dev) {
 }
 
 bool ext2_mount(struct block_device *dev, const char *mount_point) {
-    g_dev = dev;
-    g_tracked_cnt = 0;
-
-    size_t mplen = strlen(mount_point);
-    if (mplen >= sizeof(g_mount_point)) mplen = sizeof(g_mount_point) - 1u;
-    memcpy(g_mount_point, mount_point, mplen);
-    g_mount_point[mplen] = '\0';
+    if (!dev || !dev->ops || !dev->ops->read || !mount_point) return false;
+    if (g_dev) {
+        log_error("ext2: only one mounted filesystem is currently supported");
+        return false;
+    }
 
     uint8_t sb_buf[1024];
     if (dev->ops->read(dev, EXT2_SB_LBA, 2u, sb_buf) < 0) {
         log_error("ext2: failed to read superblock");
         return false;
     }
-    memcpy(&g_sb, sb_buf, sizeof(ext2_sb_t));
+    ext2_sb_t candidate;
+    memcpy(&candidate, sb_buf, sizeof(candidate));
 
-    if (g_sb.s_magic != EXT2_MAGIC) {
-        log_error("ext2: bad magic 0x%04x", g_sb.s_magic);
+    if (candidate.s_magic != EXT2_MAGIC) {
+        log_error("ext2: bad magic 0x%04x", candidate.s_magic);
         return false;
     }
 
-    uint32_t unknown_incompat = g_sb.s_feature_incompat & ~EXT2_INCOMPAT_FILETYPE;
+    uint32_t unknown_incompat =
+        candidate.s_feature_incompat & ~EXT2_INCOMPAT_FILETYPE;
     if (unknown_incompat) {
         log_error("ext2: unsupported incompat features 0x%x", unknown_incompat);
         return false;
     }
+    uint32_t inode_size =
+        candidate.s_rev_level >= 1u ? (uint32_t) candidate.s_inode_size : 128u;
+    if (candidate.s_log_block_size > 2u ||
+        !candidate.s_blocks_count ||
+        !candidate.s_blocks_per_group ||
+        !candidate.s_inodes_per_group) {
+        log_error("ext2: invalid superblock geometry");
+        return false;
+    }
+    uint32_t block_size = 1024u << candidate.s_log_block_size;
+    if (inode_size < 128u || inode_size > block_size || (inode_size & 3u)) {
+        log_error("ext2: invalid inode geometry");
+        return false;
+    }
 
-    g_block_size = 1024u << g_sb.s_log_block_size;
+    g_dev = dev;
+    g_tracked_cnt = 0;
+    memcpy(&g_sb, &candidate, sizeof(g_sb));
+
+    size_t mplen = strlen(mount_point);
+    if (mplen >= sizeof(g_mount_point)) mplen = sizeof(g_mount_point) - 1u;
+    memcpy(g_mount_point, mount_point, mplen);
+    g_mount_point[mplen] = '\0';
+
+    g_block_size = block_size;
     g_blocks_per_group = g_sb.s_blocks_per_group;
     g_inodes_per_group = g_sb.s_inodes_per_group;
     g_first_data_block = g_sb.s_first_data_block;
-    g_inode_size = (g_sb.s_rev_level >= 1u) ? (uint32_t) g_sb.s_inode_size : 128u;
+    g_inode_size = inode_size;
     g_num_groups = (g_sb.s_blocks_count + g_blocks_per_group - 1u) / g_blocks_per_group;
     g_has_large_file = !!(g_sb.s_feature_ro_compat & EXT2_RO_COMPAT_LARGE);
 
@@ -1346,7 +1429,10 @@ bool ext2_mount(struct block_device *dev, const char *mount_point) {
              g_num_groups, g_inode_size, (int) g_has_large_file);
 
     g_indir_buf = (uint8_t *) kmalloc(g_block_size);
-    if (!g_indir_buf) return false;
+    if (!g_indir_buf) {
+        clear_mount_state();
+        return false;
+    }
 
     uint32_t bgdt_blk = g_first_data_block + 1u;
     uint32_t bgdt_bytes = g_num_groups * (uint32_t) sizeof(ext2_bgd_t);
@@ -1354,15 +1440,14 @@ bool ext2_mount(struct block_device *dev, const char *mount_point) {
 
     g_bgdt = (ext2_bgd_t *) kmalloc(bgdt_blocks * g_block_size);
     if (!g_bgdt) {
-        kfree(g_indir_buf);
+        clear_mount_state();
         return false;
     }
 
     for (uint32_t i = 0; i < bgdt_blocks; i++) {
         if (read_block(bgdt_blk + i, (uint8_t *) g_bgdt + i * g_block_size) < 0) {
             log_error("ext2: failed to read BGDT block %u", i);
-            kfree(g_bgdt);
-            kfree(g_indir_buf);
+            clear_mount_state();
             return false;
         }
     }
@@ -1376,13 +1461,20 @@ bool ext2_mount(struct block_device *dev, const char *mount_point) {
 
 static int ext2_fs_create(vfs_node_t *n, const char *path, uint32_t mode) {
     (void) mode;
-    if (!g_dev || !g_mount_point || !path) return -1;
+    if (!g_dev || !g_mount_point[0] || !path) return -1;
+
+    size_t mplen = strlen(g_mount_point);
+    if (!(mplen == 1u && g_mount_point[0] == '/') &&
+        (strncmp(path, g_mount_point, mplen) != 0 ||
+         (path[mplen] != '\0' && path[mplen] != '/')))
+        return -1;
 
     uint32_t parent_ino;
     const char *childname;
     if (resolve_parent(path, &parent_ino, &childname) < 0 || !*childname) return -1;
 
-    ext2_create(path, (uint16_t) (n->mode & 07777u), NULL, 0);
+    if (ext2_create(path, (uint16_t) (n->mode & 07777u), NULL, 0) < 0)
+        return -1;
 
     uint32_t ino_nr = ext2_lookup(parent_ino, childname);
     if (!ino_nr) return -1;
@@ -1393,10 +1485,19 @@ static int ext2_fs_create(vfs_node_t *n, const char *path, uint32_t mode) {
     return 0;
 }
 
+static bool ext2_fs_unmount(const char *mount_point) {
+    if (!g_dev || !mount_point || strcmp(mount_point, g_mount_point) != 0)
+        return false;
+    if (ext2_sync() < 0) return false;
+    clear_mount_state();
+    return true;
+}
+
 static struct filesystem ext2_fs = {
     .name = "ext2",
     .check_root = ext2_check_root,
     .mount = ext2_mount,
+    .unmount = ext2_fs_unmount,
     .sync = ext2_sync,
     .create = ext2_fs_create,
 };

@@ -76,7 +76,9 @@ int64_t sys_mount(const char *source, const char *target, const char *fstype, ui
 
     if (!ksrc[0] || !ktarget[0] || !kfstype[0]) return -(int64_t) EINVAL;
 
-    struct block_device *bd = block_by_name(ksrc);
+    const char *device_name = ksrc;
+    if (strncmp(device_name, "/dev/", 5) == 0) device_name += 5;
+    struct block_device *bd = block_by_name(device_name);
     if (!bd) {
         log_warn("mount: device '%s' not found", ksrc);
         return -(int64_t) ENODEV;
@@ -115,6 +117,10 @@ int64_t sys_umount2(const char *target, int flags) {
 
     mount_entry_t *m = mount_find(ktarget);
     if (!m) return -(int64_t) EINVAL;
+
+    struct filesystem *fs = vfs_find_fs(m->fstype);
+    if (fs && fs->unmount && !fs->unmount(ktarget))
+        return -(int64_t) EBUSY;
 
     mount_remove(ktarget);
     log_info("umount: %s", ktarget);

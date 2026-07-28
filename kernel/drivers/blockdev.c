@@ -1,4 +1,5 @@
 #include "blockdev.h"
+#include "../fs/partition.h"
 #include "../fs/vfs.h"
 #include "../fs/vfs_internal.h"
 #include "../lib/log.h"
@@ -14,11 +15,14 @@
 #define ENOMEM 12
 #define ENOSPC 28
 
-#define BLKGETSIZE 0x1260
+#define BLKGETSIZE   0x1260
+#define BLKGETSIZE64_COMPAT 0x1262
 #define BLKGETSIZE64 0x80081272
-#define BLKSSZGET 0x1268
-#define BLKFLSBUF 0x1261
-#define BLKDISCARD 0x127F
+#define BLKSSZGET    0x1268
+#define BLKSSZGET_COMPAT 0x1276
+#define BLKFLSBUF    0x1261
+#define BLKDISCARD   0x127F
+#define BLKRRPART    0x125F
 
 #define BLK_IO_MAX (16ULL * 1024 * 1024)
 
@@ -46,7 +50,7 @@ static int64_t blk_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t pos) {
     uint8_t *kbuf = (uint8_t *) kmalloc(buf_size);
     if (!kbuf) return -(int64_t) ENOMEM;
 
-    int r = bd->ops->read(bd, lba + bd->offset_lba, count, kbuf);
+    int r = bd->ops->read(bd, lba, count, kbuf);
     if (r < 0) {
         kfree(kbuf);
         return -(int64_t) EINVAL;
@@ -81,7 +85,7 @@ static int64_t blk_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t 
         if (!kbuf) return -(int64_t) ENOMEM;
 
         if (off_in_first > 0) {
-            int r = bd->ops->read(bd, lba + bd->offset_lba, 1, kbuf);
+            int r = bd->ops->read(bd, lba, 1, kbuf);
             if (r < 0) {
                 kfree(kbuf);
                 return -(int64_t) EINVAL;
@@ -91,7 +95,8 @@ static int64_t blk_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t 
             uint64_t last_lba = lba + count - 1;
             uint64_t last_off = total - bd->sector_size;
             if (last_off != off_in_first) {
-                int r = bd->ops->read(bd, last_lba + bd->offset_lba, 1, kbuf + last_off);
+                int r = bd->ops->read(bd, last_lba, 1,
+                                      kbuf + last_off);
                 if (r < 0) {
                     kfree(kbuf);
                     return -(int64_t) EINVAL;
@@ -100,14 +105,14 @@ static int64_t blk_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t 
         }
 
         memcpy(kbuf + off_in_first, buf, len);
-        int r = bd->ops->write(bd, lba + bd->offset_lba, count, kbuf);
+        int r = bd->ops->write(bd, lba, count, kbuf);
         kfree(kbuf);
         if (r < 0) return -(int64_t) EINVAL;
     } else {
         uint8_t *kbuf = (uint8_t *) kmalloc(len);
         if (!kbuf) return -(int64_t) ENOMEM;
         memcpy(kbuf, buf, len);
-        int r = bd->ops->write(bd, lba + bd->offset_lba, count, kbuf);
+        int r = bd->ops->write(bd, lba, count, kbuf);
         kfree(kbuf);
         if (r < 0) return -(int64_t) EINVAL;
     }
@@ -126,14 +131,17 @@ static int64_t blk_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
         *(uint64_t *) (uintptr_t) arg = size;
         return 0;
     }
-    case BLKGETSIZE64: {
+    case BLKGETSIZE64:
+    case BLKGETSIZE64_COMPAT: {
         uint64_t size = (uint64_t) bd->sectors * bd->sector_size;
         if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(uint64_t))) return -(int64_t) EFAULT;
         *(uint64_t *) (uintptr_t) arg = size;
         return 0;
     }
-    case BLKSSZGET: {
-        if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(int))) return -(int64_t) EFAULT;
+    case BLKSSZGET:
+    case BLKSSZGET_COMPAT: {
+        if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(int)))
+            return -(int64_t) EFAULT;
         *(int *) (uintptr_t) arg = (int) bd->sector_size;
         return 0;
     }
@@ -141,12 +149,15 @@ static int64_t blk_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
         if (bd->ops->flush) return bd->ops->flush(bd);
         return 0;
     }
+    case BLKRRPART:
+        if (bd->parent) return -(int64_t) EINVAL;
+        return partition_rescan_disk(bd) ? 0 : -(int64_t) EINVAL;
     default:
         return -(int64_t) EINVAL;
     }
 }
 
-static void blockdev_register_one(struct block_device *bd) {
+void blockdev_create_node(struct block_device *bd) {
     char path[32];
     snprintf(path, sizeof(path), "/dev/%s", bd->name);
 
@@ -163,11 +174,20 @@ static void blockdev_register_one(struct block_device *bd) {
     log_info("blockdev: %s  %lu sectors  (%lu MiB)", path, bd->sectors, bd->sectors / 2048);
 }
 
-void blockdev_init(void) { vfs_mkdir_p("/dev", 0755); }
+void blockdev_remove_node(struct block_device *bd) {
+    if (!bd) return;
+    char path[32];
+    snprintf(path, sizeof(path), "/dev/%s", bd->name);
+    vfs_unlink(path);
+}
+
+void blockdev_init(void) {
+    vfs_mkdir_p("/dev", 0755);
+}
 
 void blockdev_create_all(void) {
     for (int i = 0; i < block_count(); i++) {
         struct block_device *bd = block_get(i);
-        if (bd) blockdev_register_one(bd);
+        if (bd) blockdev_create_node(bd);
     }
 }

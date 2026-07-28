@@ -30,15 +30,41 @@ static idt_entry_t g_idt[256] __attribute__((aligned(16)));
 typedef struct {
     void (*fn)(int, void *);
     void *arg;
+    uint32_t active;
 } irq_handler_t;
 static irq_handler_t g_irq_handlers[16];
+static spinlock_t g_irq_handler_lock;
 
 void request_irq(uint8_t irq, void (*fn)(int, void *), void *arg) {
     if (irq < 16) {
+        uint64_t flags = irq_save();
+        pic_mask_irq(irq);
+        spin_lock(&g_irq_handler_lock);
         g_irq_handlers[irq].fn = fn;
         g_irq_handlers[irq].arg = arg;
+        spin_unlock(&g_irq_handler_lock);
         pic_unmask_irq(irq);
+        irq_restore(flags);
     }
+}
+
+bool free_irq(uint8_t irq, void (*fn)(int, void *), void *arg) {
+    if (irq >= 16) return false;
+    uint64_t flags = irq_save();
+    irq_handler_t *handler = &g_irq_handlers[irq];
+    spin_lock(&g_irq_handler_lock);
+    if (handler->fn != fn || handler->arg != arg) {
+        spin_unlock(&g_irq_handler_lock);
+        irq_restore(flags);
+        return false;
+    }
+    pic_mask_irq(irq);
+    handler->fn = NULL;
+    handler->arg = NULL;
+    spin_unlock(&g_irq_handler_lock);
+    irq_restore(flags);
+    while (__atomic_load_n(&handler->active, __ATOMIC_ACQUIRE)) cpu_relax();
+    return true;
 }
 
 extern uint64_t isr_stub_table[];
@@ -325,7 +351,19 @@ void isr_dispatch(cpu_state_t *state) {
             }
         } else {
             irq_handler_t *h = &g_irq_handlers[irq];
-            if (h->fn) h->fn((int) irq, h->arg);
+            void (*fn)(int, void *) = NULL;
+            void *arg = NULL;
+            spin_lock(&g_irq_handler_lock);
+            if (h->fn) {
+                fn = h->fn;
+                arg = h->arg;
+                __atomic_fetch_add(&h->active, 1, __ATOMIC_RELAXED);
+            }
+            spin_unlock(&g_irq_handler_lock);
+            if (fn) {
+                fn((int) irq, arg);
+                __atomic_fetch_sub(&h->active, 1, __ATOMIC_RELEASE);
+            }
             pic_send_eoi(irq);
         }
     } else if (n == LAPIC_SPURIOUS_VEC) {

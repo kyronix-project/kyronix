@@ -16,12 +16,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 podman autoconf automake
+          sudo apt-get install -y podman
       
-      - name: Build test ISO
-        run: make test-iso -j $(nproc) CRUNTIME=podman
-      
-      - name: Run tests in QEMU
-        run: |
-          timeout 2m make test-run-log 2>&1 | tee test.log
-          cat test.log
+      - name: Build and run tests
+        run: make test CRUNTIME=podman

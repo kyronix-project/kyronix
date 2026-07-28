@@ -8,10 +8,10 @@
 #include "lwip/pbuf.h"
 #include "netif/ethernet.h"
 
-#include "../../drivers/virtio_net.h"
 #include "../../lib/log.h"
 #include "../../lib/string.h"
 #include "../../mm/heap.h"
+#include "../net.h"
 
 /* called from irq/ poll context: hand a raw ethernet frame to lwip */
 void kyronix_netif_input(struct netif *nif, const uint8_t *data, uint16_t len) {
@@ -46,8 +46,7 @@ static err_t kyronix_netif_output(struct netif *nif, struct pbuf *p) {
         total += (uint16_t) q->len;
     }
 
-    virtnet_send(buf, total);
-    return ERR_OK;
+    return net_driver_send(buf, total) ? ERR_OK : ERR_IF;
 }
 
 /* netif init callback */
@@ -59,7 +58,8 @@ err_t kyronix_netif_init(struct netif *nif) {
     nif->mtu = 1500;
     nif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP | NETIF_FLAG_UP;
 
-    const uint8_t *mac = virtnet_mac();
+    uint8_t mac[6];
+    if (!net_driver_mac(mac)) return ERR_IF;
     memcpy(nif->hwaddr, mac, 6);
     nif->hwaddr_len = 6;
 
