@@ -1,0 +1,15 @@
+getopt.o: getopt.c /usr/include/stdc-predef.h config.h \
+ /usr/include/stdio.h /usr/include/features.h \
+ /usr/include/bits/alltypes.h gettext.h getopt.h /usr/include/string.h \
+ /usr/include/strings.h /usr/include/stdlib.h /usr/include/alloca.h
+/usr/include/stdc-predef.h:
+config.h:
+/usr/include/stdio.h:
+/usr/include/features.h:
+/usr/include/bits/alltypes.h:
+gettext.h:
+getopt.h:
+/usr/include/string.h:
+/usr/include/strings.h:
+/usr/include/stdlib.h:
+/usr/include/alloca.h:

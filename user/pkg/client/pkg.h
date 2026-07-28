@@ -15,7 +15,7 @@
 #define ANSI_DIM     "\x1b[2m"
 
 #define USER_AGENT "K9PackageManager/2.0"
-#define PKG_VERSION "0.2.0"
+#define PKG_VERSION "0.2"
 
 #define MAX_DEPS      32
 #define MAX_REPOS     16

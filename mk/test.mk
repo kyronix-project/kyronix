@@ -66,7 +66,7 @@ test: $(TEST_ISO)
 	    -serial file:$(TEST_LOG) -no-reboot 2>/dev/null; \
 	qemu_status=$$?; \
 	set -e; \
-	grep -E "(TEST|RESULT|ALL|SOME|KMEMLEAK)" $(TEST_LOG) 2>/dev/null || true; \
+	grep -E "(TEST|RESULT|ALL|SOME|FAIL|KMEMLEAK)" $(TEST_LOG) 2>/dev/null || true; \
 	if ! grep -q "ALL TESTS PASSED" $(TEST_LOG) 2>/dev/null; then \
 	    echo; echo "FAIL (QEMU status $$qemu_status)"; exit 1; \
 	fi; \

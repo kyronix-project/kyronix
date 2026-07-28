@@ -16,7 +16,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#define INSTALLER_VERSION "0.2.0"
+#define INSTALLER_VERSION "0.2"
 #define MAX_DISKS 16
 #define COPY_BUFFER (64u * 1024u)
 #define DEFAULT_HOSTNAME "kyronix"

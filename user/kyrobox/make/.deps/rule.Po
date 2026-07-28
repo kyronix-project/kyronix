@@ -1,0 +1,64 @@
+rule.o: rule.c /usr/include/stdc-predef.h makeint.h config.h \
+ /usr/include/alloca.h /usr/include/bits/alltypes.h gnumake.h \
+ /usr/include/sys/types.h /usr/include/features.h /usr/include/endian.h \
+ /usr/include/sys/select.h /usr/include/sys/stat.h \
+ /usr/include/bits/stat.h /usr/include/signal.h \
+ /usr/include/bits/signal.h /usr/include/stdio.h /usr/include/ctype.h \
+ /usr/include/sys/timeb.h /usr/include/sys/time.h /usr/include/time.h \
+ /usr/include/errno.h /usr/include/bits/errno.h /usr/include/unistd.h \
+ /usr/include/bits/posix.h /usr/include/limits.h \
+ /usr/include/bits/limits.h /usr/include/sys/param.h \
+ /usr/include/sys/resource.h /usr/include/bits/resource.h \
+ /usr/include/stdlib.h /usr/include/string.h /usr/include/strings.h \
+ /usr/include/inttypes.h /usr/include/stdint.h /usr/include/bits/stdint.h \
+ /usr/include/locale.h gettext.h glob/glob.h /usr/include/assert.h \
+ filedef.h hash.h dep.h job.h output.h /usr/include/fcntl.h \
+ /usr/include/bits/fcntl.h commands.h variable.h rule.h
+/usr/include/stdc-predef.h:
+makeint.h:
+config.h:
+/usr/include/alloca.h:
+/usr/include/bits/alltypes.h:
+gnumake.h:
+/usr/include/sys/types.h:
+/usr/include/features.h:
+/usr/include/endian.h:
+/usr/include/sys/select.h:
+/usr/include/sys/stat.h:
+/usr/include/bits/stat.h:
+/usr/include/signal.h:
+/usr/include/bits/signal.h:
+/usr/include/stdio.h:
+/usr/include/ctype.h:
+/usr/include/sys/timeb.h:
+/usr/include/sys/time.h:
+/usr/include/time.h:
+/usr/include/errno.h:
+/usr/include/bits/errno.h:
+/usr/include/unistd.h:
+/usr/include/bits/posix.h:
+/usr/include/limits.h:
+/usr/include/bits/limits.h:
+/usr/include/sys/param.h:
+/usr/include/sys/resource.h:
+/usr/include/bits/resource.h:
+/usr/include/stdlib.h:
+/usr/include/string.h:
+/usr/include/strings.h:
+/usr/include/inttypes.h:
+/usr/include/stdint.h:
+/usr/include/bits/stdint.h:
+/usr/include/locale.h:
+gettext.h:
+glob/glob.h:
+/usr/include/assert.h:
+filedef.h:
+hash.h:
+dep.h:
+job.h:
+output.h:
+/usr/include/fcntl.h:
+/usr/include/bits/fcntl.h:
+commands.h:
+variable.h:
+rule.h:

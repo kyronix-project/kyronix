@@ -29,6 +29,8 @@ static void expand_env(char *buf, size_t size);
 static int split_line(char *line, char **argv);
 static int run_line_logic(char *input);
 static int run_script(const char *path, int script_argc, char **script_argv);
+static int resolve_path(const char *target, char *result, size_t result_size);
+static int shell_execvp(const char *file, char **argv);
 
 #define SEG_FIRST 0
 #define SEG_AND 1
@@ -863,7 +865,7 @@ static int exec_pipeline(char **argv, int argc, int background, const char *cmd)
                 close(fd);
             }
 
-            execvp(argv[st_start[s]], argv + st_start[s]);
+            shell_execvp(argv[st_start[s]], argv + st_start[s]);
             perror(argv[st_start[s]]);
             _exit(127);
         }
@@ -1009,6 +1011,19 @@ static int resolve_path(const char *target, char *result, size_t result_size) {
     strncpy(result, norm, result_size);
     result[result_size - 1] = '\0';
     return 0;
+}
+
+static int shell_execvp(const char *file, char **argv) {
+    if (strchr(file, '/')) {
+        static char resolved[PATH_MAX];
+        if (resolve_path(file, resolved, sizeof(resolved)) == 0) {
+            execv(resolved, argv);
+        } else {
+            errno = ENOENT;
+        }
+        return -1;
+    }
+    return execvp(file, argv);
 }
 
 static void print_help(void) {
@@ -1240,7 +1255,7 @@ static int run_command(int argc, char **argv) {
             return 1;
         }
         if (argc == 1) return 0;
-        execvp(argv[1], argv + 1);
+        shell_execvp(argv[1], argv + 1);
         perror(argv[1]);
         return 127;
     }
@@ -1769,7 +1784,7 @@ int main(int argc, char **argv) {
         setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin", 1);
 
     if (!getenv("PS1"))
-        setenv("PS1", "[\\u@kx: \\w] \\$ ", 0);
+        setenv("PS1", "[\\u@\\h: \\w] \\$ ", 0);
 
     if (getcwd(shell_pwd, sizeof(shell_pwd)) == NULL) {
         const char *env = getenv("PWD");
