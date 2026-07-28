@@ -10,6 +10,7 @@ vmm_space_t g_kernel_space;
 #define VMM_MAX_SPACES 256
 static vmm_space_t g_pool[VMM_MAX_SPACES];
 static bool g_pool_used[VMM_MAX_SPACES];
+static volatile uint64_t g_kernel_map_generation = 1;
 
 #define PML4_IDX(va) (((va) >> 39) & 0x1FFull)
 #define PDPT_IDX(va) (((va) >> 30) & 0x1FFull)
@@ -44,6 +45,8 @@ int vmm_map(vmm_space_t *sp, uint64_t virt, uint64_t phys, uint64_t flags) {
     if ((flags & VMM_USER) && virt >= USER_LIMIT) return -1;
 
     uint64_t *pml4 = (uint64_t *) phys_to_virt(sp->pml4_phys);
+    bool new_kernel_slot =
+        sp == &g_kernel_space && virt >= USER_LIMIT && !(pml4[PML4_IDX(virt)] & VMM_PRESENT);
 
     uint64_t *pdpt = descend(pml4, PML4_IDX(virt));
     if (!pdpt) return -1;
@@ -53,6 +56,8 @@ int vmm_map(vmm_space_t *sp, uint64_t virt, uint64_t phys, uint64_t flags) {
     if (!pt) return -1;
 
     pt[PT_IDX(virt)] = (phys & PTE_ADDR_MASK) | (flags & PTE_FLAGS_MASK) | VMM_PRESENT;
+    if (new_kernel_slot)
+        __atomic_add_fetch(&g_kernel_map_generation, 1, __ATOMIC_RELEASE);
 
     __asm__ volatile("invlpg (%0)" ::"r"(virt) : "memory");
     return 0;
@@ -179,6 +184,8 @@ vmm_space_t *vmm_space_new(void) {
 
     memset(&g_pool[slot], 0, sizeof(g_pool[slot]));
     g_pool[slot].pml4_phys = pml4_phys;
+    g_pool[slot].kernel_map_generation =
+        __atomic_load_n(&g_kernel_map_generation, __ATOMIC_ACQUIRE);
     vma_reset(&g_pool[slot]);
     g_pool_used[slot] = true;
     return &g_pool[slot];
@@ -222,12 +229,18 @@ void vmm_space_free(vmm_space_t *sp) {
 
 void vmm_switch(vmm_space_t *sp) {
     if (sp != &g_kernel_space) {
-        /* sync any kernel mappings added after vmm_space_new */
-        uint64_t *dst = (uint64_t *) phys_to_virt(sp->pml4_phys);
-        uint64_t *src = (uint64_t *) phys_to_virt(g_kernel_space.pml4_phys);
-        for (int i = 256; i < 512; i++) dst[i] = src[i];
+        uint64_t generation = __atomic_load_n(&g_kernel_map_generation, __ATOMIC_ACQUIRE);
+        if (sp->kernel_map_generation != generation) {
+            uint64_t *dst = (uint64_t *) phys_to_virt(sp->pml4_phys);
+            uint64_t *src = (uint64_t *) phys_to_virt(g_kernel_space.pml4_phys);
+            for (int i = 256; i < 512; i++) dst[i] = src[i];
+            sp->kernel_map_generation = generation;
+        }
     }
-    __asm__ volatile("mov %0, %%cr3" ::"r"(sp->pml4_phys) : "memory");
+    uint64_t current;
+    __asm__ volatile("mov %%cr3, %0" : "=r"(current));
+    if ((current & PTE_ADDR_MASK) != sp->pml4_phys)
+        __asm__ volatile("mov %0, %%cr3" ::"r"(sp->pml4_phys) : "memory");
 }
 
 int vmm_fork_user(vmm_space_t *dst, vmm_space_t *src) {
@@ -290,14 +303,43 @@ int vmm_fork_user_cow(vmm_space_t *dst, vmm_space_t *src) {
                     uint64_t va = ((uint64_t) i << 39) | ((uint64_t) j << 30) |
                                   ((uint64_t) k << 21) | ((uint64_t) l << 12);
                     uint64_t flags = pte & PTE_FLAGS_MASK;
-                    if (flags & VMM_WRITE) {
-                        flags &= ~(uint64_t) VMM_WRITE;
-                        flags |= VMM_COW;
-                        src_pt[l] = pte_addr(pte) | flags | VMM_PRESENT;
+                    uint32_t map_flags = 0;
+                    bool owned = false;
+                    bool tracked =
+                        vma_range_info(src, va, PAGE_SIZE, NULL, &map_flags, &owned);
+
+                    /*
+                     * Device mappings and legacy untracked mappings may not use
+                     * PMM-managed frames. Preserve the old eager-copy behavior.
+                     */
+                    if (!tracked || !owned ||
+                        !pmm_retain((void *) pte_addr(pte))) {
+                        void *new_phys = pmm_alloc();
+                        if (!new_phys) return -1;
+                        memcpy(phys_to_virt((uint64_t) new_phys),
+                               phys_to_virt(pte_addr(pte)), PAGE_SIZE);
+                        if (vmm_map(dst, va, (uint64_t) new_phys, flags) < 0) {
+                            pmm_free(new_phys);
+                            return -1;
+                        }
+                        continue;
+                    }
+
+                    bool private_write =
+                        (flags & VMM_WRITE) && !(map_flags & VMA_MAP_SHARED);
+                    uint64_t child_flags = flags;
+                    if (private_write) {
+                        child_flags &= ~(uint64_t) VMM_WRITE;
+                        child_flags |= VMM_COW;
+                    }
+                    if (vmm_map(dst, va, pte_addr(pte), child_flags) < 0) {
+                        pmm_free((void *) pte_addr(pte));
+                        return -1;
+                    }
+                    if (private_write) {
+                        src_pt[l] = pte_addr(pte) | child_flags | VMM_PRESENT;
                         __asm__ volatile("invlpg (%0)" :: "r"(va) : "memory");
                     }
-                    pmm_retain((void *) pte_addr(pte));
-                    if (vmm_map(dst, va, pte_addr(pte), flags) < 0) return -1;
                 }
             }
         }
@@ -309,15 +351,14 @@ int vmm_handle_cow_fault(vmm_space_t *sp, uint64_t virt) {
     uint64_t pte = vmm_leaf_pte(sp, virt & PAGE_MASK);
     if (!(pte & VMM_PRESENT) || !(pte & VMM_COW)) return 0;
 
+    uint64_t flags = (pte & PTE_FLAGS_MASK) | VMM_WRITE;
+    flags &= ~(uint64_t) VMM_COW;
+    if (pmm_ref_count((void *) pte_addr(pte)) == 1)
+        return vmm_protect(sp, virt & PAGE_MASK, flags) == 0 ? 1 : -1;
+
     void *new_phys = pmm_alloc();
     if (!new_phys) return -1;
     memcpy(phys_to_virt((uint64_t) new_phys), phys_to_virt(pte_addr(pte)), PAGE_SIZE);
-    uint64_t flags = (pte & PTE_FLAGS_MASK) | VMM_WRITE;
-    flags &= ~(uint64_t) VMM_COW;
-    if (vmm_protect(sp, virt & PAGE_MASK, flags) < 0) {
-        pmm_free(new_phys);
-        return -1;
-    }
 
     uint64_t *pml4 = (uint64_t *) phys_to_virt(sp->pml4_phys);
     uint64_t *pdpt = (uint64_t *) phys_to_virt(pte_addr(pml4[PML4_IDX(virt)]));

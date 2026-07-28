@@ -8,6 +8,8 @@ void vfs_fd_install(int fd, vfs_file_t *f);
 void vfs_fd_clear(int fd);
 void vfs_file_close(vfs_file_t *f);
 void vfs_file_addref(vfs_file_t *f);
+vfs_file_t *vfs_file_clone(vfs_file_t *f);
+int vfs_fd_adopt(vfs_file_t *f);
 void vfs_pipe_drop_write(pipe_t *p);
 void vfs_pipe_maybe_free(pipe_t *p);
 vfs_node_t *vfs_node_alloc_internal(const char *name, uint8_t type, uint32_t mode);

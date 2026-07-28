@@ -36,6 +36,7 @@ typedef struct {
 
 typedef struct {
     uint64_t pml4_phys;
+    uint64_t kernel_map_generation;
     vmm_vma_t vmas[VMM_VMA_MAX];
 } vmm_space_t;
 

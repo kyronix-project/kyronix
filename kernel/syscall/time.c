@@ -67,7 +67,6 @@ int64_t sys_nanosleep(void *r, void *m) {
 }
 
 int64_t sys_clock_nanosleep(int clockid, int flags, const void *req, void *rem) {
-    (void) clockid;
     (void) rem;
     if (!req) return 0;
     if (!uptr_ok(req, 16)) return -(int64_t) EFAULT;
@@ -77,7 +76,7 @@ int64_t sys_clock_nanosleep(int clockid, int flags, const void *req, void *rem) 
 
     uint64_t ms;
     if (flags & 1) { /* TIMER_ABSTIME: req is an absolute time, sleep until then */
-        uint64_t now_ms = g_epoch_base * 1000 + g_ticks;
+        uint64_t now_ms = clockid == 0 ? realtime_now_ms() : g_ticks;
         ms = target_ms > now_ms ? target_ms - now_ms : 0;
     } else {
         ms = target_ms;
@@ -135,25 +134,51 @@ int64_t sys_setitimer(int w, const void *n, void *o) {
 }
 
 int64_t sys_clock_gettime(uint64_t c, void *t) {
-    (void) c;
     if (t) {
         if (!uptr_ok_w(t, 16)) return -(int64_t) EFAULT;
-        uint64_t ms = g_epoch_base * 1000 + g_ticks;
+        uint64_t ms = c == 0 ? realtime_now_ms() : g_ticks;
         ((uint64_t *) t)[0] = ms / 1000;
         ((uint64_t *) t)[1] = (ms % 1000) * 1000000ULL;
     }
     return 0;
 }
 
+int64_t sys_clock_settime(int clockid, const void *t) {
+    if (clockid != 0) return -(int64_t) EINVAL;
+    if (!t || !uptr_ok(t, 16)) return -(int64_t) EFAULT;
+
+    const int64_t *ts = (const int64_t *) t;
+    if (ts[0] < 0 || ts[1] < 0 || ts[1] >= 1000000000LL) return -(int64_t) EINVAL;
+    if ((uint64_t) ts[0] > ((uint64_t) INT64_MAX / 1000ULL)) return -(int64_t) EINVAL;
+
+    uint64_t ms = (uint64_t) ts[0] * 1000ULL + (uint64_t) ts[1] / 1000000ULL;
+    return realtime_set_ms(ms) ? 0 : -(int64_t) EINVAL;
+}
+
 int64_t sys_gettimeofday(void *tv, void *tz) {
     (void) tz;
     if (tv) {
         if (!uptr_ok_w(tv, 16)) return -(int64_t) EFAULT;
-        uint64_t ms = g_epoch_base * 1000 + g_ticks;
+        uint64_t ms = realtime_now_ms();
         ((uint64_t *) tv)[0] = ms / 1000;
         ((uint64_t *) tv)[1] = (ms % 1000) * 1000ULL;
     }
     return 0;
+}
+
+int64_t sys_settimeofday(const void *tv, const void *tz) {
+    (void) tz;
+    if (!tv) return 0;
+    if (!uptr_ok(tv, 16)) return -(int64_t) EFAULT;
+
+    const int64_t *timeval = (const int64_t *) tv;
+    if (timeval[0] < 0 || timeval[1] < 0 || timeval[1] >= 1000000LL)
+        return -(int64_t) EINVAL;
+    if ((uint64_t) timeval[0] > ((uint64_t) INT64_MAX / 1000ULL))
+        return -(int64_t) EINVAL;
+
+    uint64_t ms = (uint64_t) timeval[0] * 1000ULL + (uint64_t) timeval[1] / 1000ULL;
+    return realtime_set_ms(ms) ? 0 : -(int64_t) EINVAL;
 }
 
 int64_t sys_times(void *b) {

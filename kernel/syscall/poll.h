@@ -1,4 +1,5 @@
 #pragma once
+#include <stdbool.h>
 #include <stdint.h>
 
 struct pollfd_s {
@@ -6,6 +7,11 @@ struct pollfd_s {
     short events;
     short revents;
 };
+
+typedef bool (*poll_ready_fn)(void *ctx);
+
+void poll_notify(void);
+bool poll_wait_once(uint64_t deadline, poll_ready_fn ready, void *ctx);
 
 int64_t sys_poll(struct pollfd_s *fds, uint64_t nfds, int timeout);
 int64_t sys_ppoll(struct pollfd_s *fds, uint64_t nfds, void *tmo, const void *sigmask,

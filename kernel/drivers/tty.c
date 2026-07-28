@@ -3,6 +3,7 @@
 #include "../arch/x86_64/pit.h"
 #include "../proc/proc.h"
 #include "../proc/signal.h"
+#include "../syscall/poll.h"
 #include "fb.h"
 #include "input.h"
 #include "kbd.h"
@@ -14,6 +15,7 @@
 static uint8_t tty_buf[TTY_BUF_SIZE];
 static volatile int tty_buf_head;
 static volatile int tty_buf_tail;
+static uint32_t tty_canon_chars;
 static int tty_fg_pgid = 1;
 static proc_t *tty_waiter;
 
@@ -49,6 +51,7 @@ static void tty_enqueue(uint8_t c) {
         proc_set_ready(tty_waiter);
     }
     tty_waiter = NULL;
+    poll_notify();
 }
 
 static int tty_dequeue(void) {
@@ -96,6 +99,11 @@ static void tty_input_char(uint8_t c) {
     /* ISTRIP: mask to 7 bits */
     if (tty_termios.c_iflag & ISTRIP) c &= 0x7F;
 
+    bool canonical = (tty_termios.c_lflag & ICANON) != 0;
+    bool erase = c == tty_termios.c_cc[VERASE] || c == '\b';
+    if (canonical && erase && tty_canon_chars == 0) return;
+    if (tty_buf_full()) return;
+
     /* ECHO */
     if (tty_termios.c_lflag & ECHO) {
         if (c == '\r') {
@@ -103,7 +111,7 @@ static void tty_input_char(uint8_t c) {
             tty_putchar('\n');
         } else if (c == '\n') {
             tty_putchar('\n');
-        } else if (c == 0x7F || c == '\b') {
+        } else if (erase) {
             tty_putchar('\b');
             tty_putchar(' ');
             tty_putchar('\b');
@@ -112,7 +120,15 @@ static void tty_input_char(uint8_t c) {
         }
     }
 
-    if (!tty_buf_full()) tty_enqueue(c);
+    tty_enqueue(c);
+    if (canonical) {
+        if (erase)
+            tty_canon_chars--;
+        else if (c == '\n')
+            tty_canon_chars = 0;
+        else if (c != tty_termios.c_cc[VEOF])
+            tty_canon_chars++;
+    }
 }
 
 void tty_process_input(void) {
@@ -169,13 +185,16 @@ int64_t tty_read(char *buf, uint64_t len) {
             }
         }
 
+        uint64_t irq_flags = irq_save();
+        if (!tty_buf_empty()) {
+            irq_restore(irq_flags);
+            continue;
+        }
         tty_waiter = g_current_proc;
-        if (g_current_proc) g_current_proc->wakeup_tick = g_ticks + 1;
-        if (g_current_proc) proc_set_timer(g_current_proc);
-        sched_yield_blocking();
-        if (g_current_proc) g_current_proc->wakeup_tick = 0;
+        if (g_current_proc) g_current_proc->state = PROC_WAITING;
+        irq_restore(irq_flags);
+        if (g_current_proc) sched_block_current();
         if (tty_waiter == g_current_proc) tty_waiter = NULL;
-        cpu_relax();
     }
 
     return (int64_t) i;
@@ -231,8 +250,14 @@ void tty_set_fg_pgid(int pgid) { tty_fg_pgid = pgid; }
 
 uint32_t tty_get_lflag(void) { return tty_termios.c_lflag; }
 
-void tty_set_lflag(uint32_t lflag) { tty_termios.c_lflag = lflag; }
+void tty_set_lflag(uint32_t lflag) {
+    if ((tty_termios.c_lflag ^ lflag) & ICANON) tty_canon_chars = 0;
+    tty_termios.c_lflag = lflag;
+}
 
 void tty_get_termios(struct termios_s *t) { *t = tty_termios; }
 
-void tty_set_termios(const struct termios_s *t) { tty_termios = *t; }
+void tty_set_termios(const struct termios_s *t) {
+    if ((tty_termios.c_lflag ^ t->c_lflag) & ICANON) tty_canon_chars = 0;
+    tty_termios = *t;
+}

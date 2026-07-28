@@ -478,6 +478,7 @@ static int apply_relocations(load_ctx_t *ctx) {
         if (rela->sh_type != SHT_RELA) continue;
         if (rela->sh_info >= ctx->eh->e_shnum || rela->sh_link >= ctx->eh->e_shnum ||
             !rela->sh_entsize || rela->sh_entsize < sizeof(elf64_rela_t) ||
+            rela->sh_size % rela->sh_entsize ||
             !range_ok(rela->sh_offset, rela->sh_size, ctx->image_size)) {
             result = -ENOEXEC;
             break;

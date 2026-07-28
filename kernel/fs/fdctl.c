@@ -138,11 +138,9 @@ int fd_fcntl(int fd, int cmd, uint64_t arg) {
     case F_DUPFD_CLOEXEC: {
         int newfd = vfs_fd_alloc_from((int) arg);
         if (newfd < 0) return -(int) EMFILE;
-        vfs_file_t *nf = vfs_file_alloc();
+        vfs_file_t *nf = vfs_file_clone(f);
         if (!nf) return -(int) ENOMEM;
-        *nf = *f;
         nf->cloexec = (cmd == F_DUPFD_CLOEXEC) ? 1 : 0;
-        vfs_file_addref(nf);
         vfs_fd_install(newfd, nf);
         return newfd;
     }
@@ -167,11 +165,9 @@ int fd_dup2(int oldfd, int newfd) {
         vfs_file_close(old);
         vfs_fd_clear(newfd);
     }
-    vfs_file_t *nf = vfs_file_alloc();
+    vfs_file_t *nf = vfs_file_clone(f);
     if (!nf) return -(int) ENOMEM;
-    *nf = *f;
     nf->cloexec = 0;
-    vfs_file_addref(nf);
     vfs_fd_install(newfd, nf);
     return newfd;
 }

@@ -44,6 +44,33 @@ int test_clock_gettime(void) {
 }
 REGISTER_TEST(clock_gettime, "Phase 6: Timers & Time");
 
+int test_clock_settime(void) {
+    struct timespec original, desired, actual;
+    ASSERT_EQ(0, clock_gettime(CLOCK_REALTIME, &original));
+
+    desired.tv_sec = original.tv_sec + 2;
+    desired.tv_nsec = 123000000;
+    ASSERT_EQ(0, clock_settime(CLOCK_REALTIME, &desired));
+    ASSERT_EQ(0, clock_gettime(CLOCK_REALTIME, &actual));
+    ASSERT_TRUE(actual.tv_sec > desired.tv_sec ||
+                (actual.tv_sec == desired.tv_sec && actual.tv_nsec >= desired.tv_nsec));
+    ASSERT_TRUE(actual.tv_sec <= desired.tv_sec + 1);
+
+    struct timespec invalid = desired;
+    invalid.tv_nsec = 1000000000L;
+    errno = 0;
+    ASSERT_EQ(-1, clock_settime(CLOCK_REALTIME, &invalid));
+    ASSERT_EQ(EINVAL, errno);
+
+    errno = 0;
+    ASSERT_EQ(-1, clock_settime(CLOCK_MONOTONIC, &desired));
+    ASSERT_EQ(EINVAL, errno);
+
+    ASSERT_EQ(0, clock_settime(CLOCK_REALTIME, &original));
+    return 1;
+}
+REGISTER_TEST(clock_settime, "Phase 6: Timers & Time");
+
 int test_clock_getres(void) {
     struct timespec ts;
 

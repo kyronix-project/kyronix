@@ -149,6 +149,16 @@ static void ucs2_to_utf8(const uint16_t *src, int nchars, char *dst, int dstlen)
 
 static char fat_lower(char c) { return (c >= 'A' && c <= 'Z') ? (char) (c + 32) : c; }
 
+static bool fat_name_safe(const char *name) {
+    if (!name || !name[0] || strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return false;
+    for (const unsigned char *p = (const unsigned char *) name; *p; p++) {
+        if (*p < 0x20 || *p == '/' || *p == '\\' || *p == ':' || *p == '*' || *p == '?' ||
+            *p == '"' || *p == '<' || *p == '>' || *p == '|')
+            return false;
+    }
+    return true;
+}
+
 static void build_83_name(const fat_dirent_t *e, char *out) {
     bool lc_name = (e->_nt & 0x08) != 0;
     bool lc_ext = (e->_nt & 0x10) != 0;
@@ -230,7 +240,9 @@ static void walk_dir(fat32_ctx_t *ctx, uint32_t start_cl, const char *path, int 
     } while (0)
 
     uint32_t cl = start_cl;
-    while ((cl & FAT32_MASK) < FAT32_BAD && cl >= 2 && cl <= ctx->total_clusters + 1) {
+    uint32_t traversed = 0;
+    while ((cl & FAT32_MASK) < FAT32_BAD && cl >= 2 && cl <= ctx->total_clusters + 1 &&
+           traversed++ < ctx->total_clusters) {
         uint8_t *cdata = read_cluster(ctx, cl);
         if (!cdata) break;
 
@@ -273,7 +285,7 @@ static void walk_dir(fat32_ctx_t *ctx, uint32_t start_cl, const char *path, int 
             } else {
                 build_83_name(e, fname);
             }
-            if (fname[0] == '\0') continue;
+            if (!fat_name_safe(fname)) continue;
 
             process_dirent(ctx, e, fname, path, depth, count);
         }
@@ -310,15 +322,19 @@ int fat32_mount(fat32_read_fn read, void *opaque, const char *mountpoint) {
         log_error("FAT32: invalid bytes_per_sector=%u", bpb.bytes_per_sector);
         return -1;
     }
-    if (bpb.sectors_per_cluster == 0) {
-        log_error("FAT32: sectors_per_cluster is zero");
+    if (bpb.sectors_per_cluster == 0 || bpb.sectors_per_cluster > 128 ||
+        (bpb.sectors_per_cluster & (bpb.sectors_per_cluster - 1)) != 0) {
+        log_error("FAT32: invalid sectors_per_cluster=%u", bpb.sectors_per_cluster);
         return -1;
     }
-    if (bpb.fat_size_32 == 0) {
-        log_error("FAT32: fat_size_32 is zero (not FAT32?)");
+    if (bpb.fat_size_32 == 0 || bpb.num_fats == 0 || bpb.reserved_sectors == 0) {
+        log_error("FAT32: invalid FAT geometry");
         return -1;
     }
 
+    uint64_t data_start =
+        (uint64_t) bpb.reserved_sectors + (uint64_t) bpb.num_fats * bpb.fat_size_32;
+    if (data_start > UINT32_MAX) return -1;
     fat32_ctx_t ctx = {
         .read = read,
         .ctx = opaque,
@@ -328,7 +344,7 @@ int fat32_mount(fat32_read_fn read, void *opaque, const char *mountpoint) {
         .reserved_sectors = bpb.reserved_sectors,
         .num_fats = bpb.num_fats,
         .fat_size = bpb.fat_size_32,
-        .data_start = bpb.reserved_sectors + (uint32_t) bpb.num_fats * bpb.fat_size_32,
+        .data_start = (uint32_t) data_start,
         .root_cluster = bpb.root_cluster,
         .fat_sec_lba = UINT64_MAX,
     };
@@ -336,6 +352,11 @@ int fat32_mount(fat32_read_fn read, void *opaque, const char *mountpoint) {
     uint32_t total_sectors = bpb.total_sectors_32 ? bpb.total_sectors_32 : bpb.total_sectors_16;
     uint32_t data_sectors = total_sectors > ctx.data_start ? total_sectors - ctx.data_start : 0;
     ctx.total_clusters = data_sectors / ctx.sectors_per_cluster;
+    uint64_t fat_bytes = (uint64_t) ctx.fat_size * ctx.bytes_per_sector;
+    if (ctx.total_clusters == 0 || ctx.total_clusters > FAT32_BAD - 2 ||
+        ctx.root_cluster < 2 || ctx.root_cluster > ctx.total_clusters + 1 ||
+        ((uint64_t) ctx.total_clusters + 2) * 4 > fat_bytes)
+        return -1;
 
     ctx.fat_sec = kmalloc(ctx.bytes_per_sector);
     if (!ctx.fat_sec) return -1;
@@ -346,6 +367,10 @@ int fat32_mount(fat32_read_fn read, void *opaque, const char *mountpoint) {
     char mp_buf[512];
     const char *mp = mountpoint;
     size_t mp_len = strlen(mountpoint);
+    if (mp_len >= sizeof(mp_buf)) {
+        kfree(ctx.fat_sec);
+        return -1;
+    }
     if (mp_len > 1) {
         memcpy(mp_buf, mountpoint, mp_len + 1);
         if (mp_buf[mp_len - 1] == '/') mp_buf[--mp_len] = '\0';
@@ -369,9 +394,10 @@ typedef struct {
 
 static int mem_read(void *ctx, uint64_t lba, uint32_t count, void *buf) {
     mem_disk_t *d = ctx;
+    if (lba > UINT64_MAX / d->sector_size) return -1;
     uint64_t off = lba * d->sector_size;
     uint64_t len = (uint64_t) count * d->sector_size;
-    if (off + len > d->size) return -1;
+    if (off > d->size || len > d->size - off) return -1;
     memcpy(buf, d->base + off, len);
     return 0;
 }

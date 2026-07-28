@@ -23,12 +23,20 @@ typedef struct __attribute__((packed)) {
 
 static int partition_read(struct block_device *dev, uint64_t lba, uint32_t count, void *buf) {
     struct block_device *parent = dev->parent;
+    if (!parent || !parent->ops || !parent->ops->read) return -1;
+    if (count == 0) return 0;
+    if (lba >= dev->sectors || (uint64_t) count > dev->sectors - lba) return -1;
+    if (dev->offset_lba > UINT64_MAX - lba) return -1;
     return parent->ops->read(parent, dev->offset_lba + lba, count, buf);
 }
 
 static int partition_write(struct block_device *dev, uint64_t lba, uint32_t count,
                            const void *buf) {
     struct block_device *parent = dev->parent;
+    if (!parent || !parent->ops || !parent->ops->write) return -1;
+    if (count == 0) return 0;
+    if (lba >= dev->sectors || (uint64_t) count > dev->sectors - lba) return -1;
+    if (dev->offset_lba > UINT64_MAX - lba) return -1;
     return parent->ops->write(parent, dev->offset_lba + lba, count, buf);
 }
 
@@ -40,6 +48,7 @@ static int partition_flush(struct block_device *dev) {
 
 static void scan_disk(struct block_device *bd) {
     if (bd->parent) return;
+    if (bd->sector_size < 512) return;
 
     uint8_t *sector = (uint8_t *) kmalloc(bd->sector_size);
     if (!sector) return;
@@ -67,6 +76,12 @@ static void scan_disk(struct block_device *bd) {
         mbr_entry_t *e = &entries[i];
         if (e->type == 0x00) continue;
         if (e->sector_count == 0) continue;
+        uint64_t first = e->lba_first;
+        uint64_t sectors = e->sector_count;
+        if (first >= bd->sectors || sectors > bd->sectors - first) {
+            log_warn("partition: ignoring out-of-range entry %d on %s", i + 1, bd->name);
+            continue;
+        }
 
         struct block_device *pd = (struct block_device *) kmalloc(sizeof(struct block_device));
         if (!pd) continue;

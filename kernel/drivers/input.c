@@ -5,6 +5,7 @@
 #include "../lib/string.h"
 #include "../proc/proc.h"
 #include "../syscall/syscall.h"
+#include "../syscall/poll.h"
 #include "kbd.h"
 #include <stdbool.h>
 
@@ -36,11 +37,7 @@ void input_push(int dev, uint16_t type, uint16_t code, int32_t value) {
         e->waiter->state = PROC_READY;
         proc_set_ready(e->waiter);
     }
-    for (int i = 0; i < PROC_MAX; i++)
-        if (g_proctable[i].state == PROC_WAITING) {
-            g_proctable[i].state = PROC_READY;
-            proc_set_ready(&g_proctable[i]);
-        }
+    poll_notify();
 }
 
 static void kbd_evdev_push(uint16_t key, int value) {
@@ -61,12 +58,17 @@ static int64_t evdev_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) 
     if (dev == INPUT_DEV_KBD) g_evdev_kbd_open = 1; /* X grabbed kbd - mute tty echo */
 
     evdev_t *e = &g_evdev[dev];
-    e->waiter = g_current_proc;
     while (e->head == e->tail) {
-        if (g_current_proc) g_current_proc->wakeup_tick = g_ticks + 10;
-        if (g_current_proc) proc_set_timer(g_current_proc);
-        sched_yield_blocking();
-        if (g_current_proc) g_current_proc->wakeup_tick = 0;
+        uint64_t irq_flags = irq_save();
+        if (e->head != e->tail) {
+            irq_restore(irq_flags);
+            break;
+        }
+        proc_t *p = g_current_proc;
+        e->waiter = p;
+        if (p) p->state = PROC_WAITING;
+        irq_restore(irq_flags);
+        if (p) sched_block_current();
     }
     e->waiter = NULL;
 

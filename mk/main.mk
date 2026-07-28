@@ -28,6 +28,7 @@ help:
 	@echo "  make run      Build and boot the live ISO with $(DISK)"
 	@echo "  make boot     Boot the system already installed on $(DISK)"
 	@echo "  make test     Build and run the test suite in QEMU"
+	@echo "  make iso INSTRUMENT=1  Build with kmemleak and profiler"
 	@echo "  make clean    Remove build output (the installed disk is kept)"
 	@echo ""
 	@echo "Container build: append CRUNTIME=podman or CRUNTIME=docker"

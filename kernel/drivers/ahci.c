@@ -54,8 +54,8 @@
 #define AHCI_MMIO_VBASE 0xffff930000000000ULL
 #define AHCI_MMIO_PAGES 16
 
-#define AHCI_DMA_PAGES 16u
-#define AHCI_MAX_SECTORS_PER_CMD 128u
+#define AHCI_MAX_PRDT 64u
+#define AHCI_MAX_SECTORS_PER_CMD 256u
 #define AHCI_MAX_PORTS 32
 
 typedef volatile struct {
@@ -234,13 +234,11 @@ static bool port_init(int idx) {
     kmemleak_page_perm((void *) ap->cmdtbl_phys);
 #endif
 
-    ap->dma_phys = (uint64_t) pmm_alloc_contiguous(AHCI_DMA_PAGES);
+    ap->dma_phys = (uint64_t) pmm_alloc_zeroed();
     if (!ap->dma_phys) return false;
     ap->dma_buf = (uint8_t *) phys_to_virt(ap->dma_phys);
-    memset(ap->dma_buf, 0, AHCI_DMA_PAGES * PAGE_SIZE);
 #ifdef CONFIG_KMEMLEAK
-    for (uint64_t i = 0; i < AHCI_DMA_PAGES; i++)
-        kmemleak_page_perm((void *) (ap->dma_phys + i * PAGE_SIZE));
+    kmemleak_page_perm((void *) ap->dma_phys);
 #endif
 
     ap->cmdlist[0].ctba = (uint32_t) (ap->cmdtbl_phys & 0xFFFFFFFFu);
@@ -403,12 +401,64 @@ void ahci_disk_model(int port, char *buf, int len) {
     buf[n] = '\0';
 }
 
-static int do_command(ahci_port_t *ap, uint64_t lba, uint32_t sectors, bool write) {
+static uint64_t dma_page_phys(uint64_t virt) {
+    uint64_t direct_len = pmm_total_pages() * PAGE_SIZE;
+    if (virt >= g_hhdm_offset && virt - g_hhdm_offset < direct_len)
+        return virt - g_hhdm_offset;
+    return vmm_virt_to_phys(&g_kernel_space, virt);
+}
+
+static int build_prdt(hba_cmd_tbl_t *tbl, const void *buffer, uint32_t bytes) {
+    uint64_t virt = (uint64_t) (uintptr_t) buffer;
+    uint16_t entries = 0;
+
+    while (bytes) {
+        uint32_t page_off = (uint32_t) (virt & (PAGE_SIZE - 1));
+        uint32_t chunk = (uint32_t) PAGE_SIZE - page_off;
+        if (chunk > bytes) chunk = bytes;
+
+        uint64_t phys_page = dma_page_phys(virt & PAGE_MASK);
+        if (!phys_page) return -1;
+        uint64_t phys = phys_page + page_off;
+
+        if (entries) {
+            hba_prdt_t *prev = &tbl->prdt[entries - 1];
+            uint64_t prev_phys = (uint64_t) prev->dba | ((uint64_t) prev->dbau << 32);
+            uint32_t prev_bytes = (prev->dbc & 0x3FFFFFu) + 1u;
+            if (prev_phys + prev_bytes == phys && prev_bytes + chunk <= 0x400000u) {
+                prev->dbc += chunk;
+                virt += chunk;
+                bytes -= chunk;
+                continue;
+            }
+        }
+
+        if (entries == AHCI_MAX_PRDT) return -1;
+        hba_prdt_t *entry = &tbl->prdt[entries++];
+        entry->dba = (uint32_t) phys;
+        entry->dbau = (uint32_t) (phys >> 32);
+        entry->rsv0 = 0;
+        entry->dbc = chunk - 1u;
+
+        virt += chunk;
+        bytes -= chunk;
+    }
+    return entries;
+}
+
+static int do_command(ahci_port_t *ap, uint64_t lba, uint32_t sectors, bool write,
+                      const void *buffer) {
     hba_port_t *p = ap->regs;
     hba_cmd_tbl_t *tbl = ap->cmdtbl;
     hba_cmd_hdr_t *hdr = &ap->cmdlist[0];
 
-    memset(tbl, 0, sizeof(hba_cmd_tbl_t));
+    memset(tbl, 0, PAGE_SIZE);
+
+    int prdt_count = build_prdt(tbl, buffer, sectors * 512u);
+    if (prdt_count < 0) {
+        log_error("AHCI: cannot map DMA buffer %p (%u sectors)", buffer, sectors);
+        return -1;
+    }
 
     tbl->cfis[0] = FIS_TYPE_REG_H2D;
     tbl->cfis[1] = 0x80u;
@@ -427,15 +477,10 @@ static int do_command(ahci_port_t *ap, uint64_t lba, uint32_t sectors, bool writ
     tbl->cfis[14] = 0;
     tbl->cfis[15] = 0;
 
-    tbl->prdt[0].dba = (uint32_t) (ap->dma_phys & 0xFFFFFFFFu);
-    tbl->prdt[0].dbau = (uint32_t) (ap->dma_phys >> 32);
-    tbl->prdt[0].rsv0 = 0;
-    tbl->prdt[0].dbc = sectors * 512u - 1u;
-
     uint16_t flags = 5u;
     if (write) flags |= (uint16_t) (1u << 6);
     hdr->flags = flags;
-    hdr->prdtl = 1;
+    hdr->prdtl = (uint16_t) prdt_count;
     hdr->prdbc = 0;
 
     __asm__ volatile("" ::: "memory");
@@ -476,11 +521,10 @@ int ahci_read(int port, uint64_t lba, uint32_t count, void *buf) {
 
     while (rem > 0) {
         uint32_t batch = rem < AHCI_MAX_SECTORS_PER_CMD ? rem : AHCI_MAX_SECTORS_PER_CMD;
-        if (do_command(ap, lba, batch, false) < 0) {
+        if (do_command(ap, lba, batch, false, dst) < 0) {
             spin_unlock(&ap->lock);
             return -1;
         }
-        memcpy(dst, ap->dma_buf, batch * 512u);
         dst += batch * 512u;
         lba += batch;
         rem -= batch;
@@ -516,6 +560,7 @@ int ahci_flush(int port) {
         if (!(p->ci & 1u)) break;
         if (p->is & PORT_IS_FATAL) {
             port_comreset(p);
+            spin_unlock(&ap->lock);
             return -1;
         }
         cpu_relax();
@@ -539,8 +584,7 @@ int ahci_write(int port, uint64_t lba, uint32_t count, const void *buf) {
 
     while (rem > 0) {
         uint32_t batch = rem < AHCI_MAX_SECTORS_PER_CMD ? rem : AHCI_MAX_SECTORS_PER_CMD;
-        memcpy(ap->dma_buf, src, batch * 512u);
-        if (do_command(ap, lba, batch, true) < 0) {
+        if (do_command(ap, lba, batch, true, src) < 0) {
             spin_unlock(&ap->lock);
             return -1;
         }

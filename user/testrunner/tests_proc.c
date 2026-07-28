@@ -71,6 +71,54 @@ int test_fork_cow(void) {
 }
 REGISTER_TEST(fork_cow, "Phase 3: Process & Scheduling");
 
+int test_fork_cow_pages(void) {
+    const size_t length = 8 * 1024 * 1024;
+    unsigned char *mem = mmap(NULL, length, PROT_READ | PROT_WRITE,
+                              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    ASSERT_NE(mem, MAP_FAILED);
+    for (size_t off = 0; off < length; off += 4096) mem[off] = (unsigned char) (off >> 12);
+
+    pid_t pid = fork();
+    ASSERT_GE(pid, 0);
+    if (pid == 0) {
+        for (size_t off = 0; off < length; off += 4096)
+            mem[off] = (unsigned char) ((off >> 12) + 1);
+        _exit(0);
+    }
+
+    int status;
+    ASSERT_EQ(pid, waitpid(pid, &status, 0));
+    ASSERT_TRUE(WIFEXITED(status));
+    ASSERT_EQ(0, WEXITSTATUS(status));
+    for (size_t off = 0; off < length; off += 4096)
+        ASSERT_EQ((unsigned char) (off >> 12), mem[off]);
+    ASSERT_EQ(0, munmap(mem, length));
+    return 1;
+}
+REGISTER_TEST(fork_cow_pages, "Phase 3: Process & Scheduling");
+
+int test_fork_shared_mapping(void) {
+    int *shared = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
+                       MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    ASSERT_NE(shared, MAP_FAILED);
+    *shared = 7;
+
+    pid_t pid = fork();
+    ASSERT_GE(pid, 0);
+    if (pid == 0) {
+        *shared = 91;
+        _exit(0);
+    }
+
+    int status;
+    ASSERT_EQ(pid, waitpid(pid, &status, 0));
+    ASSERT_TRUE(WIFEXITED(status));
+    ASSERT_EQ(91, *shared);
+    ASSERT_EQ(0, munmap(shared, 4096));
+    return 1;
+}
+REGISTER_TEST(fork_shared_mapping, "Phase 3: Process & Scheduling");
+
 int test_fork_fdtable(void) {
     char path[PATH_MAX];
     tmpfile_path(path, sizeof(path), "fork_fd");
@@ -460,6 +508,27 @@ int test_brk(void) {
     return 1;
 }
 REGISTER_TEST(brk, "Phase 3: Process & Scheduling");
+
+int test_memory_argument_validation(void) {
+    void *cur = (void *) syscall(SYS_brk, 0);
+    ASSERT_NE(cur, (void *) -1);
+    ASSERT_EQ(cur, (void *) syscall(SYS_brk, UINT64_MAX));
+    ASSERT_EQ(cur, (void *) syscall(SYS_brk, 0));
+
+    errno = 0;
+    void *p = mmap(NULL, 4096, PROT_WRITE | PROT_EXEC,
+                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    ASSERT_EQ(MAP_FAILED, p);
+    ASSERT_ERRNO(EINVAL);
+
+    errno = 0;
+    long raw = syscall(SYS_mmap, 0, SIZE_MAX, PROT_READ | PROT_WRITE,
+                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    ASSERT_EQ(-1L, raw);
+    ASSERT_ERRNO(EINVAL);
+    return 1;
+}
+REGISTER_TEST(memory_argument_validation, "Phase 3: Process & Scheduling");
 
 int test_mmap_munmap(void) {
     size_t sz = 4096;

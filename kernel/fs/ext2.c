@@ -106,19 +106,21 @@ static uint8_t *g_indir_buf = NULL;
 static ext2_sb_t g_sb;
 static char g_mount_point[512];
 
-#define EXT2_MAX_TRACKED 4096
+#define EXT2_META_CACHE_ENTRIES 64u
 
-typedef struct {
-    uint32_t ino_nr;
-    vfs_node_t *vnode;
-} ext2_tracked_t;
-
-static ext2_tracked_t g_tracked[EXT2_MAX_TRACKED];
+static uint8_t *g_meta_cache = NULL;
+static uint32_t g_meta_cache_blocks[EXT2_META_CACHE_ENTRIES];
+static uint8_t g_meta_cache_valid[EXT2_META_CACHE_ENTRIES];
+static uint32_t *g_block_hints = NULL;
+static uint32_t *g_inode_hints = NULL;
 static int g_tracked_cnt;
 
 static void clear_mount_state(void) {
     if (g_bgdt) kfree(g_bgdt);
     if (g_indir_buf) kfree(g_indir_buf);
+    if (g_meta_cache) kfree(g_meta_cache);
+    if (g_block_hints) kfree(g_block_hints);
+    if (g_inode_hints) kfree(g_inode_hints);
     g_dev = NULL;
     g_block_size = 0;
     g_blocks_per_group = 0;
@@ -129,23 +131,24 @@ static void clear_mount_state(void) {
     g_has_large_file = false;
     g_bgdt = NULL;
     g_indir_buf = NULL;
+    g_meta_cache = NULL;
+    g_block_hints = NULL;
+    g_inode_hints = NULL;
+    memset(g_meta_cache_valid, 0, sizeof(g_meta_cache_valid));
     memset(&g_sb, 0, sizeof(g_sb));
     g_mount_point[0] = '\0';
     g_tracked_cnt = 0;
 }
 
 static void track_node(uint32_t ino_nr, vfs_node_t *n) {
-    if (!n || g_tracked_cnt >= EXT2_MAX_TRACKED) return;
+    if (!n || !ino_nr) return;
     n->ino = ino_nr;
-    g_tracked[g_tracked_cnt].ino_nr = ino_nr;
-    g_tracked[g_tracked_cnt].vnode = n;
+    n->fs_private = (void *) (uintptr_t) ino_nr;
     g_tracked_cnt++;
 }
 
 static uint32_t tracked_ino(const vfs_node_t *n) {
-    for (int i = 0; i < g_tracked_cnt; i++)
-        if (g_tracked[i].vnode == n) return g_tracked[i].ino_nr;
-    return 0;
+    return n ? (uint32_t) (uintptr_t) n->fs_private : 0;
 }
 
 static int read_block(uint32_t blk, void *buf) {
@@ -157,7 +160,36 @@ static int read_block(uint32_t blk, void *buf) {
 static int write_block(uint32_t blk, const void *buf) {
     uint64_t lba = (uint64_t) blk * (g_block_size / 512u);
     uint32_t secs = g_block_size / 512u;
-    return g_dev->ops->write(g_dev, lba, secs, buf);
+    int r = g_dev->ops->write(g_dev, lba, secs, buf);
+    uint32_t slot = blk % EXT2_META_CACHE_ENTRIES;
+    if (r == 0 && g_meta_cache_valid[slot] && g_meta_cache_blocks[slot] == blk)
+        g_meta_cache_valid[slot] = 0;
+    return r;
+}
+
+static int read_meta_block(uint32_t blk, void *buf) {
+    if (!g_meta_cache) return read_block(blk, buf);
+    uint32_t slot = blk % EXT2_META_CACHE_ENTRIES;
+    uint8_t *cached = g_meta_cache + (uint64_t) slot * g_block_size;
+    if (g_meta_cache_valid[slot] && g_meta_cache_blocks[slot] == blk) {
+        memcpy(buf, cached, g_block_size);
+        return 0;
+    }
+    if (read_block(blk, buf) < 0) return -1;
+    memcpy(cached, buf, g_block_size);
+    g_meta_cache_blocks[slot] = blk;
+    g_meta_cache_valid[slot] = 1;
+    return 0;
+}
+
+static int write_meta_block(uint32_t blk, const void *buf) {
+    if (write_block(blk, buf) < 0) return -1;
+    if (!g_meta_cache) return 0;
+    uint32_t slot = blk % EXT2_META_CACHE_ENTRIES;
+    memcpy(g_meta_cache + (uint64_t) slot * g_block_size, buf, g_block_size);
+    g_meta_cache_blocks[slot] = blk;
+    g_meta_cache_valid[slot] = 1;
+    return 0;
 }
 
 static int write_sb(void) { return g_dev->ops->write(g_dev, EXT2_SB_LBA, 2u, &g_sb); }
@@ -169,12 +201,12 @@ static int write_bgd(uint32_t group) {
     uint32_t off = (uint32_t) (byte_off % g_block_size);
     uint8_t *tmp = (uint8_t *) kmalloc(g_block_size);
     if (!tmp) return -1;
-    if (read_block(blk, tmp) < 0) {
+    if (read_meta_block(blk, tmp) < 0) {
         kfree(tmp);
         return -1;
     }
     memcpy(tmp + off, &g_bgdt[group], sizeof(ext2_bgd_t));
-    int r = write_block(blk, tmp);
+    int r = write_meta_block(blk, tmp);
     kfree(tmp);
     return r;
 }
@@ -182,13 +214,14 @@ static int write_bgd(uint32_t group) {
 static int read_inode(uint32_t ino, ext2_inode_t *out) {
     if (!ino) return -1;
     uint32_t group = (ino - 1u) / g_inodes_per_group;
+    if (group >= g_num_groups) return -1;
     uint32_t idx = (ino - 1u) % g_inodes_per_group;
     uint64_t byteoff =
         (uint64_t) g_bgdt[group].bg_inode_table * g_block_size + (uint64_t) idx * g_inode_size;
-    uint64_t lba = byteoff / 512u;
-    uint32_t off = (uint32_t) (byteoff % 512u);
-    uint8_t tmp[1024];
-    if (g_dev->ops->read(g_dev, lba, 2u, tmp) < 0) return -1;
+    uint32_t blk = (uint32_t) (byteoff / g_block_size);
+    uint32_t off = (uint32_t) (byteoff % g_block_size);
+    uint8_t tmp[4096];
+    if (off + sizeof(ext2_inode_t) > g_block_size || read_meta_block(blk, tmp) < 0) return -1;
     memcpy(out, tmp + off, sizeof(ext2_inode_t));
     return 0;
 }
@@ -196,15 +229,16 @@ static int read_inode(uint32_t ino, ext2_inode_t *out) {
 static int write_inode(uint32_t ino, const ext2_inode_t *in) {
     if (!ino) return -1;
     uint32_t group = (ino - 1u) / g_inodes_per_group;
+    if (group >= g_num_groups) return -1;
     uint32_t idx = (ino - 1u) % g_inodes_per_group;
     uint64_t byteoff =
         (uint64_t) g_bgdt[group].bg_inode_table * g_block_size + (uint64_t) idx * g_inode_size;
-    uint64_t lba = byteoff / 512u;
-    uint32_t off = (uint32_t) (byteoff % 512u);
-    uint8_t tmp[1024];
-    if (g_dev->ops->read(g_dev, lba, 2u, tmp) < 0) return -1;
+    uint32_t blk = (uint32_t) (byteoff / g_block_size);
+    uint32_t off = (uint32_t) (byteoff % g_block_size);
+    uint8_t tmp[4096];
+    if (off + sizeof(ext2_inode_t) > g_block_size || read_meta_block(blk, tmp) < 0) return -1;
     memcpy(tmp + off, in, sizeof(ext2_inode_t));
-    return g_dev->ops->write(g_dev, lba, 2u, tmp);
+    return write_meta_block(blk, tmp);
 }
 
 static uint32_t alloc_block(uint32_t preferred_group) {
@@ -214,7 +248,7 @@ static uint32_t alloc_block(uint32_t preferred_group) {
 
         uint8_t *bm = (uint8_t *) kmalloc(g_block_size);
         if (!bm) return 0;
-        if (read_block(g_bgdt[group].bg_block_bitmap, bm) < 0) {
+        if (read_meta_block(g_bgdt[group].bg_block_bitmap, bm) < 0) {
             kfree(bm);
             continue;
         }
@@ -224,12 +258,22 @@ static uint32_t alloc_block(uint32_t preferred_group) {
             uint32_t used = (g_num_groups - 1u) * g_blocks_per_group;
             count = g_sb.s_blocks_count > used ? g_sb.s_blocks_count - used : 0;
         }
+        if (!count) {
+            kfree(bm);
+            continue;
+        }
 
-        for (uint32_t bi = 0; bi < count; bi++) {
+        uint32_t start = g_block_hints ? g_block_hints[group] % count : 0;
+        for (uint32_t scan = 0; scan < count; scan++) {
+            uint32_t bi = (start + scan) % count;
             if (bm[bi / 8u] & (1u << (bi % 8u))) continue;
             bm[bi / 8u] |= (1u << (bi % 8u));
-            write_block(g_bgdt[group].bg_block_bitmap, bm);
+            if (write_meta_block(g_bgdt[group].bg_block_bitmap, bm) < 0) {
+                kfree(bm);
+                return 0;
+            }
             kfree(bm);
+            if (g_block_hints) g_block_hints[group] = bi + 1u;
 
             if (g_bgdt[group].bg_free_blocks_count) g_bgdt[group].bg_free_blocks_count--;
             write_bgd(group);
@@ -258,13 +302,14 @@ static void free_block(uint32_t blk_nr) {
 
     uint8_t *bm = (uint8_t *) kmalloc(g_block_size);
     if (!bm) return;
-    if (read_block(g_bgdt[group].bg_block_bitmap, bm) < 0) {
+    if (read_meta_block(g_bgdt[group].bg_block_bitmap, bm) < 0) {
         kfree(bm);
         return;
     }
     bm[bi / 8u] &= ~(uint8_t) (1u << (bi % 8u));
-    write_block(g_bgdt[group].bg_block_bitmap, bm);
+    write_meta_block(g_bgdt[group].bg_block_bitmap, bm);
     kfree(bm);
+    if (g_block_hints && bi < g_block_hints[group]) g_block_hints[group] = bi;
 
     g_bgdt[group].bg_free_blocks_count++;
     write_bgd(group);
@@ -276,7 +321,7 @@ static void free_indirect(uint32_t blk, int depth) {
     if (!blk) return;
     uint32_t *buf = (uint32_t *) kmalloc(g_block_size);
     if (buf) {
-        if (read_block(blk, buf) == 0) {
+        if (read_meta_block(blk, buf) == 0) {
             uint32_t ptrs = g_block_size / 4u;
             for (uint32_t i = 0; i < ptrs; i++) {
                 if (!buf[i]) continue;
@@ -314,16 +359,22 @@ static uint32_t alloc_inode(uint32_t preferred_group) {
 
         uint8_t *bm = (uint8_t *) kmalloc(g_block_size);
         if (!bm) return 0;
-        if (read_block(g_bgdt[group].bg_inode_bitmap, bm) < 0) {
+        if (read_meta_block(g_bgdt[group].bg_inode_bitmap, bm) < 0) {
             kfree(bm);
             continue;
         }
 
-        for (uint32_t bi = 0; bi < g_inodes_per_group; bi++) {
+        uint32_t start = g_inode_hints ? g_inode_hints[group] % g_inodes_per_group : 0;
+        for (uint32_t scan = 0; scan < g_inodes_per_group; scan++) {
+            uint32_t bi = (start + scan) % g_inodes_per_group;
             if (bm[bi / 8u] & (1u << (bi % 8u))) continue;
             bm[bi / 8u] |= (1u << (bi % 8u));
-            write_block(g_bgdt[group].bg_inode_bitmap, bm);
+            if (write_meta_block(g_bgdt[group].bg_inode_bitmap, bm) < 0) {
+                kfree(bm);
+                return 0;
+            }
             kfree(bm);
+            if (g_inode_hints) g_inode_hints[group] = bi + 1u;
 
             if (g_bgdt[group].bg_free_inodes_count) g_bgdt[group].bg_free_inodes_count--;
             write_bgd(group);
@@ -345,13 +396,14 @@ static void free_inode(uint32_t ino_nr) {
 
     uint8_t *bm = (uint8_t *) kmalloc(g_block_size);
     if (!bm) return;
-    if (read_block(g_bgdt[group].bg_inode_bitmap, bm) < 0) {
+    if (read_meta_block(g_bgdt[group].bg_inode_bitmap, bm) < 0) {
         kfree(bm);
         return;
     }
     bm[bi / 8u] &= ~(uint8_t) (1u << (bi % 8u));
-    write_block(g_bgdt[group].bg_inode_bitmap, bm);
+    write_meta_block(g_bgdt[group].bg_inode_bitmap, bm);
     kfree(bm);
+    if (g_inode_hints && bi < g_inode_hints[group]) g_inode_hints[group] = bi;
 
     g_bgdt[group].bg_free_inodes_count++;
     write_bgd(group);
@@ -361,7 +413,7 @@ static void free_inode(uint32_t ino_nr) {
 
 static uint32_t indirect_lookup(uint32_t blk, uint32_t idx) {
     if (!blk) return 0;
-    if (read_block(blk, g_indir_buf) < 0) return 0;
+    if (read_meta_block(blk, g_indir_buf) < 0) return 0;
     return ((uint32_t *) g_indir_buf)[idx];
 }
 
@@ -404,12 +456,12 @@ static int set_block_ptr(ext2_inode_t *ino, uint32_t ino_nr, uint32_t bi, uint32
         }
         uint32_t *buf = (uint32_t *) kmalloc(g_block_size);
         if (!buf) return -1;
-        if (read_block(ino->i_block[12], buf) < 0) {
+        if (read_meta_block(ino->i_block[12], buf) < 0) {
             kfree(buf);
             return -1;
         }
         buf[bi] = blk_nr;
-        int r = write_block(ino->i_block[12], buf);
+        int r = write_meta_block(ino->i_block[12], buf);
         kfree(buf);
         return r;
     }
@@ -423,7 +475,7 @@ static int set_block_ptr(ext2_inode_t *ino, uint32_t ino_nr, uint32_t bi, uint32
         }
         uint32_t *l1 = (uint32_t *) kmalloc(g_block_size);
         if (!l1) return -1;
-        if (read_block(ino->i_block[13], l1) < 0) {
+        if (read_meta_block(ino->i_block[13], l1) < 0) {
             kfree(l1);
             return -1;
         }
@@ -433,20 +485,20 @@ static int set_block_ptr(ext2_inode_t *ino, uint32_t ino_nr, uint32_t bi, uint32
                 kfree(l1);
                 return -1;
             }
-            write_block(ino->i_block[13], l1);
+            write_meta_block(ino->i_block[13], l1);
         }
         uint32_t *l2 = (uint32_t *) kmalloc(g_block_size);
         if (!l2) {
             kfree(l1);
             return -1;
         }
-        if (read_block(l1[l1i], l2) < 0) {
+        if (read_meta_block(l1[l1i], l2) < 0) {
             kfree(l2);
             kfree(l1);
             return -1;
         }
         l2[l2i] = blk_nr;
-        int r = write_block(l1[l1i], l2);
+        int r = write_meta_block(l1[l1i], l2);
         kfree(l2);
         kfree(l1);
         return r;
@@ -463,7 +515,7 @@ static int set_block_ptr(ext2_inode_t *ino, uint32_t ino_nr, uint32_t bi, uint32
         }
         uint32_t *l1 = (uint32_t *) kmalloc(g_block_size);
         if (!l1) return -1;
-        if (read_block(ino->i_block[14], l1) < 0) {
+        if (read_meta_block(ino->i_block[14], l1) < 0) {
             kfree(l1);
             return -1;
         }
@@ -473,14 +525,14 @@ static int set_block_ptr(ext2_inode_t *ino, uint32_t ino_nr, uint32_t bi, uint32
                 kfree(l1);
                 return -1;
             }
-            write_block(ino->i_block[14], l1);
+            write_meta_block(ino->i_block[14], l1);
         }
         uint32_t *l2 = (uint32_t *) kmalloc(g_block_size);
         if (!l2) {
             kfree(l1);
             return -1;
         }
-        if (read_block(l1[l1i], l2) < 0) {
+        if (read_meta_block(l1[l1i], l2) < 0) {
             kfree(l2);
             kfree(l1);
             return -1;
@@ -492,7 +544,7 @@ static int set_block_ptr(ext2_inode_t *ino, uint32_t ino_nr, uint32_t bi, uint32
                 kfree(l1);
                 return -1;
             }
-            write_block(l1[l1i], l2);
+            write_meta_block(l1[l1i], l2);
         }
         uint32_t *l3 = (uint32_t *) kmalloc(g_block_size);
         if (!l3) {
@@ -500,14 +552,14 @@ static int set_block_ptr(ext2_inode_t *ino, uint32_t ino_nr, uint32_t bi, uint32
             kfree(l1);
             return -1;
         }
-        if (read_block(l2[l2i], l3) < 0) {
+        if (read_meta_block(l2[l2i], l3) < 0) {
             kfree(l3);
             kfree(l2);
             kfree(l1);
             return -1;
         }
         l3[l3i] = blk_nr;
-        int r = write_block(l2[l2i], l3);
+        int r = write_meta_block(l2[l2i], l3);
         kfree(l3);
         kfree(l2);
         kfree(l1);
@@ -561,6 +613,36 @@ static uint8_t *read_file_data(const ext2_inode_t *ino, uint64_t *size_out) {
     }
     kfree(blkbuf);
     return data;
+}
+
+static int read_file_range(const ext2_inode_t *ino, uint8_t *dst, uint64_t off, uint64_t len) {
+    uint8_t *blkbuf = (uint8_t *) kmalloc(g_block_size);
+    if (!blkbuf) return -1;
+
+    while (len) {
+        uint32_t bi = (uint32_t) (off / g_block_size);
+        uint32_t block_off = (uint32_t) (off % g_block_size);
+        uint64_t chunk = g_block_size - block_off;
+        if (chunk > len) chunk = len;
+
+        uint32_t blkn = get_block_nr(ino, bi);
+        if (!blkn) {
+            memset(dst, 0, (size_t) chunk);
+        } else {
+            if (read_block(blkn, blkbuf) < 0) {
+                kfree(blkbuf);
+                return -1;
+            }
+            memcpy(dst, blkbuf + block_off, (size_t) chunk);
+        }
+
+        dst += chunk;
+        off += chunk;
+        len -= chunk;
+    }
+
+    kfree(blkbuf);
+    return 0;
 }
 
 static uint32_t indirect_blocks_for_data(uint32_t data_blocks) {
@@ -1049,7 +1131,7 @@ static uint32_t create_disk_node(vfs_node_t *node, uint32_t parent_ino) {
 /* ---- fs_ops for demand-loaded regular files ---- */
 
 static int64_t ext2_reg_read(vfs_node_t *n, char *buf, uint64_t off, uint64_t len) {
-    if (!n->data && n->size > 0) {
+    if (!n->data && !buf && n->size > 0) {
         uint32_t ino_nr = (uint32_t) (uintptr_t) n->fs_private;
         ext2_inode_t ino;
         if (read_inode(ino_nr, &ino) < 0) return -(int64_t) 5;
@@ -1063,16 +1145,33 @@ static int64_t ext2_reg_read(vfs_node_t *n, char *buf, uint64_t off, uint64_t le
     if (off >= n->size) return 0;
     uint64_t avail = n->size - off;
     uint64_t r = (len < avail) ? len : avail;
-    if (buf) memcpy(buf, n->data + off, r);
+    if (!buf || !r) return (int64_t) r;
+    if (n->data) {
+        memcpy(buf, n->data + off, r);
+        return (int64_t) r;
+    }
+
+    uint32_t ino_nr = tracked_ino(n);
+    ext2_inode_t ino;
+    if (!ino_nr || read_inode(ino_nr, &ino) < 0) return -(int64_t) 5;
+    if (read_file_range(&ino, (uint8_t *) buf, off, r) < 0) return -(int64_t) 5;
     return (int64_t) r;
 }
 
 static int64_t ext2_reg_write(vfs_node_t *n, const char *buf, uint64_t off, uint64_t len) {
     if (!n->data) ext2_reg_read(n, NULL, 0, 0);
+    if (off > UINT64_MAX - len) return -(int64_t) 27;
     uint64_t needed = off + len;
     if (needed > n->capacity) {
         uint64_t newcap = n->capacity ? n->capacity * 2 : 512;
-        while (newcap < needed) newcap *= 2;
+        if (newcap < n->capacity) newcap = needed;
+        while (newcap < needed) {
+            if (newcap > UINT64_MAX / 2) {
+                newcap = needed;
+                break;
+            }
+            newcap *= 2;
+        }
         uint8_t *newdata = krealloc(n->data, newcap);
         if (!newdata) return -(int64_t) 12;
         n->data = newdata;
@@ -1166,11 +1265,12 @@ static void process_entry(uint32_t ino_nr, const char *path) {
             track_node(ino_nr, n);
         }
     } else if (type == EXT2_S_IFLNK) {
-        if (ino.i_size > 0 && ino.i_size < 60u) {
+        vfs_node_t *n = NULL;
+        if (ino.i_size < 60u) {
             char target[61];
             memcpy(target, ino.i_block, ino.i_size);
             target[ino.i_size] = '\0';
-            vfs_create_symlink(path, target);
+            n = vfs_create_symlink(path, target);
         } else if (ino.i_size >= 60u) {
             uint64_t size;
             uint8_t *data = read_file_data(&ino, &size);
@@ -1179,11 +1279,16 @@ static void process_entry(uint32_t ino_nr, const char *path) {
                 if (target) {
                     memcpy(target, data, size);
                     target[size] = '\0';
-                    vfs_create_symlink(path, target);
+                    n = vfs_create_symlink(path, target);
                     kfree(target);
                 }
                 kfree(data);
             }
+        }
+        if (n) {
+            n->uid = ino.i_uid;
+            n->gid = ino.i_gid;
+            track_node(ino_nr, n);
         }
     }
 }
@@ -1403,7 +1508,8 @@ bool ext2_mount(struct block_device *dev, const char *mount_point) {
         return false;
     }
     uint32_t block_size = 1024u << candidate.s_log_block_size;
-    if (inode_size < 128u || inode_size > block_size || (inode_size & 3u)) {
+    if (inode_size < 128u || inode_size > block_size ||
+        (inode_size & (inode_size - 1u)) || block_size % inode_size) {
         log_error("ext2: invalid inode geometry");
         return false;
     }
@@ -1424,6 +1530,17 @@ bool ext2_mount(struct block_device *dev, const char *mount_point) {
     g_inode_size = inode_size;
     g_num_groups = (g_sb.s_blocks_count + g_blocks_per_group - 1u) / g_blocks_per_group;
     g_has_large_file = !!(g_sb.s_feature_ro_compat & EXT2_RO_COMPAT_LARGE);
+
+    g_meta_cache = (uint8_t *) kmalloc((uint64_t) EXT2_META_CACHE_ENTRIES * g_block_size);
+    g_block_hints = (uint32_t *) kmalloc((uint64_t) g_num_groups * sizeof(uint32_t));
+    g_inode_hints = (uint32_t *) kmalloc((uint64_t) g_num_groups * sizeof(uint32_t));
+    if (!g_meta_cache || !g_block_hints || !g_inode_hints) {
+        clear_mount_state();
+        return false;
+    }
+    memset(g_meta_cache_valid, 0, sizeof(g_meta_cache_valid));
+    memset(g_block_hints, 0, (uint64_t) g_num_groups * sizeof(uint32_t));
+    memset(g_inode_hints, 0, (uint64_t) g_num_groups * sizeof(uint32_t));
 
     log_info("ext2: block_size=%u  groups=%u  inode_size=%u  large_file=%d", g_block_size,
              g_num_groups, g_inode_size, (int) g_has_large_file);

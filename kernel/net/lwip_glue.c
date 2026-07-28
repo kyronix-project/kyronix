@@ -7,7 +7,7 @@ void *malloc(size_t s) { return kmalloc((uint64_t) s); }
 void free(void *p) { kfree(p); }
 void *calloc(size_t n, size_t s) { return kcalloc((uint64_t) n, (uint64_t) s); }
 
-uint32_t sys_now(void) { return (uint32_t) (g_ticks * 10u); }
+uint32_t sys_now(void) { return (uint32_t) g_ticks; }
 
 long strtol(const char *s, char **end, int base) {
     (void) base;

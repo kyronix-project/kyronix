@@ -193,11 +193,15 @@ proc_t *proc_next_ready(proc_t *skip) {
 }
 
 proc_t *sched_claim_next(proc_t *skip) {
-    proc_t *next = proc_next_ready(skip);
-    if (!next) return NULL;
-    if (__sync_bool_compare_and_swap(&next->state, PROC_READY, PROC_RUNNING)) {
-        __atomic_fetch_and(&g_ready_mask, ~(1ULL << proc_slot(next)), __ATOMIC_RELAXED);
-        return next;
+    for (int tries = 0; tries < PROC_MAX; tries++) {
+        proc_t *next = proc_next_ready(skip);
+        if (!next) return NULL;
+        if (__sync_bool_compare_and_swap(&next->state, PROC_READY, PROC_RUNNING)) {
+            __atomic_fetch_and(&g_ready_mask, ~(1ULL << proc_slot(next)), __ATOMIC_RELAXED);
+            return next;
+        }
+        if (__atomic_load_n(&next->state, __ATOMIC_ACQUIRE) != PROC_READY)
+            __atomic_fetch_and(&g_ready_mask, ~(1ULL << proc_slot(next)), __ATOMIC_RELAXED);
     }
     return NULL;
 }
