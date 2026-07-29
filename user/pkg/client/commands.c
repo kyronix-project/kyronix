@@ -557,21 +557,34 @@ static int validate_extracted_tree(const char *path, unsigned depth,
 
 static int copy_regular_file(const char *source, const char *destination,
                              mode_t mode) {
-    int source_fd = open(source, O_RDONLY | O_NOFOLLOW);
-    if (source_fd < 0) return -1;
+    int source_fd = open(source, O_RDONLY);
+    if (source_fd < 0) {
+        log_warn("cannot open source %s: %s", source, strerror(errno));
+        return -1;
+    }
     int destination_fd =
-        open(destination, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, mode);
+        open(destination, O_WRONLY | O_CREAT | O_TRUNC, mode);
     if (destination_fd < 0) {
+        log_warn("cannot open destination %s: %s", destination, strerror(errno));
         close(source_fd);
         return -1;
     }
 
     int result = 0;
-    unsigned char buffer[64U * 1024U];
+    size_t buf_size = 64U * 1024U;
+    unsigned char *buffer = malloc(buf_size);
+    if (!buffer) {
+        log_warn("cannot allocate copy buffer");
+        close(source_fd);
+        close(destination_fd);
+        unlink(destination);
+        return -1;
+    }
     for (;;) {
-        ssize_t got = read(source_fd, buffer, sizeof(buffer));
+        ssize_t got = read(source_fd, buffer, buf_size);
         if (got < 0 && errno == EINTR) continue;
         if (got < 0) {
+            log_warn("read error during copy: %s", strerror(errno));
             result = -1;
             break;
         }
@@ -582,6 +595,7 @@ static int copy_regular_file(const char *source, const char *destination,
                 write(destination_fd, buffer + offset, (size_t) got - offset);
             if (written < 0 && errno == EINTR) continue;
             if (written <= 0) {
+                log_warn("write error during copy: %s", strerror(errno));
                 result = -1;
                 break;
             }
@@ -589,10 +603,50 @@ static int copy_regular_file(const char *source, const char *destination,
         }
         if (result != 0) break;
     }
-    if (close(source_fd) != 0) result = -1;
-    if (close(destination_fd) != 0) result = -1;
+    free(buffer);
+    if (close(source_fd) != 0) {
+        log_warn("close source error: %s", strerror(errno));
+        result = -1;
+    }
+    if (close(destination_fd) != 0) {
+        log_warn("close destination error: %s", strerror(errno));
+        result = -1;
+    }
     if (result != 0) unlink(destination);
     return result;
+}
+
+static void snapshot_tree(const char *dir, FILE *out, unsigned depth) {
+    if (depth > 64) return;
+    DIR *d = opendir(dir);
+    if (!d) return;
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+        if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0)
+            continue;
+        char path[1024];
+        int n = snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
+        if (n < 0 || (size_t)n >= sizeof(path)) continue;
+        fprintf(out, "%s\n", path);
+        if (e->d_type == DT_DIR)
+            snapshot_tree(path, out, depth + 1);
+        else if (e->d_type == DT_UNKNOWN) {
+            struct stat st;
+            if (lstat(path, &st) == 0 && S_ISDIR(st.st_mode))
+                snapshot_tree(path, out, depth + 1);
+        }
+    }
+    closedir(d);
+}
+
+static int write_snapshot(const char *roots[], int nroots, const char *outpath) {
+    char sort_cmd[512];
+    snprintf(sort_cmd, sizeof(sort_cmd), "sort -u -o %s", outpath);
+    FILE *pipe = popen(sort_cmd, "w");
+    if (!pipe) return -1;
+    for (int i = 0; i < nroots; i++)
+        snapshot_tree(roots[i], pipe, 0);
+    return pclose(pipe);
 }
 
 static int install_payload_recursive(const char *source, const char *destination,
@@ -600,7 +654,10 @@ static int install_payload_recursive(const char *source, const char *destination
                                      unsigned *file_count) {
     if (depth > 64) return -1;
     DIR *dir = opendir(source);
-    if (!dir) return -1;
+    if (!dir) {
+        log_warn("cannot open payload dir %s: %s", source, strerror(errno));
+        return -1;
+    }
     int result = 0;
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
@@ -612,21 +669,32 @@ static int install_payload_recursive(const char *source, const char *destination
         int destination_len =
             snprintf(destination_path, sizeof(destination_path), "%s/%s",
                      destination, entry->d_name);
-        if (source_len < 0 || (size_t) source_len >= sizeof(source_path) ||
-            destination_len < 0 ||
-            (size_t) destination_len >= sizeof(destination_path) ||
-            !safe_managed_path(destination_path)) {
+        if (source_len < 0 || (size_t) source_len >= sizeof(source_path)) {
+            log_warn("source path too long for %s/%s", source, entry->d_name);
+            result = -1;
+            break;
+        }
+        if (destination_len < 0 ||
+            (size_t) destination_len >= sizeof(destination_path)) {
+            log_warn("destination path too long for %s/%s", destination, entry->d_name);
+            result = -1;
+            break;
+        }
+        if (!safe_managed_path(destination_path)) {
+            log_warn("unsafe path rejected: %s", destination_path);
             result = -1;
             break;
         }
 
         struct stat st;
         if (lstat(source_path, &st) != 0) {
+            log_warn("cannot stat %s: %s", source_path, strerror(errno));
             result = -1;
             break;
         }
         if (S_ISDIR(st.st_mode)) {
             if (mkdir(destination_path, 0755) != 0 && errno != EEXIST) {
+                log_warn("mkdir %s failed: %s", destination_path, strerror(errno));
                 result = -1;
                 break;
             }
@@ -640,16 +708,20 @@ static int install_payload_recursive(const char *source, const char *destination
             }
         } else if (S_ISREG(st.st_mode)) {
             if (++*file_count > 100000U) {
+                log_warn("too many files");
                 result = -1;
                 break;
             }
             if (copy_regular_file(source_path, destination_path, 0755) != 0 ||
                 fprintf(created, "%s\n", destination_path) < 0) {
+                if (fprintf(created, "%s\n", destination_path) < 0)
+                    log_warn("fprintf to created file failed: %s", strerror(ferror(created) ? errno : 0));
                 unlink(destination_path);
                 result = -1;
                 break;
             }
         } else {
+            log_warn("unsupported file type for %s", source_path);
             result = -1;
             break;
         }
@@ -667,8 +739,13 @@ static void rollback_created_files(FILE *created) {
         trim_crlf(path);
         struct stat st;
         if (safe_managed_path(path) && lstat(path, &st) == 0 &&
-            S_ISREG(st.st_mode))
+            (S_ISREG(st.st_mode) || S_ISLNK(st.st_mode)))
             unlink(path);
+    }
+    rewind(created);
+    while (fgets(path, sizeof(path), created)) {
+        trim_crlf(path);
+        rmdir(path);
     }
 }
 
@@ -853,21 +930,14 @@ static int do_install(const char *name, const char *endpoint, long download_size
 
     fprintf(stdout, "%s=>%s extracting...", ANSI_CYAN, ANSI_RESET);
     fflush(stdout);
-    char *gzip_argv[] = { "/bin/gzip", "-dcf", NULL };
     char *tar_argv[] = {
-        "/bin/tar", "-xmf", "-", "--no-same-owner", "--no-same-permissions",
-        "--no-overwrite-dir", NULL
+        "/bin/tar", "-x", "-I", "/bin/gzip -dcf", "-f", archive_path,
+        "-C", extract_dir,
+        "--transform=flags=r;s|^\\.$|__skip__|",
+        "--no-same-owner", "--no-same-permissions",
+        NULL
     };
-    size_t extract_limit = 64U * 1024U * 1024U;
-    if (download_size > 0 &&
-        (size_t) download_size <= PKG_MAX_EXTRACT / 16U) {
-        size_t proportional_limit = (size_t) download_size * 16U;
-        if (proportional_limit > extract_limit)
-            extract_limit = proportional_limit;
-    }
-    if (extract_limit > PKG_MAX_EXTRACT) extract_limit = PKG_MAX_EXTRACT;
-    if (run_pipeline_file_in(extract_dir, archive_path, gzip_argv, tar_argv,
-                             extract_limit) != 0)
+    if (run_cmd(tar_argv) != 0)
         dief("archive extraction failed");
     unsigned extracted_files = 0;
     if (validate_extracted_tree(extract_dir, 0, &extracted_files) != 0)
@@ -928,13 +998,79 @@ static int do_install(const char *name, const char *endpoint, long download_size
         dief("failed to create install transaction");
     }
     unsigned installed_files = 0;
-    if (install_payload_recursive(payload_path, install_dir, created, 0,
-                                  &installed_files) != 0 ||
-        fflush(created) != 0) {
-        rollback_created_files(created);
-        fclose(created);
-        remove_tree(reg_dir);
-        dief("payload installation failed (file collision or I/O error)");
+    char script_path[1024];
+    snprintf(script_path, sizeof(script_path), "%s/install.sh", extract_dir);
+    struct stat script_st;
+    int has_script = (stat(script_path, &script_st) == 0 && S_ISREG(script_st.st_mode));
+
+    if (has_script) {
+        const char *roots[] = {"/usr", "/etc", "/opt", "/bin", "/sbin", "/lib", "/lib64"};
+        int nroots = sizeof(roots) / sizeof(roots[0]);
+        char before_path[512], after_path[512];
+        snprintf(before_path, sizeof(before_path), "%s/.before", tmp_dir);
+        snprintf(after_path, sizeof(after_path), "%s/.after", tmp_dir);
+
+        if (write_snapshot(roots, nroots, before_path) != 0) {
+            rollback_created_files(created);
+            fclose(created);
+            remove_tree(reg_dir);
+            dief("failed to create pre-install snapshot");
+        }
+        char *sh_argv[] = {"/bin/sh", script_path, extract_dir, NULL};
+        if (run_cmd(sh_argv) != 0) {
+            rollback_created_files(created);
+            fclose(created);
+            remove_tree(reg_dir);
+            dief("install script failed");
+        }
+        if (write_snapshot(roots, nroots, after_path) != 0) {
+            rollback_created_files(created);
+            fclose(created);
+            remove_tree(reg_dir);
+            dief("failed to create post-install snapshot");
+        }
+        char diff_cmd[2048];
+        snprintf(diff_cmd, sizeof(diff_cmd), "comm -13 %s %s", before_path, after_path);
+        FILE *diff = popen(diff_cmd, "r");
+        if (!diff) {
+            rollback_created_files(created);
+            fclose(created);
+            remove_tree(reg_dir);
+            dief("failed to diff filesystem snapshots");
+        }
+        char line[1024];
+        while (fgets(line, sizeof(line), diff)) {
+            trim_crlf(line);
+            if (line[0] == '\0') continue;
+            if (!safe_managed_path(line)) {
+                log_warn("skipping unsafe path from filesystem diff: %s", line);
+                continue;
+            }
+            fprintf(created, "%s\n", line);
+            installed_files++;
+        }
+        int diff_rc = pclose(diff);
+        if (diff_rc != 0 && diff_rc != 1) {
+            rollback_created_files(created);
+            fclose(created);
+            remove_tree(reg_dir);
+            dief("filesystem snapshot diff failed");
+        }
+        if (fflush(created) != 0) {
+            rollback_created_files(created);
+            fclose(created);
+            remove_tree(reg_dir);
+            dief("failed to finalize install transaction");
+        }
+    } else {
+        if (install_payload_recursive(payload_path, install_dir, created, 0,
+                                      &installed_files) != 0 ||
+            fflush(created) != 0) {
+            rollback_created_files(created);
+            fclose(created);
+            remove_tree(reg_dir);
+            dief("payload installation failed (file collision or I/O error)");
+        }
     }
 
     char files_path[1024];
@@ -1307,6 +1443,19 @@ void cmd_remove(const char *name) {
             }
         }
         fclose(f);
+
+        /* second pass: remove empty directories */
+        f = fopen(files_path, "r");
+        if (f) {
+            char line[512];
+            while (fgets(line, sizeof(line), f)) {
+                size_t len = strlen(line);
+                while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) line[--len] = '\0';
+                if (len == 0) continue;
+                rmdir(line);
+            }
+            fclose(f);
+        }
     }
 
     /* remove this package from each dependency's required_by */
