@@ -137,9 +137,6 @@ To build in a container, append `CRUNTIME=podman` or `CRUNTIME=docker`.
 | `limine/` | Bootloader |
 | `meta/` | Assets & screenshots |
 
-See [docs/kernel-modules.md](docs/kernel-modules.md) for the module ABI, build
-flags, and a minimal example.
-
 ## Support
 
 If you like Kyronix, consider supporting its development.
