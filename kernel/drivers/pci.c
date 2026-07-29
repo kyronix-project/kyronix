@@ -75,7 +75,7 @@ static void probe(uint8_t bus, uint8_t dev, uint8_t fn) {
                 if (is64 && i < 5) {
                     uint32_t hi = pci_read32(bus, dev, fn, (uint8_t) (0x14 + i * 4));
                     base |= (uint64_t) hi << 32;
-                    i++; /* 64-bit BAR occupies two slots */
+                    i++; // 64-bit BAR occupies two slots
                 }
                 d->bars[i] = base;
                 d->bar_sizes[i] = bar_size(bus, dev, fn, (uint8_t) (i));

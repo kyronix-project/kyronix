@@ -116,7 +116,7 @@ static int64_t vt_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
         if (!uptr_ok_w(s, sizeof(*s))) return -14;
         s->v_active = 1;
         s->v_signal = 0;
-        s->v_state = 0x0002; /* bit 1 = VT1 open */
+        s->v_state = 0x0002; // bit 1 = VT1 open
         return 0;
     }
     case VT_GETMODE: {
@@ -201,7 +201,7 @@ static int64_t vt_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
         return 0;
 
     default:
-        return -25; /* ENOTTY */
+        return -25; // ENOTTY
     }
 }
 
@@ -227,12 +227,12 @@ void vt_init(void) {
         if (n) n->chr_ioctl = vt_ioctl;
     }
 
-    /* replace /dev/console symlink with proper vt chr dev */
+    // replace /dev/console symlink with proper vt chr dev
     vfs_unlink("/dev/console");
     vfs_node_t *nc = vfs_create_chr("/dev/console", vt_read, vt_write);
     if (nc) nc->chr_ioctl = vt_ioctl;
 
-    /* attach vt_ioctl to /dev/tty so VT/KD ioctls work on the controlling terminal too */
+    // attach vt_ioctl to /dev/tty so VT/KD ioctls work on the controlling terminal too
     vfs_node_t *tty = vfs_lookup("/dev/tty");
     if (tty) {
         tty->chr_ioctl = vt_ioctl;

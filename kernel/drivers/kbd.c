@@ -7,10 +7,10 @@
 #define KBD_DATA 0x60
 #define KBD_STAT 0x64
 #define KBS_OBF (1u << 0)
-#define KBS_IBF (1u << 1)  /* input buffer full: controller not ready for a write */
-#define KBS_AUXB (1u << 5) /* output byte is from the aux (mouse) port */
+#define KBS_IBF (1u << 1)  // input buffer full: controller not ready for a write
+#define KBS_AUXB (1u << 5) // output byte is from the aux (mouse) port
 
-/* scancode set 1 -> Linux keycode (0 = no mapping) */
+// scancode set 1 -> Linux keycode (0 = no mapping)
 static const uint16_t sc_linuxkey[128] = {
     [0x01] = 1,  [0x02] = 2,  [0x03] = 3,  [0x04] = 4,  [0x05] = 5,  [0x06] = 6,  [0x07] = 7,
     [0x08] = 8,  [0x09] = 9,  [0x0A] = 10, [0x0B] = 11, [0x0C] = 12, [0x0D] = 13, [0x0E] = 14,
@@ -27,14 +27,14 @@ static const uint16_t sc_linuxkey[128] = {
     [0x58] = 88,
 };
 
-/* extended (0xE0 prefix) scancode -> Linux keycode */
+// extended (0xE0 prefix) scancode -> Linux keycode
 static const uint16_t sc_ext_linuxkey[128] = {
     [0x1C] = 96,  [0x1D] = 97,  [0x35] = 98,  [0x38] = 100, [0x47] = 102, [0x48] = 103,
     [0x49] = 104, [0x4B] = 105, [0x4D] = 106, [0x4F] = 107, [0x50] = 108, [0x51] = 109,
     [0x52] = 110, [0x53] = 111, [0x5B] = 125, [0x5C] = 126,
 };
 
-void (*g_kbd_evdev_hook)(uint16_t linuxkey, int value); /* set by input.c */
+void (*g_kbd_evdev_hook)(uint16_t linuxkey, int value);
 
 static bool g_shift, g_ctrl, g_alt, g_caps;
 static bool g_ext; /* got 0xE0 prefix, next byte completes the scan code */

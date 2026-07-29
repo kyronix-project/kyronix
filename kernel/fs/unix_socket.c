@@ -40,6 +40,7 @@ typedef struct {
     int state;
     char path[108];
     unix_conn_t *backlog;
+    unix_conn_t *backlog_tail;
     proc_t *accept_waiter;
     spinlock_t lock;
 } unix_sock_t;
@@ -173,6 +174,7 @@ int fd_accept_unix(int fd, char *path_out, int path_max, int flags) {
     spin_lock(&s->lock);
     unix_conn_t *conn = s->backlog;
     s->backlog = conn->next;
+    if (!s->backlog) s->backlog_tail = NULL;
     f->node->sock_backlog--;
     spin_unlock(&s->lock);
     pipe_t *srv_rx = conn->srv_rx;
@@ -263,10 +265,9 @@ int fd_connect_unix(int fd, const char *path) {
     if (!srv->backlog) {
         srv->backlog = conn;
     } else {
-        unix_conn_t *tail = srv->backlog;
-        while (tail->next) tail = tail->next;
-        tail->next = conn;
+        srv->backlog_tail->next = conn;
     }
+    srv->backlog_tail = conn;
     sn->sock_backlog++;
     if (srv->accept_waiter) {
         proc_t *w = srv->accept_waiter;
@@ -300,6 +301,8 @@ void unix_socket_close(vfs_file_t *f) {
             }
         }
         unix_conn_t *c = s->backlog;
+        s->backlog = NULL;
+        s->backlog_tail = NULL;
         while (c) {
             unix_conn_t *nx = c->next;
             vfs_pipe_drop_write(c->cli_rx);

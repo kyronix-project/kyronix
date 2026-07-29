@@ -141,7 +141,7 @@ void tty_process_input(void) {
 #endif
 
     if (kbd_data_ready()) {
-        int c = kbd_getchar(); /* always drain ps/2 buffer; evdev hook fires inside */
+        int c = kbd_getchar(); // always drain ps/2 buffer; evdev hook fires inside
         if (c > 0 && !g_evdev_kbd_open) tty_input_char((uint8_t) c);
     }
     irq_restore(flags);
@@ -171,7 +171,7 @@ int64_t tty_read(char *buf, uint64_t len) {
             continue;
         }
 
-        /* in raw mode (VMIN=1, VTIME=0): return as soon as we have >= VMIN bytes */
+        // in raw mode (VMIN=1, VTIME=0): return as soon as we have >= VMIN bytes
         if (i >= vmin) break;
 
         if (g_current_proc) {
@@ -180,7 +180,7 @@ int64_t tty_read(char *buf, uint64_t len) {
                 int idx = __builtin_ctzll(actionable);
                 actionable &= ~(1ULL << idx);
                 if (g_current_proc->sig_actions[idx].sa_handler != SIG_IGN) return -(int64_t) EINTR;
-                /* signal is ignored - consume it and keep reading */
+                // signal is ignored - consume it and keep reading
                 g_current_proc->pending_sigs &= ~(1ULL << idx);
             }
         }
@@ -205,7 +205,7 @@ int64_t tty_write(const char *buf, uint64_t len) {
     for (uint64_t i = 0; i < len; i++) {
         char c = buf[i];
 
-        /* ONLCR: map \n -> \r\n on output */
+        // ONLCR: map \n -> \r\n on output
         if ((tty_termios.c_oflag & ONLCR) && c == '\n') {
 #ifdef CONFIG_SERIAL_CONSOLE
             serial_putchar(COM1, '\r');

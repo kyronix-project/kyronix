@@ -55,7 +55,10 @@
 #define AHCI_MMIO_PAGES 16
 
 #define AHCI_MAX_PRDT 64u
-#define AHCI_MAX_SECTORS_PER_CMD 256u
+// a command table is one page and can safely carry 64 prdt entries, in the
+// worst case each entry covers one non-contiguous 4kb page, 512 sectors
+// (256kb) need 64 entries
+#define AHCI_MAX_SECTORS_PER_CMD ((AHCI_MAX_PRDT * PAGE_SIZE) / 512u)
 #define AHCI_MAX_PORTS 32
 
 typedef volatile struct {
@@ -96,6 +99,10 @@ typedef struct {
     uint8_t rsv[48];
     hba_prdt_t prdt[1];
 } __attribute__((packed)) hba_cmd_tbl_t;
+
+_Static_assert(__builtin_offsetof(hba_cmd_tbl_t, prdt) +
+                       AHCI_MAX_PRDT * sizeof(hba_prdt_t) <= PAGE_SIZE,
+               "AHCI command table exceeds its DMA page");
 
 typedef struct {
     hba_port_t *regs;

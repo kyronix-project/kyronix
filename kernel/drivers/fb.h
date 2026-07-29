@@ -20,20 +20,18 @@
 #define FONT_W 8
 #define FONT_H 16
 
-/* KFNT (Kyronix Font) header — little-endian */
 typedef struct {
-    char magic[4];    /* "KFNT" */
-    uint16_t version; /* 1 */
-    uint16_t width;   /* pixel width per glyph */
-    uint16_t height;  /* pixel height per glyph */
+    char magic[4];
+    uint16_t version;
+    uint16_t width;
+    uint16_t height;
     uint32_t num_glyphs;
-    uint32_t flags;     /* reserved */
-    uint32_t glyph_off; /* byte offset to glyph data */
-    uint32_t uni_off;   /* byte offset to unicode lookup table */
-    uint32_t uni_count; /* number of entries in unicode table */
+    uint32_t flags;
+    uint32_t glyph_off;
+    uint32_t uni_off;
+    uint32_t uni_count;
 } __attribute__((packed)) kfnt_header_t;
 
-/* Unicode lookup entry — sorted by codepoint for binary search */
 typedef struct {
     uint32_t codepoint;
     uint16_t glyph_idx;
@@ -46,13 +44,12 @@ typedef struct {
     uint64_t height;
     uint64_t pitch;
     uint16_t bpp;
-    /* cursor */
+
     uint32_t col, row;
     uint32_t fg, bg;
     bool bold;
     bool cursor_visible;
-    /* VT100 charset state */
-    bool vt100_graphics; /* whether VT100 Special Graphics is active */
+    bool vt100_graphics;
 } fb_t;
 
 extern fb_t g_fb;

@@ -2,7 +2,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* c_cc indices */
+// c_cc indices
 #define VINTR 0
 #define VQUIT 1
 #define VERASE 2
@@ -15,7 +15,7 @@
 #define VSTOP 9
 #define VSUSP 10
 
-/* c_iflag bits */
+// c_iflag bits
 #define IGNBRK 0000001
 #define BRKINT 0000002
 #define IGNPAR 0000004
@@ -29,14 +29,14 @@
 #define IXOFF 0001000
 #define IXANY 0004000
 
-/* c_oflag bits */
+// c_oflag bits
 #define OPOST 0000001
 #define ONLCR 0000004
 #define OCRNL 0000010
 #define ONOCR 0000020
 #define ONLRET 0000040
 
-/* c_cflag bits */
+// c_cflag bits
 #define CSIZE 0000060
 #define CS5 0000000
 #define CS6 0000020
@@ -49,7 +49,7 @@
 #define HUPCL 0002000
 #define CLOCAL 0004000
 
-/* c_lflag bits */
+// c_lflag bits
 #define ISIG 0000001
 #define ICANON 0000002
 #define ECHO 0000010

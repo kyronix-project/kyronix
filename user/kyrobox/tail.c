@@ -153,14 +153,15 @@ int main(int argc, char **argv) {
         }
     }
     if (i == argc) argv[argc++] = NULL;
-    int nfiles = argc - i;
+    if (i < 0 || i > argc) return 1;
+    size_t nfiles = (size_t) (argc - i);
     bool show_headers = o.verbose || (nfiles > 1 && !o.quiet);
     bool first_header = true;
     FILE **streams = calloc((size_t) nfiles, sizeof(*streams));
     if (!streams) return 1;
 
     int rc = 0;
-    for (int n = 0; n < nfiles; n++) {
+    for (size_t n = 0; n < nfiles; n++) {
         const char *name = argv[i + n];
         FILE *f = !name || strcmp(name, "-") == 0 ? stdin : fopen(name, "rb");
         streams[n] = f;
@@ -178,7 +179,7 @@ int main(int argc, char **argv) {
 
     while (o.follow) {
         bool wrote = false;
-        for (int n = 0; n < nfiles; n++) {
+        for (size_t n = 0; n < nfiles; n++) {
             FILE *f = streams[n];
             if (!f || f == stdin) continue;
             clearerr(f);
@@ -196,7 +197,7 @@ int main(int argc, char **argv) {
         if (wrote) fflush(stdout);
         sleep(1);
     }
-    for (int n = 0; n < nfiles; n++)
+    for (size_t n = 0; n < nfiles; n++)
         if (streams[n] && streams[n] != stdin) fclose(streams[n]);
     free(streams);
     return rc || ferror(stdout) ? 1 : 0;

@@ -46,7 +46,7 @@ static int64_t uio_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t 
     (void) len;
     uio_dev_t *uio = (uio_dev_t *) n->data;
     if (!uio) return -(int64_t) EINVAL;
-    pic_unmask_irq(uio->pdev->irq_line); /* re-arm the irq line */
+    pic_unmask_irq(uio->pdev->irq_line); // re-arm the irq line
     return (int64_t) len;
 }
 

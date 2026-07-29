@@ -31,25 +31,20 @@ static inline uint64_t px_off(uint32_t x, uint32_t y) {
 static void cursor_draw(uint32_t col, uint32_t row, uint32_t color);
 static uint32_t adjust_bold(uint32_t color);
 
-/* ── KFNT font state ─────────────────────────────────────────── */
-
 static const kfnt_header_t *g_kfnt;
 static const uint8_t *g_glyph_data;
-static uint32_t g_bpf;         /* bytes per glyph row */
-static uint32_t g_glyph_bytes; /* bytes per glyph (bpf * height) */
-
-/* ── VT100 Special Graphics charset ──────────────────────────── */
+static uint32_t g_bpf;         // bytes per glyph row
+static uint32_t g_glyph_bytes; // bytes per glyph (bpf * height)
 
 enum { CS_ASCII = 0, CS_GRAPHICS = 1 };
 
-static int g_charset_g0 = CS_ASCII; /* G0 slot assignment */
-static int g_charset_g1 = CS_ASCII; /* G1 slot assignment */
-static int g_gl = 0;                /* 0 = using G0, 1 = using G1 */
-static int g_esc_charset_slot = 0;  /* saved slot for ESC_CHARSET */
+static int g_charset_g0 = CS_ASCII; // G0 slot assignment
+static int g_charset_g1 = CS_ASCII; // G1 slot assignment
+static int g_gl = 0;                // 0 = using G0, 1 = using G1
+static int g_esc_charset_slot = 0;  // saved slot for ESC_CHARSET
 
-/* VT100 Special Graphics → Unicode codepoint mapping.
- * Index: VT100 code - 0x41 for uppercase, - 0x60 for lowercase.
- * 0 = no translation (pass through). */
+// this table is written by Ai, sorry(
+
 static const uint32_t vt100_upper[] = {
     /* 0x41-0x47 */ 0x2191, 0x2193, 0x2192, 0x2190, 0x2588, 0x259A, 0x2603,
 };
@@ -88,8 +83,6 @@ static const uint32_t vt100_lower[] = {
     /* 0x7E */ 0x00B7, /* · */
 };
 
-/* Binary search the unicode table for a codepoint.
- * Returns glyph index, or -1 if not found. */
 static int font_find_glyph(uint32_t cp) {
     const kfnt_uni_entry_t *table =
         (const kfnt_uni_entry_t *) ((const uint8_t *) g_kfnt + g_kfnt->uni_off);
@@ -106,16 +99,12 @@ static int font_find_glyph(uint32_t cp) {
     return -1;
 }
 
-/* Resolve a VT100 Special Graphics character to a Unicode codepoint.
- * Returns the codepoint, or 0 if no translation. */
 static uint32_t vt100_resolve(char c) {
     unsigned char uc = (unsigned char) c;
     if (uc >= 0x41 && uc <= 0x47) return vt100_upper[uc - 0x41];
     if (uc >= 0x60 && uc <= 0x7E) return vt100_lower[uc - 0x60];
     return 0;
 }
-
-/* ── cursor ───────────────────────────────────────────────────── */
 
 void fb_cursor_enable(int enable) {
     if (!enable && g_cursor_enabled && g_fb.addr)
@@ -153,8 +142,6 @@ void fb_cursor_update(void) {
     g_cursor_last_row = g_fb.row;
 }
 
-/* ── drawing ──────────────────────────────────────────────────── */
-
 static void draw_char(uint32_t col, uint32_t row, uint32_t glyph_idx) {
     uint32_t px = col * FONT_W;
     uint32_t py = row * FONT_H;
@@ -177,8 +164,6 @@ static void draw_char(uint32_t col, uint32_t row, uint32_t glyph_idx) {
     }
 }
 
-/* ── init ─────────────────────────────────────────────────────── */
-
 void fb_init(struct limine_framebuffer *fb) {
     g_fb.addr = fb->address;
     g_fb.phys_addr = virt_to_phys(fb->address);
@@ -197,7 +182,7 @@ void fb_init(struct limine_framebuffer *fb) {
     g_cursor_last_col = 0;
     g_cursor_last_row = 0;
 
-    /* Parse KFNT font header */
+    // parse kfnt font header
     g_kfnt = (const kfnt_header_t *) g_font_data;
     g_glyph_data = g_font_data + g_kfnt->glyph_off;
     g_bpf = (g_kfnt->width + 7) / 8;
@@ -282,7 +267,7 @@ static void scroll_up(void) {
     memcpy(g_fb.addr, g_shadow, keep_bytes + line_bytes);
 }
 
-/* ── SGR (Select Graphic Rendition) ──────────────────────────── */
+// sgr
 
 enum { ESC_NONE, ESC_ESC, ESC_CSI, ESC_CHARSET } g_esc;
 static int g_esc_params[16];
@@ -428,15 +413,11 @@ static void fb_sgr(void) {
     }
 }
 
-/* ──_putchar (main entry) ────────────────────────────────────── */
-
 void fb_putchar(char c) {
     uint32_t cols = (uint32_t) (g_fb.width / FONT_W);
     uint32_t rows = (uint32_t) (g_fb.height / FONT_H);
 
     switch (g_esc) {
-
-    /* ── ESC received, waiting for next char ─────────────────── */
     case ESC_ESC:
         if (c == '[') {
             g_esc = ESC_CSI;
@@ -444,20 +425,20 @@ void fb_putchar(char c) {
             g_esc_np = 0;
             g_esc_priv = false;
         } else if (c == ']') {
-            g_esc = ESC_NONE; /* OSC: consume until BEL/ST */
+            g_esc = ESC_NONE; // OSC: consume until BEL/ST
         } else if (c == '(' || c == ')') {
-            /* ESC( / ESC) — charset designation, next char selects */
+            // ESC( / ESC) - charset designation, next char selects
             g_esc_charset_slot = (c == ')') ? 1 : 0;
             g_esc = ESC_CHARSET;
         } else {
-            /* Single-char ESC sequences */
+            // Single-char ESC sequences
             g_esc = ESC_NONE;
             if (c == '7') {
-                /* DECSC: save cursor — no-op */
+                // DECSC: save cursor - no-op
             } else if (c == '8') {
-                /* DECRC: restore cursor — no-op */
+                // DECRC: restore cursor - no-op
             } else if (c == 'c') {
-                /* RIS: full reset */
+                // RIS: full reset
                 g_fb.fg = COLOR_WHITE;
                 g_fb.bg = COLOR_BG;
                 g_fb.bold = false;
@@ -467,14 +448,14 @@ void fb_putchar(char c) {
                 g_gl = 0;
                 fb_clear(COLOR_BG);
             } else if (c == 'D') {
-                /* IND: index — move cursor down, scroll if at bottom */
+                // IND: index - move cursor down, scroll if at bottom
                 if (g_fb.row < rows - 1) {
                     g_fb.row++;
                 } else {
                     scroll_up();
                 }
             } else if (c == 'E') {
-                /* NEL: next line */
+                // NEL: next line
                 g_fb.col = 0;
                 if (g_fb.row < rows - 1) {
                     g_fb.row++;
@@ -482,7 +463,7 @@ void fb_putchar(char c) {
                     scroll_up();
                 }
             } else if (c == 'M') {
-                /* RI: reverse index */
+                // RI: reverse index
                 if (g_fb.row > 0) {
                     g_fb.row--;
                 } else {
@@ -497,7 +478,6 @@ void fb_putchar(char c) {
         }
         return;
 
-    /* ── ESC ( or ESC ) received — next char selects charset ─── */
     case ESC_CHARSET: {
         g_esc = ESC_NONE;
         int slot = g_esc_charset_slot;
@@ -512,13 +492,13 @@ void fb_putchar(char c) {
             else
                 g_charset_g1 = CS_ASCII;
         }
-        /* Update active graphics state */
+        // upd active graphics state
         int active = (g_gl == 0) ? g_charset_g0 : g_charset_g1;
         g_fb.vt100_graphics = (active == CS_GRAPHICS);
         return;
     }
 
-    /* ── CSI: ESC [ ... ──────────────────────────────────────── */
+    // csi
     case ESC_CSI:
         if (c == '?') {
             g_esc_priv = true;
@@ -540,7 +520,7 @@ void fb_putchar(char c) {
         }
         g_esc = ESC_NONE;
 
-        /* Private/DEC mode: ESC[?...h / ESC[?...l */
+        // Private/DEC mode: ESC[?...h / ESC[?...l
         if (g_esc_priv) {
             int p = g_esc_params[0];
             if (c == 'h') {
@@ -548,13 +528,13 @@ void fb_putchar(char c) {
                     g_fb.cursor_visible = true;
                     g_cursor_enabled = true;
                 } else if (p == 7) {
-                    /* DECAWM: auto wrap — always on */
+                    // DECAWM: auto wrap - always on
                 } else if (p == 1) {
-                    /* DECCKM: cursor key mode */
+                    // DECCKM: cursor key mode
                 } else if (p == 1049) {
-                    /* Alternate screen — not supported */
+                    // alternate screen - not supported
                 } else if (p == 2004) {
-                    /* Bracketed paste — not supported */
+                    // bracketed paste - not supported
                 }
             } else if (c == 'l') {
                 if (p == 25) {
@@ -562,13 +542,13 @@ void fb_putchar(char c) {
                     g_cursor_enabled = false;
                     cursor_draw(g_fb.col, g_fb.row, g_fb.bg);
                 } else if (p == 7) {
-                    /* DECAWM off */
+                    // DECAWM off
                 } else if (p == 1) {
-                    /* DECCKM off */
+                    // DECCKM off
                 } else if (p == 1049) {
-                    /* Leave alternate screen */
+                    // leave alternate screen
                 } else if (p == 2004) {
-                    /* Disable bracketed paste */
+                    // disable bracketed paste
                 }
             }
             g_esc_priv = false;
@@ -576,7 +556,6 @@ void fb_putchar(char c) {
             return;
         }
 
-        /* Standard CSI sequences */
         if (c == 'm') {
             fb_sgr();
         } else if (c == 'K') {
@@ -629,16 +608,15 @@ void fb_putchar(char c) {
                 break;
             }
         } else if (c == 'X') {
-            /* ECH: Erase Character */
             int n = g_esc_params[0] > 0 ? g_esc_params[0] : 1;
             for (int i = 0; i < n && g_fb.col + i < cols; i++)
                 draw_char(g_fb.col + i, g_fb.row, ' ');
         } else if (c == 's') {
-            /* SCP: save cursor position — no-op */
+            // SCP: save cursor position - no-op
         } else if (c == 'u') {
-            /* RCP: restore cursor position — no-op */
+            // RCP: restore cursor position - no-op
         } else if (c == '~') {
-            /* ESC[N~ sequences — consumed silently */
+            // ESC[N~ sequences - consumed silently
         }
         fb_cursor_update();
         return;
@@ -647,16 +625,14 @@ void fb_putchar(char c) {
         break;
     }
 
-    /* ── Normal character processing ──────────────────────────── */
-
-    /* SO (Shift Out) — switch to G1 charset */
+    // SO - switch to G1 charset
     if (c == 0x0E) {
         g_gl = 1;
         int active = (g_gl == 0) ? g_charset_g0 : g_charset_g1;
         g_fb.vt100_graphics = (active == CS_GRAPHICS);
         return;
     }
-    /* SI (Shift In) — switch to G0 charset */
+    // SI - switch to G0 charset
     if (c == 0x0F) {
         g_gl = 0;
         int active = (g_gl == 0) ? g_charset_g0 : g_charset_g1;
@@ -684,7 +660,7 @@ void fb_putchar(char c) {
     } else {
         uint32_t glyph_idx = (unsigned char) c;
 
-        /* VT100 Special Graphics translation */
+        // vt100 sgt
         if (g_fb.vt100_graphics) {
             uint32_t ucp = vt100_resolve(c);
             if (ucp) {

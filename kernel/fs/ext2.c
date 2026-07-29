@@ -107,10 +107,16 @@ static ext2_sb_t g_sb;
 static char g_mount_point[512];
 
 #define EXT2_META_CACHE_ENTRIES 64u
+#define EXT2_META_CACHE_WAYS 4u
+#define EXT2_META_CACHE_SETS (EXT2_META_CACHE_ENTRIES / EXT2_META_CACHE_WAYS)
+
+_Static_assert(EXT2_META_CACHE_ENTRIES % EXT2_META_CACHE_WAYS == 0,
+               "ext2 metadata cache sets must be whole");
 
 static uint8_t *g_meta_cache = NULL;
 static uint32_t g_meta_cache_blocks[EXT2_META_CACHE_ENTRIES];
 static uint8_t g_meta_cache_valid[EXT2_META_CACHE_ENTRIES];
+static uint8_t g_meta_cache_next[EXT2_META_CACHE_SETS];
 static uint32_t *g_block_hints = NULL;
 static uint32_t *g_inode_hints = NULL;
 static int g_tracked_cnt;
@@ -135,6 +141,7 @@ static void clear_mount_state(void) {
     g_block_hints = NULL;
     g_inode_hints = NULL;
     memset(g_meta_cache_valid, 0, sizeof(g_meta_cache_valid));
+    memset(g_meta_cache_next, 0, sizeof(g_meta_cache_next));
     memset(&g_sb, 0, sizeof(g_sb));
     g_mount_point[0] = '\0';
     g_tracked_cnt = 0;
@@ -157,24 +164,47 @@ static int read_block(uint32_t blk, void *buf) {
     return g_dev->ops->read(g_dev, lba, secs, buf);
 }
 
+static uint32_t meta_cache_set(uint32_t blk) { return blk % EXT2_META_CACHE_SETS; }
+
+static int meta_cache_find(uint32_t blk) {
+    uint32_t first = meta_cache_set(blk) * EXT2_META_CACHE_WAYS;
+    for (uint32_t way = 0; way < EXT2_META_CACHE_WAYS; way++) {
+        uint32_t slot = first + way;
+        if (g_meta_cache_valid[slot] && g_meta_cache_blocks[slot] == blk) return (int) slot;
+    }
+    return -1;
+}
+
+static uint32_t meta_cache_victim(uint32_t blk) {
+    uint32_t set = meta_cache_set(blk);
+    uint32_t first = set * EXT2_META_CACHE_WAYS;
+    for (uint32_t way = 0; way < EXT2_META_CACHE_WAYS; way++) {
+        uint32_t slot = first + way;
+        if (!g_meta_cache_valid[slot]) return slot;
+    }
+    uint32_t slot = first + g_meta_cache_next[set];
+    g_meta_cache_next[set] = (g_meta_cache_next[set] + 1u) % EXT2_META_CACHE_WAYS;
+    return slot;
+}
+
 static int write_block(uint32_t blk, const void *buf) {
     uint64_t lba = (uint64_t) blk * (g_block_size / 512u);
     uint32_t secs = g_block_size / 512u;
     int r = g_dev->ops->write(g_dev, lba, secs, buf);
-    uint32_t slot = blk % EXT2_META_CACHE_ENTRIES;
-    if (r == 0 && g_meta_cache_valid[slot] && g_meta_cache_blocks[slot] == blk)
-        g_meta_cache_valid[slot] = 0;
+    int slot = meta_cache_find(blk);
+    if (r == 0 && slot >= 0) g_meta_cache_valid[slot] = 0;
     return r;
 }
 
 static int read_meta_block(uint32_t blk, void *buf) {
     if (!g_meta_cache) return read_block(blk, buf);
-    uint32_t slot = blk % EXT2_META_CACHE_ENTRIES;
-    uint8_t *cached = g_meta_cache + (uint64_t) slot * g_block_size;
-    if (g_meta_cache_valid[slot] && g_meta_cache_blocks[slot] == blk) {
-        memcpy(buf, cached, g_block_size);
+    int found = meta_cache_find(blk);
+    if (found >= 0) {
+        memcpy(buf, g_meta_cache + (uint64_t) found * g_block_size, g_block_size);
         return 0;
     }
+    uint32_t slot = meta_cache_victim(blk);
+    uint8_t *cached = g_meta_cache + (uint64_t) slot * g_block_size;
     if (read_block(blk, buf) < 0) return -1;
     memcpy(cached, buf, g_block_size);
     g_meta_cache_blocks[slot] = blk;
@@ -185,7 +215,8 @@ static int read_meta_block(uint32_t blk, void *buf) {
 static int write_meta_block(uint32_t blk, const void *buf) {
     if (write_block(blk, buf) < 0) return -1;
     if (!g_meta_cache) return 0;
-    uint32_t slot = blk % EXT2_META_CACHE_ENTRIES;
+    int found = meta_cache_find(blk);
+    uint32_t slot = found >= 0 ? (uint32_t) found : meta_cache_victim(blk);
     memcpy(g_meta_cache + (uint64_t) slot * g_block_size, buf, g_block_size);
     g_meta_cache_blocks[slot] = blk;
     g_meta_cache_valid[slot] = 1;
