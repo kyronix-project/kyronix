@@ -20,14 +20,6 @@
 
 int verbose_mode = 0;
 int yes_mode = 0;
-static char g_active_tmp[512];
-
-static void cleanup_active_tmp(void) {
-    if (g_active_tmp[0]) {
-        remove_tree(g_active_tmp);
-        g_active_tmp[0] = '\0';
-    }
-}
 
 static int extract_json_string(const char *json, const char *key, char *out, size_t n) {
     if (!json || !key || !out || n == 0) return -1;
@@ -522,231 +514,38 @@ typedef struct {
     int installed;
 } ResolvedPkg;
 
-static int validate_extracted_tree(const char *path, unsigned depth,
-                                   unsigned *file_count) {
-    if (depth > 64) return -1;
-    struct stat st;
-    if (lstat(path, &st) != 0 || S_ISLNK(st.st_mode)) return -1;
-    if (S_ISREG(st.st_mode)) {
-        if ((st.st_mode & (S_ISUID | S_ISGID)) != 0 || ++*file_count > 100000)
-            return -1;
-        return 0;
-    }
-    if (!S_ISDIR(st.st_mode)) return -1;
-
-    DIR *dir = opendir(path);
-    if (!dir) return -1;
-    int result = 0;
-    struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-            continue;
-        for (const unsigned char *p = (const unsigned char *) entry->d_name; *p; p++)
-            if (*p < 0x20 || *p == 0x7f) result = -1;
-        char child[1024];
-        int n = snprintf(child, sizeof(child), "%s/%s", path, entry->d_name);
-        if (result != 0 || n < 0 || (size_t) n >= sizeof(child) ||
-            validate_extracted_tree(child, depth + 1, file_count) != 0) {
-            result = -1;
-            break;
-        }
-    }
-    closedir(dir);
-    return result;
-}
-
-static int copy_regular_file(const char *source, const char *destination,
-                             mode_t mode) {
-    int source_fd = open(source, O_RDONLY);
-    if (source_fd < 0) {
-        log_warn("cannot open source %s: %s", source, strerror(errno));
-        return -1;
-    }
-    int destination_fd =
-        open(destination, O_WRONLY | O_CREAT | O_TRUNC, mode);
-    if (destination_fd < 0) {
-        log_warn("cannot open destination %s: %s", destination, strerror(errno));
-        close(source_fd);
-        return -1;
-    }
-
-    int result = 0;
-    size_t buf_size = 64U * 1024U;
-    unsigned char *buffer = malloc(buf_size);
-    if (!buffer) {
-        log_warn("cannot allocate copy buffer");
-        close(source_fd);
-        close(destination_fd);
-        unlink(destination);
-        return -1;
-    }
-    for (;;) {
-        ssize_t got = read(source_fd, buffer, buf_size);
-        if (got < 0 && errno == EINTR) continue;
-        if (got < 0) {
-            log_warn("read error during copy: %s", strerror(errno));
-            result = -1;
-            break;
-        }
-        if (got == 0) break;
-        size_t offset = 0;
-        while (offset < (size_t) got) {
-            ssize_t written =
-                write(destination_fd, buffer + offset, (size_t) got - offset);
-            if (written < 0 && errno == EINTR) continue;
-            if (written <= 0) {
-                log_warn("write error during copy: %s", strerror(errno));
-                result = -1;
-                break;
-            }
-            offset += (size_t) written;
-        }
-        if (result != 0) break;
-    }
-    free(buffer);
-    if (close(source_fd) != 0) {
-        log_warn("close source error: %s", strerror(errno));
-        result = -1;
-    }
-    if (close(destination_fd) != 0) {
-        log_warn("close destination error: %s", strerror(errno));
-        result = -1;
-    }
-    if (result != 0) unlink(destination);
-    return result;
-}
-
-static void snapshot_tree(const char *dir, FILE *out, unsigned depth) {
-    if (depth > 64) return;
+static void scan_files_recursive(const char *dir, FILE *out) {
     DIR *d = opendir(dir);
     if (!d) return;
-    struct dirent *e;
-    while ((e = readdir(d)) != NULL) {
-        if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0)
-            continue;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (ent->d_name[0] == '.') continue;
         char path[1024];
-        int n = snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
-        if (n < 0 || (size_t)n >= sizeof(path)) continue;
-        fprintf(out, "%s\n", path);
-        if (e->d_type == DT_DIR)
-            snapshot_tree(path, out, depth + 1);
-        else if (e->d_type == DT_UNKNOWN) {
-            struct stat st;
-            if (lstat(path, &st) == 0 && S_ISDIR(st.st_mode))
-                snapshot_tree(path, out, depth + 1);
+        snprintf(path, sizeof(path), "%s/%s", dir, ent->d_name);
+        struct stat st;
+        if (stat(path, &st) != 0) continue;
+        if (S_ISREG(st.st_mode)) {
+            fprintf(out, "%s\n", path);
+        } else if (S_ISDIR(st.st_mode)) {
+            scan_files_recursive(path, out);
         }
     }
     closedir(d);
 }
 
-static int write_snapshot(const char *roots[], int nroots, const char *outpath) {
-    char sort_cmd[512];
-    snprintf(sort_cmd, sizeof(sort_cmd), "sort -u -o %s", outpath);
-    FILE *pipe = popen(sort_cmd, "w");
-    if (!pipe) return -1;
-    for (int i = 0; i < nroots; i++)
-        snapshot_tree(roots[i], pipe, 0);
-    return pclose(pipe);
-}
-
-static int install_payload_recursive(const char *source, const char *destination,
-                                     FILE *created, unsigned depth,
-                                     unsigned *file_count) {
-    if (depth > 64) return -1;
-    DIR *dir = opendir(source);
-    if (!dir) {
-        log_warn("cannot open payload dir %s: %s", source, strerror(errno));
-        return -1;
+static int file_list_contains(const char *buf, size_t buf_sz, const char *line, size_t line_sz) {
+    if (!buf || !line || line_sz == 0) return 0;
+    size_t offset = 0;
+    while (offset < buf_sz) {
+        const char *hit = memmem(buf + offset, buf_sz - offset, line, line_sz);
+        if (!hit) return 0;
+        size_t pos = (size_t)(hit - buf);
+        if (pos > 0 && buf[pos - 1] != '\n') { offset = pos + 1; continue; }
+        size_t end = pos + line_sz;
+        if (end < buf_sz && buf[end] != '\n') { offset = end + 1; continue; }
+        return 1;
     }
-    int result = 0;
-    struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-            continue;
-        char source_path[1024], destination_path[1024];
-        int source_len = snprintf(source_path, sizeof(source_path), "%s/%s",
-                                  source, entry->d_name);
-        int destination_len =
-            snprintf(destination_path, sizeof(destination_path), "%s/%s",
-                     destination, entry->d_name);
-        if (source_len < 0 || (size_t) source_len >= sizeof(source_path)) {
-            log_warn("source path too long for %s/%s", source, entry->d_name);
-            result = -1;
-            break;
-        }
-        if (destination_len < 0 ||
-            (size_t) destination_len >= sizeof(destination_path)) {
-            log_warn("destination path too long for %s/%s", destination, entry->d_name);
-            result = -1;
-            break;
-        }
-        if (!safe_managed_path(destination_path)) {
-            log_warn("unsafe path rejected: %s", destination_path);
-            result = -1;
-            break;
-        }
-
-        struct stat st;
-        if (lstat(source_path, &st) != 0) {
-            log_warn("cannot stat %s: %s", source_path, strerror(errno));
-            result = -1;
-            break;
-        }
-        if (S_ISDIR(st.st_mode)) {
-            if (mkdir(destination_path, 0755) != 0 && errno != EEXIST) {
-                log_warn("mkdir %s failed: %s", destination_path, strerror(errno));
-                result = -1;
-                break;
-            }
-            struct stat destination_st;
-            if (lstat(destination_path, &destination_st) != 0 ||
-                !S_ISDIR(destination_st.st_mode) ||
-                install_payload_recursive(source_path, destination_path, created,
-                                          depth + 1, file_count) != 0) {
-                result = -1;
-                break;
-            }
-        } else if (S_ISREG(st.st_mode)) {
-            if (++*file_count > 100000U) {
-                log_warn("too many files");
-                result = -1;
-                break;
-            }
-            if (copy_regular_file(source_path, destination_path, 0755) != 0 ||
-                fprintf(created, "%s\n", destination_path) < 0) {
-                if (fprintf(created, "%s\n", destination_path) < 0)
-                    log_warn("fprintf to created file failed: %s", strerror(ferror(created) ? errno : 0));
-                unlink(destination_path);
-                result = -1;
-                break;
-            }
-        } else {
-            log_warn("unsupported file type for %s", source_path);
-            result = -1;
-            break;
-        }
-    }
-    closedir(dir);
-    return result;
-}
-
-static void rollback_created_files(FILE *created) {
-    if (!created) return;
-    fflush(created);
-    rewind(created);
-    char path[1024];
-    while (fgets(path, sizeof(path), created)) {
-        trim_crlf(path);
-        struct stat st;
-        if (safe_managed_path(path) && lstat(path, &st) == 0 &&
-            (S_ISREG(st.st_mode) || S_ISLNK(st.st_mode)))
-            unlink(path);
-    }
-    rewind(created);
-    while (fgets(path, sizeof(path), created)) {
-        trim_crlf(path);
-        rmdir(path);
-    }
+    return 0;
 }
 
 static int resolve_dependencies(const char *name, ResolvedPkg *out, int out_max,
@@ -853,8 +652,7 @@ static int resolve_dependencies(const char *name, ResolvedPkg *out, int out_max,
 #pragma GCC diagnostic ignored "-Wformat-truncation"
 static int do_install(const char *name, const char *endpoint, long download_size,
                       const char *requested_by, int explicit) {
-    if (!valid_pkg_name(name) || !valid_repo_url(endpoint))
-        dief("invalid resolved package");
+    if (!valid_pkg_name(name)) dief("invalid resolved package");
     char url[2048];
     snprintf(url, sizeof(url), "%s/packages/%s", endpoint, name);
 
@@ -893,12 +691,11 @@ static int do_install(const char *name, const char *endpoint, long download_size
     char tmp_template[] = "/tmp/pkg-XXXXXX";
     char *tmp_dir = mkdtemp(tmp_template);
     if (!tmp_dir) dief("failed to create temporary directory");
-    if (!g_active_tmp[0]) atexit(cleanup_active_tmp);
-    snprintf(g_active_tmp, sizeof(g_active_tmp), "%s", tmp_dir);
 
-    char archive_path[512], checksum_path[512], extract_dir[512];
+    char archive_path[512], checksum_path[512], script_path[512], extract_dir[512];
     snprintf(archive_path, sizeof(archive_path), "%s/%s", tmp_dir, "package.gz");
     snprintf(checksum_path, sizeof(checksum_path), "%s/%s", tmp_dir, "package.gz.md5");
+    snprintf(script_path, sizeof(script_path), "%s/%s", tmp_dir, "install.sh");
     snprintf(extract_dir, sizeof(extract_dir), "%s/%s", tmp_dir, "extract");
     ensure_dir(extract_dir);
 
@@ -906,9 +703,10 @@ static int do_install(const char *name, const char *endpoint, long download_size
     char base[2048];
     snprintf(base, sizeof(base), "%s/packages/%s", endpoint, name);
 
-    char url_archive[2200], url_checksum[2200];
+    char url_archive[2200], url_checksum[2200], url_script[2200];
     snprintf(url_archive, sizeof(url_archive), "%s/archive", base);
     snprintf(url_checksum, sizeof(url_checksum), "%s/checksum", base);
+    snprintf(url_script, sizeof(url_script), "%s/install.sh", base);
 
     if (download_size > 0) {
         if (download_size > 1048576)
@@ -922,6 +720,7 @@ static int do_install(const char *name, const char *endpoint, long download_size
     fflush(stdout);
     if (http_download(url_archive, archive_path, "archive") != 0) dief("archive download failed");
     if (http_download(url_checksum, checksum_path, "checksum") != 0) dief("checksum download failed");
+    if (http_download(url_script, script_path, "script") != 0) dief("install script download failed");
 
     fprintf(stdout, "%s=>%s verifying checksum...", ANSI_CYAN, ANSI_RESET);
     fflush(stdout);
@@ -931,198 +730,96 @@ static int do_install(const char *name, const char *endpoint, long download_size
     fprintf(stdout, "%s=>%s extracting...", ANSI_CYAN, ANSI_RESET);
     fflush(stdout);
     char *tar_argv[] = {
-        "/bin/tar", "-x", "-I", "/bin/gzip -dcf", "-f", archive_path,
+        "tar", "-x", "-I", "gzip -dcf", "-f", archive_path,
         "-C", extract_dir,
         "--transform=flags=r;s|^\\.$|__skip__|",
         "--no-same-owner", "--no-same-permissions",
         NULL
     };
-    if (run_cmd(tar_argv) != 0)
-        dief("archive extraction failed");
-    unsigned extracted_files = 0;
-    if (validate_extracted_tree(extract_dir, 0, &extracted_files) != 0)
-        dief("archive contains unsafe file types or paths");
+    if (run_cmd(tar_argv) != 0) dief("archive extraction failed");
     fprintf(stdout, " %sok%s\n", ANSI_GREEN, ANSI_RESET);
 
-    ensure_dir_mode(PKG_STATE_DIR, 0700);
+    char pre_scan[1024];
+    snprintf(pre_scan, sizeof(pre_scan), "%s/.pre", tmp_dir);
+    FILE *pf = fopen(pre_scan, "w");
+    if (pf) { scan_files_recursive("/usr", pf); fclose(pf); }
+
+    char *sh_argv[] = { "sh", script_path, extract_dir, archive_path, checksum_path, (char *)install_dir, NULL };
+    if (run_cmd(sh_argv) != 0) dief("install script failed");
+
     char reg_parent[512];
+    snprintf(reg_parent, sizeof(reg_parent), "%s", PKG_STATE_DIR);
+    ensure_dir(reg_parent);
     snprintf(reg_parent, sizeof(reg_parent), "%s/installed", PKG_STATE_DIR);
-    ensure_dir_mode(reg_parent, 0700);
+    ensure_dir(reg_parent);
 
     char reg_dir[1024];
     snprintf(reg_dir, sizeof(reg_dir), "%s/installed/%s", PKG_STATE_DIR, name);
-    if (mkdir(reg_dir, 0700) != 0)
-        dief("package registry already exists or cannot be created");
-
-    char manifest_path[1024];
-    snprintf(manifest_path, sizeof(manifest_path), "%s/manifest", reg_dir);
-    int manifest_fd =
-        open(manifest_path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
-    FILE *mf = manifest_fd >= 0 ? fdopen(manifest_fd, "w") : NULL;
-    if (!mf) {
-        if (manifest_fd >= 0) close(manifest_fd);
-        remove_tree(reg_dir);
-        dief("failed to create package manifest");
-    }
-    int manifest_ok = fprintf(mf, "name=%s\n", pkg.name) > 0 &&
-                      fprintf(mf, "version=%s\n", pkg.version) > 0 &&
-                      fprintf(mf, "description=%s\n", pkg.description) > 0 &&
-                      fprintf(mf, "arch=%s\n", pkg.arch) > 0 &&
-                      fprintf(mf, "install_dir=%s\n", install_dir) > 0 &&
-                      fprintf(mf, "depends=") > 0;
-    for (int i = 0; manifest_ok && i < pkg.depends_count; i++)
-        if (fprintf(mf, "%s%s", i > 0 ? "," : "", pkg.depends[i]) < 0)
-            manifest_ok = 0;
-    if (manifest_ok && fprintf(mf, "\nrequired_by=%s\nexplicit=%d\n",
-                               requested_by ? requested_by : "", explicit) < 0)
-        manifest_ok = 0;
-    if (fclose(mf) != 0) manifest_ok = 0;
-    if (!manifest_ok) {
-        remove_tree(reg_dir);
-        dief("failed to save package manifest");
-    }
-
-    char payload_path[1024];
-    snprintf(payload_path, sizeof(payload_path), "%s/payload", extract_dir);
-    struct stat payload_st;
-    if (lstat(payload_path, &payload_st) != 0 || !S_ISDIR(payload_st.st_mode)) {
-        remove_tree(reg_dir);
-        dief("archive does not contain a payload directory");
-    }
-
-    char created_path[1024];
-    snprintf(created_path, sizeof(created_path), "%s/.created", tmp_dir);
-    FILE *created = fopen(created_path, "w+");
-    if (!created) {
-        remove_tree(reg_dir);
-        dief("failed to create install transaction");
-    }
-    unsigned installed_files = 0;
-    char script_path[1024];
-    snprintf(script_path, sizeof(script_path), "%s/install.sh", extract_dir);
-    struct stat script_st;
-    int has_script = (stat(script_path, &script_st) == 0 && S_ISREG(script_st.st_mode));
-
-    if (has_script) {
-        const char *roots[] = {"/usr", "/etc", "/opt", "/bin", "/sbin", "/lib", "/lib64"};
-        int nroots = sizeof(roots) / sizeof(roots[0]);
-        char before_path[512], after_path[512];
-        snprintf(before_path, sizeof(before_path), "%s/.before", tmp_dir);
-        snprintf(after_path, sizeof(after_path), "%s/.after", tmp_dir);
-
-        if (write_snapshot(roots, nroots, before_path) != 0) {
-            rollback_created_files(created);
-            fclose(created);
-            remove_tree(reg_dir);
-            dief("failed to create pre-install snapshot");
-        }
-        char *sh_argv[] = {"/bin/sh", script_path, extract_dir, NULL};
-        if (run_cmd(sh_argv) != 0) {
-            rollback_created_files(created);
-            fclose(created);
-            remove_tree(reg_dir);
-            dief("install script failed");
-        }
-        if (write_snapshot(roots, nroots, after_path) != 0) {
-            rollback_created_files(created);
-            fclose(created);
-            remove_tree(reg_dir);
-            dief("failed to create post-install snapshot");
-        }
-        char diff_cmd[2048];
-        snprintf(diff_cmd, sizeof(diff_cmd), "comm -13 %s %s", before_path, after_path);
-        FILE *diff = popen(diff_cmd, "r");
-        if (!diff) {
-            rollback_created_files(created);
-            fclose(created);
-            remove_tree(reg_dir);
-            dief("failed to diff filesystem snapshots");
-        }
-        char line[1024];
-        while (fgets(line, sizeof(line), diff)) {
-            trim_crlf(line);
-            if (line[0] == '\0') continue;
-            if (!safe_managed_path(line)) {
-                log_warn("skipping unsafe path from filesystem diff: %s", line);
-                continue;
-            }
-            fprintf(created, "%s\n", line);
-            installed_files++;
-        }
-        int diff_rc = pclose(diff);
-        if (diff_rc != 0 && diff_rc != 1) {
-            rollback_created_files(created);
-            fclose(created);
-            remove_tree(reg_dir);
-            dief("filesystem snapshot diff failed");
-        }
-        if (fflush(created) != 0) {
-            rollback_created_files(created);
-            fclose(created);
-            remove_tree(reg_dir);
-            dief("failed to finalize install transaction");
-        }
-    } else {
-        if (install_payload_recursive(payload_path, install_dir, created, 0,
-                                      &installed_files) != 0 ||
-            fflush(created) != 0) {
-            rollback_created_files(created);
-            fclose(created);
-            remove_tree(reg_dir);
-            dief("payload installation failed (file collision or I/O error)");
-        }
-    }
+    ensure_dir(reg_dir);
 
     char files_path[1024];
     snprintf(files_path, sizeof(files_path), "%s/files", reg_dir);
-    int files_fd =
-        open(files_path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
-    FILE *flist = files_fd >= 0 ? fdopen(files_fd, "w") : NULL;
-    if (!flist) {
-        if (files_fd >= 0) close(files_fd);
-        rollback_created_files(created);
-        fclose(created);
-        remove_tree(reg_dir);
-        dief("failed to create package file registry");
-    }
-    rewind(created);
-    char registry_buffer[4096];
-    int files_ok = 1;
-    for (;;) {
-        size_t got = fread(registry_buffer, 1, sizeof(registry_buffer), created);
-        if (got && fwrite(registry_buffer, 1, got, flist) != got) {
-            files_ok = 0;
-            break;
+    FILE *flist = fopen(files_path, "w");
+
+    char *pre_names = NULL;
+    size_t pre_sz = 0;
+    pre_names = read_file(pre_scan, &pre_sz);
+
+    char post_file[1024];
+    snprintf(post_file, sizeof(post_file), "%s/.post", tmp_dir);
+    FILE *psf = fopen(post_file, "w");
+    if (psf) { scan_files_recursive("/usr", psf); fclose(psf); }
+
+    size_t post_sz = 0;
+    char *post_names = read_file(post_file, &post_sz);
+    if (post_names && flist) {
+        char *p = post_names;
+        while (*p) {
+            char *nl = strchr(p, '\n');
+            size_t len = nl ? (size_t)(nl - p) : strlen(p);
+            if (len > 0 && !file_list_contains(pre_names, pre_sz, p, len)) {
+                fprintf(flist, "%.*s\n", (int)len, p);
+                if (strncmp(p, "/usr/bin/", 9) == 0) {
+                    char fpath[1024];
+                    snprintf(fpath, sizeof(fpath), "%.*s", (int)len, p);
+                    chmod(fpath, 0755);
+                }
+            }
+            if (!nl) break;
+            p = nl + 1;
         }
-        if (got < sizeof(registry_buffer)) {
-            if (ferror(created)) files_ok = 0;
-            break;
-        }
     }
-    if (fclose(flist) != 0) files_ok = 0;
-    if (!files_ok) {
-        rollback_created_files(created);
-        fclose(created);
-        remove_tree(reg_dir);
-        dief("failed to save package file registry");
+    free(post_names);
+    free(pre_names);
+    if (flist) fclose(flist);
+
+    char manifest_path[1024];
+    snprintf(manifest_path, sizeof(manifest_path), "%s/manifest", reg_dir);
+    FILE *mf = fopen(manifest_path, "w");
+    if (mf) {
+        fprintf(mf, "name=%s\n", pkg.name);
+        fprintf(mf, "version=%s\n", pkg.version);
+        fprintf(mf, "description=%s\n", pkg.description);
+        fprintf(mf, "arch=%s\n", pkg.arch);
+        fprintf(mf, "install_dir=%s\n", install_dir);
+        fprintf(mf, "depends=");
+        for (int i = 0; i < pkg.depends_count; i++)
+            fprintf(mf, "%s%s", i > 0 ? "," : "", pkg.depends[i]);
+        fprintf(mf, "\n");
+        fprintf(mf, "required_by=%s\n", requested_by ? requested_by : "");
+        fprintf(mf, "explicit=%d\n", explicit);
+        fclose(mf);
     }
-    fclose(created);
 
     /* update required_by for each dependency that's already installed */
     for (int i = 0; i < pkg.depends_count; i++) {
-        if (is_installed(pkg.depends[i])) {
+        if (is_installed(pkg.depends[i]))
             manifest_list_add(pkg.depends[i], "required_by", name);
-        }
     }
 
-    /* => installed to /path */
     fprintf(stdout, "%s=>%s installed to %s%s%s\n", ANSI_CYAN, ANSI_RESET, ANSI_DIM, install_dir, ANSI_RESET);
     fprintf(stdout, "%s[*]%s %s %sinstalled%s\n", ANSI_GREEN, ANSI_RESET, pkg.name, ANSI_GREEN, ANSI_RESET);
 
-    if (remove_tree(tmp_dir) != 0)
-        log_warn("could not clean temporary files");
-    else
-        g_active_tmp[0] = '\0';
     return 0;
 }
 #pragma GCC diagnostic pop
