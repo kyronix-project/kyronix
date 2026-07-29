@@ -71,7 +71,7 @@ performance, security and stability.
 - epoll, poll, select
 - Continuous integration test suite
 
-### Experimental security hooks
+### Security hooks
 
 `PHANTOM_FORKING` records suspicious faults, VFS access and network activity.
 Trap mode can create a COW sandbox with an isolated synthetic VFS, dummy crypto
