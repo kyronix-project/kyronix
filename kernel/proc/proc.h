@@ -62,13 +62,13 @@ typedef struct proc {
     uint8_t fpu_state[512] __attribute__((aligned(16)));
     uint64_t sig_altstack_sp;
     uint64_t sig_altstack_size;
-    uint8_t on_sigstack;  /* currently executing a handler on the alt stack */
-    uint64_t pages_alloc; /* pages allocated via brk/mmap */
-    uint64_t pages_freed; /* pages freed via munmap/shrink brk */
-    uint32_t jail_id;     /* 0 = host; appended at end so sched.S offsets stay fixed */
-    uint8_t jail_exempt;  /* inherited; init=1, suppresses auto-isolation */
-    uint8_t phantom_sandbox; /* network/VFS simulation is enabled for this process */
-    uint8_t phantom_pending; /* trap observed; clone at the next safe syscall point */
+    uint8_t on_sigstack;  // currently executing a handler on the alt stack
+    uint64_t pages_alloc; // pages allocated via brk/mmap
+    uint64_t pages_freed; // pages freed via munmap/shrink brk
+    uint32_t jail_id;     // 0 = host; appended at end so sched.S offsets stay fixed
+    uint8_t jail_exempt;  // inherited; init=1, suppresses auto-isolation
+    uint8_t phantom_sandbox; // network/vfs simulation is enabled for this process
+    uint8_t phantom_pending; // trap observed; clone at the next safe syscall point
     uint16_t phantom_score;
     uint8_t phantom_clone_count;
     uint64_t phantom_score_tick;
@@ -79,27 +79,27 @@ typedef struct proc {
     uint8_t phantom_fault_job_pending;
     uint32_t phantom_sandbox_pid;
 
-    uint32_t tracer_pid;          /* 0 = not traced */
-    uint8_t ptrace_stopped;       /* currently in ptrace-stop, waiting for tracer */
-    uint8_t ptrace_reported;      /* this stop was already handed back via wait4 */
-    uint8_t ptrace_stop_sig;      /* signal reported to the tracer for this stop */
-    uint8_t ptrace_syscall_trace; /* PTRACE_SYSCALL: stop at syscall enter/exit */
-    uint8_t ptrace_in_syscall;    /* toggles enter/exit for PTRACE_SYSCALL */
-    uint8_t ptrace_step;          /* one-shot: set TF before next resume (PTRACE_SINGLESTEP) */
-    uint8_t ptrace_frame_kind;    /* 0=none, 1=syscall_frame_t*, 2=cpu_state_t* */
-    void *ptrace_frame;           /* frame the tracee is stopped in, valid while stopped */
-    uint64_t ptrace_orig_rax;     /* syscall nr as of entry; rax itself gets clobbered by the
-                                   * return value before an exit-stop can report it */
+    uint32_t tracer_pid;          // 0 = not traced
+    uint8_t ptrace_stopped;       // currently in ptrace-stop, waiting for tracer
+    uint8_t ptrace_reported;      // this stop was already handed back via wait4
+    uint8_t ptrace_stop_sig;      // signal reported to the tracer for this stop
+    uint8_t ptrace_syscall_trace; // PTRACE_SYSCALL: stop at syscall enter/exit
+    uint8_t ptrace_in_syscall;    // toggles enter/exit for PTRACE_SYSCALL
+    uint8_t ptrace_step;          // one-shot: set TF before next resume (PTRACE_SINGLESTEP)
+    uint8_t ptrace_frame_kind;    // 0=none, 1=syscall_frame_t*, 2=cpu_state_t*
+    void *ptrace_frame;           // frame the tracee is stopped in, valid while stopped
+    uint64_t ptrace_orig_rax;     // syscall nr as of entry; rax itself gets clobbered by the
+                                  // return value before an exit-stop can report it
 
-    uint8_t stop_sig;      /* job-control (SIGTSTP/SIGSTOP) stop signal, valid while PROC_STOPPED */
-    uint8_t stop_reported; /* this stop was already handed back via wait4(WUNTRACED) */
-    uint8_t job_stopped;   /* loop condition for proc_job_stop(); state alone can't be used since
-                            * sched_yield_blocking() unconditionally resets state to PROC_WAITING */
+    uint8_t stop_sig;      // job-control (SIGTSTP/SIGSTOP) stop signal, valid while PROC_STOPPED
+    uint8_t stop_reported; // this stop was already handed back via wait4(WUNTRACED)
+    uint8_t job_stopped;   // loop condition for proc_job_stop(); state alone can't be used since
+                           // sched_yield_blocking() unconditionally resets state to PROC_WAITING
 
-    /* supplementary groups */
+    // supplementary groups
     uint32_t sup_groups[64];
     int ngroups;
-    volatile uint32_t anti_toctou_pending_us; /* consumed at the next syscall safe point */
+    volatile uint32_t anti_toctou_pending_us; // consumed at the next syscall safe point
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX] __attribute__((aligned(16)));

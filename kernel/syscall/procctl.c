@@ -283,7 +283,7 @@ int64_t sys_clone(uint64_t flags, uint64_t child_stack, uint32_t *ptid, uint32_t
     proc_t *child = proc_alloc(parent->pid);
     if (!child) return -(int64_t) ENOMEM;
 
-    child->space = parent->space; /* shared address space */
+    child->space = parent->space; // shared address space
     child->is_thread = 1;
 
     if (flags & CLONE_FILES) {
@@ -380,7 +380,7 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
         vfs_node_unref_internal(node);
         return -(int64_t) ENOENT;
     }
-    /* lazy-load file data if needed */
+    // lazy-load file data if needed
     if (!node->data && node->fs_ops && node->fs_ops->read)
         node->fs_ops->read(node, NULL, 0, node->size);
     if (!node->data) {
@@ -557,7 +557,7 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
     uint32_t exec_mode = node->mode;
     uint32_t exec_uid  = node->uid;
     uint32_t exec_gid  = node->gid;
-    vfs_node_unref_internal(node); /* data is now mapped; release our ref */
+    vfs_node_unref_internal(node); // data is now mapped; release our ref
     node = NULL;
 
     if (res.interp[0]) {
@@ -568,7 +568,7 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
             FREE_EXEC_STRS();
             return -(int64_t) ENOENT;
         }
-        /* lazy-load interpreter data if needed */
+        // lazy-load interpreter data if needed
         if (!inode->data && inode->fs_ops && inode->fs_ops->read)
             inode->fs_ops->read(inode, NULL, 0, inode->size);
         if (!inode->data) {
@@ -609,7 +609,7 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
     strncpy(p->exe_path, exec_path, sizeof(p->exe_path) - 1);
     g_current_space = p->space;
 
-    /* setuid/setgid on exec: elevate euid/egid to file owner */
+    // setuid/setgid on exec: elevate euid/egid to file owner
     if (exec_mode & S_ISUID) {
         p->suid = p->euid = p->fsuid = exec_uid;
     }
@@ -631,12 +631,12 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
         }
     }
 
-    fpu_init(); /* exec gives the new image a clean, all-masked FPU/SSE state */
+    fpu_init(); // exec gives the new image a clean, all-masked FPU/SSE state
 
     if (g_jail_auto_isolate && !p->jail_exempt) {
         kjail_conf_t cfg;
         memset(&cfg, 0, sizeof(cfg));
-        cfg.flags = JAILF_ALL; /* empty root => same fs view, fresh pid/ipc namespace */
+        cfg.flags = JAILF_ALL; // empty root => same fs view, fresh pid/ipc namespace
         int jid = jail_create(p->jail_id, &cfg, p->euid);
         if (jid > 0) jail_enter(p, (uint32_t) jid);
     }
@@ -659,7 +659,7 @@ __attribute__((noreturn)) void proc_do_exit(int code) {
     proc_t *p = cur();
     log_info("[pid %u] exit(%d)", p->pid, code);
 
-    /* clear stale pipe waiting pointer before slot is reused */
+    // clear stale pipe waiting pointer before slot is reused
     if (p->blocked_pipe) {
         pipe_t *bp = (pipe_t *) p->blocked_pipe;
         pipe_cancel_wait(bp, p);
@@ -710,7 +710,7 @@ __attribute__((noreturn)) void proc_do_exit(int code) {
             cpu_set_kernel_stack(nt->kstack_top);
             sched_switch(nt);
         }
-        /* unreachable: this thread is dead and never scheduled again */
+        // unreachable: this thread is dead and never scheduled again
         cpu_halt();
     }
 

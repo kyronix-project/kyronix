@@ -56,7 +56,7 @@ proc_t *proc_alloc(uint32_t ppid) {
         for (int pg = 0; pg < KSTACK_PAGES; pg++) {
             void *phys = pmm_alloc_zeroed();
             if (!phys) {
-                /* free already-mapped pages */
+                // free already-mapped pages
                 for (int j = 0; j < pg; j++) {
                     uint64_t va = guard_va + PAGE_SIZE + (uint64_t) j * PAGE_SIZE;
                     uint64_t pa = vmm_virt_to_phys(&g_kernel_space, va);
@@ -112,7 +112,7 @@ proc_t *proc_alloc(uint32_t ppid) {
         p->cwd[0] = '/';
         p->cwd[1] = '\0';
 
-        /* default x87 fpu + sse state: clean area, mask all exceptions */
+        // default x87 fpu + sse state: clean area, mask all exceptions
         memset(p->fpu_state, 0, sizeof(p->fpu_state));
         ((uint16_t *) p->fpu_state)[0] = 0x037F;        /* FCW */
         ((uint32_t *) (p->fpu_state + 24))[0] = 0x1F80; /* MXCSR */
@@ -126,13 +126,13 @@ proc_t *proc_alloc(uint32_t ppid) {
 
 void proc_reap_pending(void) {
     proc_t *p = g_reap_thread;
-    if (!p || p == g_current_proc) return; /* never free the stack we are running on */
+    if (!p || p == g_current_proc) return; // never free the stack we are running on
     g_reap_thread = NULL;
     proc_unref(p);
 }
 
 void proc_defer_thread_reap(proc_t *p) {
-    proc_reap_pending(); /* flush any previous one first (not on its stack) */
+    proc_reap_pending(); // flush any previous one first (not on its stack)
     g_reap_thread = p;
 }
 
@@ -169,7 +169,7 @@ proc_t *proc_next_ready(proc_t *skip) {
     uint64_t ready = __atomic_load_n(&g_ready_mask, __ATOMIC_ACQUIRE);
     int start = ((int) g_last_scheduled[cpu] + 1) % PROC_MAX;
 
-    /* Fast path: bitmap scan from start, wrap around */
+    // fast path: bitmap scan from start, wrap around
     uint64_t mask = ready >> start;
     while (mask) {
         int bit = __builtin_ctzll(mask) + start;
@@ -219,11 +219,9 @@ proc_t *proc_idle_until_ready(proc_t *skip) {
 void sched_block_current(void) {
     proc_t *p = g_current_proc;
     proc_clear_ready(p);
-    /*
-     * A waker may have published us after the caller changed state but before
-     * we reached the scheduler. Consume that wake locally instead of clearing
-     * its ready bit and sleeping forever.
-     */
+    // a waker may have published us after the caller changed state but before
+    // we reached the scheduler. consume that wake locally instead of clearing
+    // its ready bit and sleeping forever
     if (__sync_bool_compare_and_swap(&p->state, PROC_READY, PROC_RUNNING)) {
         proc_clear_ready(p);
         return;

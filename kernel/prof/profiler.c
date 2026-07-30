@@ -6,7 +6,6 @@
 #include "lib/printf.h"
 #include "lib/string.h"
 
-/* Freestanding qsort (insertion sort — fine for < 512 elements) */
 static void _psort(void *base, size_t nmemb, size_t size, int (*cmp)(const void *, const void *)) {
     char *arr = (char *) base;
     for (size_t i = 1; i < nmemb; i++) {
@@ -38,13 +37,13 @@ static inline uint64_t read_rip(void) {
     return rip;
 }
 
-/* Walk the kernel stack for return addresses (same approach as kernel_backtrace) */
+// walk the kernel stack for return addresses (same approach as kernel_backtrace)
 static int stack_walk(uint64_t rbp, uint64_t *out, int max) {
     int n = 0;
     uint64_t frame = rbp;
-    /* Sanity: frame must be in kernel address space */
+    // frame must be in kernel address space
     if (frame < KTEXT_LO || frame >= KTEXT_HI) {
-        /* Try scanning from current RBP upwards */
+        // try scanning from current RBP upwards
         __asm__ volatile("mov %%rbp, %0" : "=r"(frame));
     }
     while (frame >= KTEXT_LO && frame < KTEXT_HI && n < max) {
@@ -66,12 +65,12 @@ void prof_tick(uint64_t rip, uint32_t pid) {
     s->rip = rip;
     s->pid = pid;
 
-    /* Walk kernel stack from current RBP */
+    // walk kernel stack from current RBP
     uint64_t rbp;
     __asm__ volatile("mov %%rbp, %0" : "=r"(rbp));
     s->depth = (uint8_t) stack_walk(rbp, s->stack, PROF_STACK_DEPTH);
 
-    /* Advance ring buffer */
+    // advance ring buffer
     g_ring.write_idx = (idx + 1) & (PROF_RING_SIZE - 1);
     if (g_ring.count < PROF_RING_SIZE)
         g_ring.count++;
@@ -113,8 +112,8 @@ static int cmp_count_desc(const void *a, const void *b) {
 }
 
 static int aggregate_top(addr_count_t *out, int max_out) {
-    /* Collect unique addresses and counts from the ring buffer.
-     * Use a simple open-addressed hash table on stack. */
+    // collect unique addresses and counts from the ring buffer.
+    // use a simple open-addressed hash table on stack
     addr_count_t table[512];
     int table_n = 0;
     memset(table, 0, sizeof(table));
@@ -126,7 +125,7 @@ static int aggregate_top(addr_count_t *out, int max_out) {
         uint32_t idx = (start + i) & (PROF_RING_SIZE - 1);
         uint64_t addr = g_ring.ring[idx].rip;
 
-        /* Linear probe hash */
+        // Linear probe hash
         uint32_t h = (uint32_t) (addr >> 3) & 511;
         while (table[h].addr != 0 && table[h].addr != addr) { h = (h + 1) & 511; }
         if (table[h].addr == 0) table[h].addr = addr;
@@ -134,7 +133,7 @@ static int aggregate_top(addr_count_t *out, int max_out) {
         if (table_n < 512) table_n++;
     }
 
-    /* Compact non-zero entries */
+    // Compact non-zero entries
     int out_n = 0;
     for (int i = 0; i < 512 && out_n < max_out; i++) {
         if (table[i].addr != 0) { out[out_n++] = table[i]; }
@@ -168,7 +167,7 @@ static int aggregate_per_process(pid_count_t *out, int max_out) {
         uint32_t idx = (start + i) & (PROF_RING_SIZE - 1);
         uint32_t pid = g_ring.ring[idx].pid;
 
-        /* Find or insert */
+        // Find or insert
         int slot = -1;
         for (int j = 0; j < 64; j++) {
             if (table[j].pid == pid) {

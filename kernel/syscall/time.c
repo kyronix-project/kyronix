@@ -75,7 +75,7 @@ int64_t sys_clock_nanosleep(int clockid, int flags, const void *req, void *rem) 
     uint64_t target_ms = sec * 1000 + nsec / 1000000;
 
     uint64_t ms;
-    if (flags & 1) { /* TIMER_ABSTIME: req is an absolute time, sleep until then */
+    if (flags & 1) { // TIMER_ABSTIME: req is an absolute time, sleep until then
         uint64_t now_ms = clockid == 0 ? realtime_now_ms() : g_ticks;
         ms = target_ms > now_ms ? target_ms - now_ms : 0;
     } else {
@@ -186,7 +186,7 @@ int64_t sys_times(void *b) {
         if (!uptr_ok_w(b, 32)) return -(int64_t) EFAULT;
         memset(b, 0, 32);
     }
-    return (int64_t) (g_ticks + 1); /* monotonic tick count, always > 0 */
+    return (int64_t) (g_ticks + 1);
 }
 
 int64_t sys_alarm(uint32_t seconds) {

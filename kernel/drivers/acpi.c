@@ -13,14 +13,14 @@
 
 struct acpi_rsdp {
     char signature[8];
-    uint8_t checksum; /* covers the first 20 bytes */
+    uint8_t checksum; // covers the first 20 bytes
     char oem_id[6];
     uint8_t revision;
     uint32_t rsdt_addr;
 
     uint32_t length;
     uint64_t xsdt_addr;
-    uint8_t ext_checksum; /* covers the structure */
+    uint8_t ext_checksum; // covers the structure
     uint8_t reserved[3];
 } __attribute__((packed));
 
@@ -101,18 +101,18 @@ struct acpi_fadt {
     // other fields unused
 } __attribute__((packed));
 
-/* FADT.flags bit 10: reset register supported. */
+// FADT.flags bit 10: reset register supported
 #define FADT_RESET_REG_SUP (1u << 10)
 
-/* PM1 control register bits. */
+// PM1 control register bits
 #define SLP_EN (1u << 13)
 #define SCI_EN (1u << 0)
 #define SLP_TYP_SHIFT 10
 
 static bool g_acpi_ok = false;
 
-static uint32_t g_pm1a_cnt = 0; /* I/O port of PM1a control block */
-static uint32_t g_pm1b_cnt = 0; /* I/O port of PM1b control block (0 = none) */
+static uint32_t g_pm1a_cnt = 0; // I/O port of PM1a control block
+static uint32_t g_pm1b_cnt = 0; // I/O port of PM1b control block (0 = none)
 static uint32_t g_smi_cmd = 0;
 static uint8_t g_acpi_enable = 0;
 static uint16_t g_sci_int = 0;
@@ -180,7 +180,7 @@ static void acpi_parse_s5(const struct acpi_sdt_header *dsdt) {
         if (p[0] != '_' || p[1] != 'S' || p[2] != '5' || p[3] != '_') continue;
 
         const uint8_t *q = p + 4;
-        if (q >= end || *q != 0x12) continue; /* PackageOp */
+        if (q >= end || *q != 0x12) continue; // PackageOp
         q++;
 
         /* top two bits of the first byte give the number of
@@ -199,7 +199,7 @@ static void acpi_parse_s5(const struct acpi_sdt_header *dsdt) {
         int n = aml_decode_int(q, end, &a);
         if (n < 0) continue;
         q += n;
-        (void) aml_decode_int(q, end, &b); /* second element is optional */
+        (void) aml_decode_int(q, end, &b); // second element is optional
 
         g_slp_typ_a = a & 0x7;
         g_slp_typ_b = b & 0x7;

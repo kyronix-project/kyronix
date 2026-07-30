@@ -33,7 +33,7 @@ bool is_root(void) {
     return p && p->euid == 0;
 }
 
-/* host-global privilege: euid 0 AND not confined by a JAILF_PRIV jail */
+// host-global privilege: euid 0 AND not confined by a JAILF_PRIV jail
 bool host_priv(void) { return jail_host_priv(cur()); }
 
 int64_t sys_setfsuid(uint32_t uid) {

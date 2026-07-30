@@ -121,7 +121,7 @@ void net_receive(const uint8_t *eth_frame, uint16_t len) {
 void net_poll(void) {
     const net_driver_ops_t *ops = driver_acquire(true);
     if (ops) {
-        ops->poll(); /* drain rx -> works even if irq does not fire on q35 */
+        ops->poll(); // drain rx -> works even if irq does not fire on q35
         driver_release();
     }
     static uint8_t s_ctr;

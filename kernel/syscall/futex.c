@@ -116,7 +116,7 @@ int64_t sys_futex(uint32_t *uaddr, int op, uint32_t val, void *timeout, uint32_t
         if (!uaddr2 || !uptr_ok(uaddr2, sizeof(*uaddr2))) return -(int64_t) EFAULT;
         if (cmd == FUTEX_CMP_REQUEUE && *uaddr != val3) return -(int64_t) EAGAIN;
         uint32_t nr_wake = val;
-        uint32_t nr_requeue = (uint32_t) (uint64_t) timeout; /* val2 rides in the timeout slot */
+        uint32_t nr_requeue = (uint32_t) (uint64_t) timeout; // val2 rides in the timeout slot
         proc_t *self = cur();
         int woken = 0, requeued = 0;
         spin_lock(&g_futex_lock);
@@ -131,7 +131,7 @@ int64_t sys_futex(uint32_t *uaddr, int op, uint32_t val, void *timeout, uint32_t
                 g_futex_tab[i].proc = NULL;
                 woken++;
             } else if ((uint32_t) requeued < nr_requeue) {
-                g_futex_tab[i].uaddr = uaddr2; /* move waiter to the new futex */
+                g_futex_tab[i].uaddr = uaddr2; // move waiter to the new futex
                 requeued++;
             }
         }

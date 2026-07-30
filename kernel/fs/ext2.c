@@ -684,12 +684,12 @@ static uint32_t indirect_blocks_for_data(uint32_t data_blocks) {
     if (remaining <= 12u) return 0;
     remaining -= 12u;
 
-    metadata++; /* single-indirect root */
+    metadata++; // single-indirect root
     uint64_t used = remaining < ptrs ? remaining : ptrs;
     remaining -= used;
 
     if (remaining) {
-        metadata++; /* double-indirect root */
+        metadata++; // double-indirect root
         uint64_t capacity = ptrs * ptrs;
         used = remaining < capacity ? remaining : capacity;
         metadata += (used + ptrs - 1u) / ptrs;
@@ -697,7 +697,7 @@ static uint32_t indirect_blocks_for_data(uint32_t data_blocks) {
     }
 
     if (remaining) {
-        metadata++; /* triple-indirect root */
+        metadata++; // triple-indirect root
         uint64_t double_capacity = ptrs * ptrs;
         metadata += (remaining + double_capacity - 1u) / double_capacity;
         metadata += (remaining + ptrs - 1u) / ptrs;
@@ -1159,8 +1159,6 @@ static uint32_t create_disk_node(vfs_node_t *node, uint32_t parent_ino) {
     return 0;
 }
 
-/* ---- fs_ops for demand-loaded regular files ---- */
-
 static int64_t ext2_reg_read(vfs_node_t *n, char *buf, uint64_t off, uint64_t len) {
     if (!n->data && !buf && n->size > 0) {
         uint32_t ino_nr = (uint32_t) (uintptr_t) n->fs_private;
@@ -1225,7 +1223,7 @@ static struct vfs_fs_ops ext2_reg_ops = {
     .close = ext2_reg_close,
 };
 
-/* ---- sync ---- */
+// sync
 
 static void sync_walk(vfs_node_t *node, uint32_t parent_ext2_ino) {
     if (!node || node->deleted) return;

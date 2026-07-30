@@ -37,4 +37,4 @@ int prof_is_active(void);
 int prof_render(char *buf, uint64_t bufsz);
 void prof_print(void);
 
-#endif /* CONFIG_PROFILER */
+#endif

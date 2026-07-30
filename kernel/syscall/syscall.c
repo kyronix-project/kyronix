@@ -179,7 +179,7 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = sys_mremap(a1, a2, a3, a4, a5);
         break;
     case 26:
-        ret = 0; /* noop ramfs*/
+        ret = 0; // noop ramfs
         break;
     case 27:
         if (a3) {
@@ -1048,7 +1048,7 @@ void syscall_dispatch(syscall_frame_t *f) {
     case 278:
     case 279:
         ret = -(int64_t) ENOSYS;
-        break; /* get_robust_list/splice/tee/sync_file_range/vmsplice/move_pages */
+        break; // get_robust_list/splice/tee/sync_file_range/vmsplice/move_pages
     case 280: {
         if (a3 && !uptr_ok((void *) a3, 32)) {
             ret = -(int64_t) EFAULT;

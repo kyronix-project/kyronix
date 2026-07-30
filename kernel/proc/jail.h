@@ -63,20 +63,20 @@ void jail_init(void);
 jail_t *jail_find(uint32_t id);
 
 int jail_create(uint32_t parent_jid, const kjail_conf_t *cfg, uint32_t creator_uid);
-void jail_ref(uint32_t jid);                   /* a new proc joined jid (fork inherit) */
-void jail_unref(uint32_t jid);                 /* a live proc left jid */
-void jail_retire(uint32_t jid);                /* kernel policy: destroy after last proc exits */
-void jail_reap(uint32_t jid);                  /* release a dying jail after zombie reap */
-bool jail_can_fork(uint32_t jid);              /* false if jid is dting or at max_procs */
-void jail_enter(struct proc *p, uint32_t jid); /* transition current proc into jid */
+void jail_ref(uint32_t jid);                   // a new proc joined jid (fork inherit)
+void jail_unref(uint32_t jid);                 // a live proc left jid
+void jail_retire(uint32_t jid);                // kernel policy: destroy after last proc exits
+void jail_reap(uint32_t jid);                  // release a dying jail after zombie reap
+bool jail_can_fork(uint32_t jid);              // false if jid is dting or at max_procs
+void jail_enter(struct proc *p, uint32_t jid); // transition current proc into jid
 int jail_remove(uint32_t jid, const struct proc *requester);
 
 bool jail_is_descendant(uint32_t a, uint32_t b);
 
 bool jail_can_see(const struct proc *observer, const struct proc *target);
-bool jail_host_priv(const struct proc *p); /* euid==0 and not confined by JAILF_PRIV */
+bool jail_host_priv(const struct proc *p); // euid==0 and not confined by JAILF_PRIV
 
-const char *jail_root_current(void);                   /* "" if host / no JAILF_FS */
-void path_canon(const char *in, char *out, size_t sz); /* clamp ".." at "/" */
+const char *jail_root_current(void);  // "" if host / no JAILF_FS
+void path_canon(const char *in, char *out, size_t sz); // clamp ".." at "/"
 void jail_canon_clamp(char *path, size_t sz, const char *root);
-void jail_strip_root(char *abs, size_t sz); /* host->jail-relative for getcwd */
+void jail_strip_root(char *abs, size_t sz); // host->jail-relative for getcwd

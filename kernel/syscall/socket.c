@@ -369,15 +369,15 @@ int64_t sys_socket_recvmsg(int fd, void *mhdr, int flags) {
                                       isf->flags);
             if (r < 0) return r;
             void *name = (void *) m[0];
-            uint32_t namelen = ((uint32_t *) mhdr)[2]; /* msg_namelen at offset 8 */
+            uint32_t namelen = ((uint32_t *) mhdr)[2]; // msg_namelen at offset 8
             if (name && namelen >= sizeof(src) && uptr_ok_w(name, sizeof(src))) {
                 memcpy(name, &src, sizeof(src));
                 ((uint32_t *) mhdr)[2] = (uint32_t) sizeof(src);
             } else {
                 ((uint32_t *) mhdr)[2] = 0;
             }
-            m[5] = 0;                    /* msg_controllen */
-            ((uint32_t *) mhdr)[12] = 0; /* msg_flags */
+            m[5] = 0;                    // msg_controllen
+            ((uint32_t *) mhdr)[12] = 0; // msg_flags
             return r;
         }
     }

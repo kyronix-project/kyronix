@@ -16,7 +16,7 @@
 #define FAT_ATTR_ARC 0x20
 #define FAT_ATTR_LFN 0x0F
 
-/* 255 UTF-16 chars max, 13 per LFN entry */
+// 255 UTF-16 chars max, 13 per LFN entry
 #define FAT32_LFN_SLOTS 20
 #define FAT32_MAX_FILE (64u * 1024u * 1024u)
 #define FAT32_MAX_DEPTH 16

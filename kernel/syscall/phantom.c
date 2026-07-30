@@ -80,11 +80,10 @@ int64_t sys_phantom_control(uint32_t action, uint32_t pid) {
     target->phantom_quarantined = 0;
     spin_unlock(&g_proctable_lock);
 
-    /*
-     * The target marked itself quarantined before calling sched_switch().
-     * Do not publish its kernel stack on another CPU until that switch has
-     * removed it from every per-CPU current slot.
-     */
+     // the target marked itself quarantined before calling sched_switch().
+     // do not publish its kernel stack on another cpu until that switch has
+     // removed it from every per-cpu current slot
+
     while (phantom_proc_on_cpu(target)) cpu_relax();
 
     spin_lock(&g_proctable_lock);

@@ -102,7 +102,7 @@ static int poll_check(struct pollfd_s *fds, uint64_t nfds) {
             if ((fds[i].events & POLLIN) && fd_pollin(fds[i].fd)) fds[i].revents |= POLLIN;
             if ((fds[i].events & POLLOUT) && fd_pollout(fds[i].fd)) fds[i].revents |= POLLOUT;
             if (fd_pollhup(fds[i].fd))
-                fds[i].revents |= POLLHUP; /* HUP reported regardless of events */
+                fds[i].revents |= POLLHUP; // HUP reported regardless of events
         }
         if (fds[i].revents) ready++;
     }

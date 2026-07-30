@@ -54,7 +54,7 @@ int64_t sys_getcwd(char *buf, uint64_t size) {
     char tmp[512];
     strncpy(tmp, p ? p->cwd : g_cwd, sizeof(tmp) - 1);
     tmp[sizeof(tmp) - 1] = '\0';
-    jail_strip_root(tmp, sizeof(tmp)); /* report jail-relative cwd to the process */
+    jail_strip_root(tmp, sizeof(tmp)); // report jail-relative cwd to the process
     size_t len = strlen(tmp) + 1;
     if (len > size) return -(int64_t) EINVAL;
     memcpy(buf, tmp, len);
@@ -146,16 +146,16 @@ int64_t sys_statfs(const char *path, void *buf) {
     if (buf) {
         if (!uptr_ok_w(buf, 120)) return -(int64_t) EFAULT;
         memset(buf, 0, 120);
-        uint64_t *w = (uint64_t *) buf; /* Linux struct statfs */
-        w[0] = 0x858458f6;              /* f_type = RAMFS_MAGIC */
-        w[1] = 4096;                    /* f_bsize  */
-        w[2] = 65536;                   /* f_blocks */
-        w[3] = 65536;                   /* f_bfree  */
-        w[4] = 65536;                   /* f_bavail */
-        w[5] = 4096;                    /* f_files  */
-        w[6] = 4096;                    /* f_ffree  */
-        w[8] = 255;                     /* f_namelen */
-        w[9] = 4096;                    /* f_frsize  */
+        uint64_t *w = (uint64_t *) buf;
+        w[0] = 0x858458f6;              // f_type = RAMFS_MAGIC
+        w[1] = 4096;                    // f_bsize 
+        w[2] = 65536;                   // f_blocks
+        w[3] = 65536;                   // f_bfree 
+        w[4] = 65536;                   // f_bavail
+        w[5] = 4096;                    // f_files
+        w[6] = 4096;                    // f_ffree
+        w[8] = 255;                     // f_namelen
+        w[9] = 4096;                    // f_frsize
     }
     return 0;
 }

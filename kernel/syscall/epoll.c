@@ -94,7 +94,7 @@ int64_t sys_epoll_create1(int flags) {
         }
     }
     int epfd =
-        fd_open_host("/dev/null", O_RDONLY, 0); /* internal handle: not subject to jail root */
+        fd_open_host("/dev/null", O_RDONLY, 0); // internal handle: not subject to jail root
     if (epfd < 0) {
         spin_unlock(&g_epolls_lock);
         return -(int64_t) EMFILE;
@@ -181,14 +181,14 @@ int64_t sys_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int 
             if (!got) {
                 if ((ep->w[i].events & EPOLLIN) && fd_pollin(wfd)) got |= EPOLLIN;
                 if ((ep->w[i].events & EPOLLOUT) && fd_pollout(wfd)) got |= EPOLLOUT;
-                if (fd_pollhup(wfd)) got |= EPOLLHUP; /* HUP reported regardless of interest */
+                if (fd_pollhup(wfd)) got |= EPOLLHUP; // HUP reported regardless of interest
             }
             if (got) {
                 events[n].events = got;
                 events[n].data = ep->w[i].data;
                 n++;
                 if (ep->w[i].events & EPOLLONESHOT)
-                    ep->w[i].events &= ~(EPOLLIN | EPOLLOUT); /* disarm until re-armed via MOD */
+                    ep->w[i].events &= ~(EPOLLIN | EPOLLOUT); // disarm until re-armed via MOD
             }
         }
         if (n > 0 || timeout == 0 || (deadline != UINT64_MAX && g_ticks >= deadline)) return n;

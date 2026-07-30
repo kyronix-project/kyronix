@@ -3,7 +3,7 @@
 #include "proc/proc.h"
 #include "syscall.h"
 
-/* errno values shared across the syscall implementation modules */
+// errno values shared across the syscall implementation modules
 #define EPERM 1
 #define ENOENT 2
 #define ESRCH 3
@@ -37,10 +37,10 @@
 #define ETIMEDOUT 110
 #define ECONNREFUSED 111
 
-/* current process shortcut */
+// current process shortcut
 static inline proc_t *cur(void) { return g_current_proc; }
 
-/* Shared privilege/path helpers (defined in syscall.c). */
+// shared privilege/path helpers
 bool is_root(void);
 bool host_priv(void);
 bool path_abs(char *out, const char *in);

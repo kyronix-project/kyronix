@@ -190,7 +190,7 @@ int64_t sys_mmap(uint64_t addr, uint64_t length, uint64_t prot, uint64_t flags, 
     bool reserve_only = (prot & (PROT_READ | PROT_WRITE | PROT_EXEC)) == 0;
 
     if (!(flags & MAP_ANON)) {
-        /* chr-dev with custom mmap (e.g. UIO physical BAR mapping) */
+        // chr-dev with custom mmap (e.g. uio physical bar mapping)
         if (fn->type == VFS_TYPE_CHR && fn->chr_mmap) {
             int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, false);
             if (rc < 0) return rc;
@@ -209,10 +209,10 @@ int64_t sys_mmap(uint64_t addr, uint64_t length, uint64_t prot, uint64_t flags, 
         if (rc < 0) return rc;
         if (reserve_only) return (int64_t) va;
 
-        /* Lazily load file data if filesystem hasn't populated fn->data yet (ext2) */
+        // lazily load file data if filesystem hasnt populated fn->data yet (ext2)
         if (!fn->data && fn->fs_ops && fn->fs_ops->read) fn->fs_ops->read(fn, NULL, 0, 0);
 
-        /* file-backed: MAP_PRIVATE - allocate pages and copy file content */
+        // file-backed: MAP_PRIVATE - allocate pages and copy file content
         uint64_t file_size = fn->size;
         uint64_t nallocd_file = 0;
         for (uint64_t o = 0; o < length; o += PAGE_SIZE) {

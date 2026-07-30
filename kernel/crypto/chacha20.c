@@ -182,7 +182,7 @@ void chacha20_rng_bytes(struct chacha20_rng *rng, uint8_t *buf, size_t len) {
     spin_unlock(&g_chacha20_rng_lock);
     irq_restore(flags);
 }
-/* fold data to 32 byte*/
+// fold data to 32 byte
 static void chacha20_rng_fold(uint8_t out[32], const uint8_t *data, size_t len) {
     static const uint8_t init[64] = "kyronix kyronix";
     struct chacha20_ctx ctx;
@@ -211,7 +211,7 @@ static void chacha20_rng_fold(uint8_t out[32], const uint8_t *data, size_t len) 
 
     for (i = 0; i < 32; i++) out[i] = state[i] ^ state[i + 32];
 }
-/* mix data to rng */
+// mix data to rng
 void chacha20_rng_mix(struct chacha20_rng *rng, const uint8_t *data, size_t len) {
     uint8_t folded[32];
     uint8_t seed[32];

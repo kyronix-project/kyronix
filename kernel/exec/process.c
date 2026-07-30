@@ -23,7 +23,7 @@ uint64_t kern_rand64(void) {
 
 #define STACK_MAX_ARGS 4096
 
-/* write bytes into user stack pages, handling page boundaries */
+// write bytes into user stack pages, handling page boundaries
 static void stack_write(uint64_t uva, const void *src, uint64_t len, uint64_t *phys_arr,
                         uint64_t stack_base) {
     const uint8_t *s = (const uint8_t *) src;
@@ -208,7 +208,7 @@ int process_exec(const void *data, uint64_t size, const char *name) {
     p->brk_base = p->brk;
     p->mmap_bump = 0x0000500000000000ULL + ((kern_rand64() & 0x1FFULL) << 21); /* +-1 GB aslr */
     p->jail_id = JAIL_HOST;
-    p->jail_exempt = 1; /* init lineage is never auto-isolated */
+    p->jail_exempt = 1; // init lineage is never auto-isolated
     p->state = PROC_RUNNING;
 
     vfs_copy_fdtable(p->fds, vfs_get_fdtable());

@@ -95,7 +95,7 @@ static pty_inst_t *pty_of(vfs_node_t *n) {
     return &g_ptys[idx];
 }
 
-/* master r/w/ioctl/close */
+// master r/w/ioctl/close
 static int64_t ptym_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     (void) off;
     pty_inst_t *p = pty_of(n);
@@ -114,7 +114,7 @@ static bool ptym_pollin(vfs_node_t *n) {
 
 static int64_t ptym_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
     pty_inst_t *p = pty_of(n);
-    /* truncate to 32 bits */
+    // truncate to 32 bits
     switch ((uint32_t) req) {
     case 0x80045430: /* TIOCGPTN */
         if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(int))) return -EFAULT;
@@ -152,7 +152,7 @@ static void ptym_close(vfs_node_t *n) {
     p->used = 0;
 }
 
-/* slave rw */
+// slave rw
 static int64_t ptys_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     (void) off;
     pty_inst_t *p = pty_of(n);
@@ -179,7 +179,7 @@ static bool ptys_pollin(vfs_node_t *n) {
     return p && p->m2s && p->m2s->count > 0;
 }
 
-/* called when /dev/ptmx is opened */
+// called when /dev/ptmx is opened
 static int ptmx_open(vfs_node_t *n, int flags) {
     (void) n;
     (void) flags;
@@ -216,7 +216,7 @@ static int ptmx_open(vfs_node_t *n, int flags) {
         pty->slave->mode = S_IFCHR | 0620;
     }
 
-    /* init ephemeral master node (not in vfs tree) */
+    // init ephemeral master node (not in vfs tree)
     vfs_node_t *mn = &pty->master_node;
     memset(mn, 0, sizeof(*mn));
     mn->type = VFS_TYPE_CHR;

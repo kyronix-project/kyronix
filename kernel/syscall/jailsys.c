@@ -8,7 +8,7 @@
 int64_t sys_jail_create(const kjail_conf_t *ucfg) {
     proc_t *p = cur();
     if (!p) return -(int64_t) EFAULT;
-    if (!jail_host_priv(p)) return -(int64_t) EPERM; /* jail creation is privileged */
+    if (!jail_host_priv(p)) return -(int64_t) EPERM; // jail creation is privileged
     if (!ucfg || !uptr_ok(ucfg, sizeof(kjail_conf_t))) return -(int64_t) EFAULT;
     kjail_conf_t cfg;
     memcpy(&cfg, ucfg, sizeof(cfg));
@@ -25,7 +25,7 @@ int64_t sys_jail_attach(uint32_t jid) {
     if (!p) return -(int64_t) EFAULT;
     jail_t *j = jail_find(jid);
     if (!j || j->state != JAIL_ACTIVE) return -(int64_t) ESRCH;
-    if (!jail_is_descendant(p->jail_id, jid)) return -(int64_t) EPERM; /* no escape upward */
+    if (!jail_is_descendant(p->jail_id, jid)) return -(int64_t) EPERM; // no escape upward
     if (!jail_can_fork(jid)) return -(int64_t) EAGAIN;
     jail_enter(p, jid);
     return 0;

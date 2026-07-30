@@ -32,7 +32,7 @@ int elf_load_into(vmm_space_t *space, const void *data, uint64_t size, uint64_t 
     uint64_t brk = 0, phdr_va = 0;
     bool have_load = false, entry_executable = false;
 
-    /* the phdr array itself is attacker controlled: bound it against the file. */
+    // the phdr array itself is attacker controlled: bound it against the file
     uint64_t ph_total = (uint64_t) eh->e_phnum * eh->e_phentsize;
     if (eh->e_phoff > size || ph_total > size - eh->e_phoff) return -1;
 
@@ -66,9 +66,9 @@ int elf_load_into(vmm_space_t *space, const void *data, uint64_t size, uint64_t 
 
         uint64_t vaddr = bias + ph->p_vaddr;
         // reject wrap and any segment that would touch the kernel half
-        if (vaddr < bias) return -1;                     /* bias + p_vaddr overflow */
-        if (vaddr + ph->p_memsz < vaddr) return -1;      /* vaddr + memsz overflow */
-        if (vaddr + ph->p_memsz > USER_LIMIT) return -1; /* maps into kernel half */
+        if (vaddr < bias) return -1;                     // bias + p_vaddr overflow
+        if (vaddr + ph->p_memsz < vaddr) return -1;      // vaddr + memsz overflow
+        if (vaddr + ph->p_memsz > USER_LIMIT) return -1; // maps into kernel half
         have_load = true;
         uint64_t entry = bias + eh->e_entry;
         if ((ph->p_flags & PF_X) && entry >= vaddr && entry - vaddr < ph->p_memsz)

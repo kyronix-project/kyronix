@@ -26,7 +26,7 @@ sched_switch:
 
     movq    %gs:CPU_CURRENT, %r15
 
-    /* Kernel idle tasks never use SIMD, so their dummy state need not be saved. */
+    // kernel idle tasks never use SIMD, so their dummy state need not be saved
     cmpl    $0, PROC_PID(%r15)
     je      1f
     fxsave64 PROC_FPU_STATE(%r15)

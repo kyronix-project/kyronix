@@ -46,8 +46,8 @@
 typedef struct {
     uint64_t sa_handler;
     uint64_t sa_flags;
-    uint64_t sa_restorer; /* user restorer: calls rt_sigreturn(15) */
-    uint64_t sa_mask;     /* extra blocked sigs during handler */
+    uint64_t sa_restorer; // user restorer: calls rt_sigreturn(15)
+    uint64_t sa_mask;     // extra blocked sigs during handler
 } k_sigaction_t;
 
 typedef struct {
@@ -58,15 +58,15 @@ typedef struct {
 } siginfo_t;
 
 typedef struct {
-    uint64_t r8, r9, r10, r11, r12, r13, r14, r15;    /* 64 */
-    uint64_t rdi, rsi, rbp, rbx, rdx, rax, rcx, rsp;  /* 64 */
-    uint64_t rip;                                     /*  8 */
-    uint64_t eflags;                                  /*  8 */
-    uint16_t cs, gs, fs, ss;                          /*  8 */
-    uint64_t err, trapno, oldmask, cr2;               /* 32 */
-    uint64_t fpstate; /* NULL = no FP state saved  */ /*  8 */
-    uint64_t _reserved[8];                            /* 64 */
-} mcontext_t;                                         /* 256 bytes */
+    uint64_t r8, r9, r10, r11, r12, r13, r14, r15;    // 64
+    uint64_t rdi, rsi, rbp, rbx, rdx, rax, rcx, rsp;  // 64
+    uint64_t rip;                                     //  8
+    uint64_t eflags;                                  //  8
+    uint16_t cs, gs, fs, ss;                          //  8
+    uint64_t err, trapno, oldmask, cr2;               // 32
+    uint64_t fpstate; // NULL = no FP state saved         8
+    uint64_t _reserved[8];                            // 64
+} mcontext_t;                                         // 256 bytes
 
 typedef struct {
     uint64_t uc_flags;
@@ -74,13 +74,13 @@ typedef struct {
     uint64_t ss_sp, ss_flags, ss_size;
     mcontext_t uc_mcontext;
     uint64_t uc_sigmask;
-} ucontext_t; /* 304 bytes */
+} ucontext_t; // 304 bytes
 
 typedef struct {
-    uint64_t pretcode; /* return addr -> restorer */
-    siginfo_t info;    /* 128 bytes              */
-    ucontext_t uc;     /* 304 bytes              */
-} rt_sigframe_t;       /* 8+128+304 = 440 bytes  */
+    uint64_t pretcode; // return addr -> restorer
+    siginfo_t info;    // 128 bytes
+    ucontext_t uc;     // 304 bytes
+} rt_sigframe_t;       // 8+128+304 = 440 bytes
 
 struct proc;
 void proc_send_signal(struct proc *p, int sig);

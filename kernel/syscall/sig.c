@@ -21,7 +21,7 @@ int64_t sys_kill(int64_t pid, int sig) {
 
     proc_t *self = cur();
 
-    /* sig == 0 is an existence/permission probe: validate the target but deliver nothing. */
+    // sig == 0 is an existence/permission probe: validate the target but deliver nothing
     if (pid > 0) {
         proc_t *target = proc_find((uint32_t) pid);
         if (!target) return -(int64_t) ESRCH;
@@ -122,7 +122,7 @@ int64_t sys_rt_sigreturn(syscall_frame_t *f) {
     f->r8 = mc->r8;
     f->r9 = mc->r9;
     f->r10 = mc->r10;
-    f->r11 = user_rflags(mc->eflags); /* user rflags*/
+    f->r11 = user_rflags(mc->eflags); // user rflags
     f->r12 = mc->r12;
     f->r13 = mc->r13;
     f->r14 = mc->r14;
@@ -132,14 +132,14 @@ int64_t sys_rt_sigreturn(syscall_frame_t *f) {
     f->rbp = mc->rbp;
     f->rbx = mc->rbx;
     f->rdx = mc->rdx;
-    f->rcx = mc->rip; /* user rip */
+    f->rcx = mc->rip; // user rip
 
     cpu_set_user_rsp(mc->rsp);
 
     proc_t *p = cur();
     p->sig_mask = frame->uc.uc_sigmask;
     p->sig_mask &= ~((1ULL << (SIGKILL - 1)) | (1ULL << (SIGSTOP - 1)));
-    p->on_sigstack = 0; /* left the alt stack */
+    p->on_sigstack = 0; // left the alt stack
     return (int64_t) mc->rax;
 }
 
@@ -168,7 +168,7 @@ int64_t sys_pause(void) {
         vfs_set_fdtable(next->fds);
         g_current_space = next->space;
         cpu_set_kernel_stack(next->kstack_top);
-        /* IF=0 across the switch: keep current-proc/space updates atomic. */
+        // IF=0 across the switch: keep current-proc/space updates atomic
         sched_switch(next);
         p->state = PROC_RUNNING;
         vfs_set_fdtable(p->fds);
@@ -209,7 +209,7 @@ int64_t sys_rt_sigsuspend(const uint64_t *mask, uint64_t sigsetsize) {
         vfs_set_fdtable(next->fds);
         g_current_space = next->space;
         cpu_set_kernel_stack(next->kstack_top);
-        /* IF=0 across the switch: keep current-proc/space updates atomic. */
+        // IF=0 across the switch: keep current-proc/space updates atomic
         sched_switch(next);
         p->state = PROC_RUNNING;
         vfs_set_fdtable(p->fds);
@@ -234,7 +234,7 @@ int64_t sys_sigaltstack(const void *ss, void *oss) {
     }
     if (ss) {
         if (!uptr_ok(ss, 24)) return -(int64_t) EFAULT;
-        if (p->on_sigstack) return -(int64_t) EPERM; /* cannot change while running on it */
+        if (p->on_sigstack) return -(int64_t) EPERM; // cannot change while running on it
         const uint8_t *s = (const uint8_t *) ss;
         int flags = *(const int *) (s + 8);
         if (flags & SS_DISABLE) {

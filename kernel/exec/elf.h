@@ -65,14 +65,14 @@ typedef struct {
 
 typedef struct {
     vmm_space_t *space;
-    uint64_t entry; /* jump target: interpreter entry if PT_INTERP else prog entry */
+    uint64_t entry; // jump target: interpreter entry if PT_INTERP else prog entry
     uint64_t prog_entry;
     uint64_t brk;
     uint64_t phdr_va;
     uint16_t phentsize;
     uint16_t phnum;
-    uint64_t interp_base; /* AT_BASE: where interpreter was loaded (0 = no interpreter) */
-    char interp[256];     /* PT_INTERP path, empty if none */
+    uint64_t interp_base; // AT_BASE: where interpreter was loaded (0 = no interpreter)
+    char interp[256];     // PT_INTERP path, empty if none
 } elf_load_result_t;
 
 int elf_load_into(vmm_space_t *space, const void *data, uint64_t size, uint64_t bias,
