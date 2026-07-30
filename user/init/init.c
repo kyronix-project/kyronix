@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/reboot.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #define STATUS_COL 72
@@ -28,6 +29,7 @@ struct service {
     pid_t pid;
     int respawns;
     int start_fd;
+    time_t started;
 };
 
 static struct service services[MAX_SERVICES];
@@ -75,6 +77,7 @@ static int spawn_held(struct service *svc) {
     if (pid > 0) {
         svc->pid = pid;
         svc->start_fd = gate[1];
+        svc->started = time(NULL);
         return 0;
     }
     close(gate[1]);
@@ -138,6 +141,8 @@ static void handle_reap(void) {
             if (services[i].pid == pid) {
                 char buf[128];
                 services[i].pid = 0;
+                if (services[i].started && time(NULL) - services[i].started >= 30)
+                    services[i].respawns = 0;
                 services[i].respawns++;
                 if (services[i].respawns > 5) {
                     snprintf(buf, sizeof(buf), "%.63s (too many restarts, giving up)",
