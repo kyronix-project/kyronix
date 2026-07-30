@@ -1,4 +1,3 @@
-/* libudev.so.1 stub — Xorg calls udev_new() first; NULL return disables udev path */
 #include <stddef.h>
 #include <stdint.h>
 
