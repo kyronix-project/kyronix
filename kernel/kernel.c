@@ -343,7 +343,6 @@ void kmain(void) {
     }
     pci_enumerate();
     kstatus("Enumerating PCI", true);
-    /* Limine base revision >= 3 reports the RSDP as a physical address. */
     acpi_init(rsdp_req.response ? (uint64_t) rsdp_req.response->address : 0);
     kstatus("Initialising ACPI", acpi_available());
     block_init();

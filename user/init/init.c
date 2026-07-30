@@ -1,4 +1,4 @@
-#define _POSIX_C_SOURCE 200809
+#define _GNU_SOURCE
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/reboot.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -32,6 +33,7 @@ struct service {
 static struct service services[MAX_SERVICES];
 static int nservices;
 static volatile sig_atomic_t got_signal = 0;
+static volatile sig_atomic_t shutdown_cmd = 0;
 
 static char *trim(char *s) {
     while (*s && isspace(*s)) s++;
@@ -88,6 +90,43 @@ static void release_service(struct service *svc) {
 static void reap_children(int sig) {
     (void)sig;
     got_signal = 1;
+}
+
+static void handle_shutdown(int sig) {
+    switch (sig) {
+    case SIGUSR1: shutdown_cmd = RB_AUTOBOOT; break;
+    case SIGUSR2: shutdown_cmd = RB_POWER_OFF; break;
+    case SIGTERM: shutdown_cmd = RB_HALT_SYSTEM; break;
+    }
+}
+
+static void do_shutdown(int cmd) {
+    status("Shutting down services", 1);
+    for (int i = 0; i < nservices; i++) {
+        if (services[i].pid > 0)
+            kill(services[i].pid, SIGTERM);
+    }
+
+    sync();
+    sleep(1);
+
+    for (int i = 0; i < nservices; i++) {
+        if (services[i].pid > 0)
+            kill(services[i].pid, SIGKILL);
+    }
+
+    status("Halting system", 1);
+    fflush(stderr);
+    sync();
+
+    if ((unsigned)cmd == RB_POWER_OFF)
+        reboot(RB_POWER_OFF);
+    else if ((unsigned)cmd == RB_HALT_SYSTEM)
+        reboot(RB_HALT_SYSTEM);
+    else
+        reboot(RB_AUTOBOOT);
+
+    for (;;) pause();
 }
 
 static void handle_reap(void) {
@@ -198,6 +237,9 @@ int main(void) {
     signal(SIGINT, SIG_IGN);
     signal(SIGALRM, SIG_IGN);
     signal(SIGCHLD, reap_children);
+    signal(SIGUSR1, handle_shutdown);
+    signal(SIGUSR2, handle_shutdown);
+    signal(SIGTERM, handle_shutdown);
 
     setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin", 1);
     setenv("HOME", "/", 1);
@@ -222,6 +264,12 @@ int main(void) {
 
     for (;;) {
         pause();
+        if (shutdown_cmd) {
+            int cmd = shutdown_cmd;
+            shutdown_cmd = -1;
+            do_shutdown(cmd);
+            shutdown_cmd = 0;
+        }
         if (got_signal) {
             got_signal = 0;
             handle_reap();
