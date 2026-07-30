@@ -85,7 +85,7 @@ This is an experimental mechanism: the queue is bounded, unsupported faults use
 the normal signal/panic path, and fault-quarantined sources cannot be safely
 resumed.
 
-Anti-TOCTOU jitter correlates rapid cross-thread VFS and futex/memory access,
+`Anti-TOCTOU jitter` correlates rapid cross-thread VFS and futex/memory access,
 then delays the flagged thread's next wake-up by 25–250 µs.
 
 ## Build
