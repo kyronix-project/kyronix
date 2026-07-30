@@ -6,9 +6,21 @@
 #include <time.h>
 #include <unistd.h>
 
+static void usage(void) {
+    fprintf(stderr, "usage: logger [-t tag] message...\n");
+    fprintf(stderr, "       logger [-t tag] < /dev/stdin\n");
+    fprintf(stderr, "  -t tag    use specified tag (default: logger)\n");
+    fprintf(stderr, "  -h        show help\n");
+}
+
 int main(int argc, char **argv) {
     char tag[32] = "logger";
     int first = 1;
+
+    if (first < argc && strcmp(argv[first], "-h") == 0) {
+        usage();
+        return 0;
+    }
 
     if (first < argc && strcmp(argv[first], "-t") == 0 && first + 1 < argc) {
         strncpy(tag, argv[first + 1], sizeof(tag) - 1);
@@ -25,6 +37,14 @@ int main(int argc, char **argv) {
     struct tm *tm = localtime(&now);
     char ts[20];
     strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", tm);
+
+    if (first >= argc) {
+        if (isatty(STDIN_FILENO)) {
+            usage();
+            fclose(log);
+            return 1;
+        }
+    }
 
     if (first < argc) {
         fprintf(log, "%s [%s]", ts, tag);

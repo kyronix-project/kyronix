@@ -5,6 +5,7 @@ ROOTFS := ../rootfs
 all:
 	$(MAKE) -C init
 	$(MAKE) -C logger
+	$(MAKE) -C sv
 	$(MAKE) -C shell
 	$(MAKE) -C login
 	$(MAKE) -C vi
@@ -14,6 +15,7 @@ all:
 	mkdir -p $(ROOTFS)/bin
 	cp ../build/bin/kyronix-init $(ROOTFS)/bin/init
 	cp ../build/bin/logger $(ROOTFS)/bin/
+	cp ../build/bin/sv $(ROOTFS)/bin/
 	cp ../build/bin/ksh $(ROOTFS)/bin/
 	cp ../build/bin/login $(ROOTFS)/bin/
 	cp ../build/bin/vi $(ROOTFS)/bin/
@@ -36,6 +38,7 @@ all:
 clean:
 	$(MAKE) -C init clean
 	$(MAKE) -C logger clean
+	$(MAKE) -C sv clean
 	$(MAKE) -C shell clean
 	$(MAKE) -C login clean
 	$(MAKE) -C vi clean

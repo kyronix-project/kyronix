@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,6 +38,7 @@ static struct service services[MAX_SERVICES];
 static int nservices;
 static volatile sig_atomic_t got_signal = 0;
 static volatile sig_atomic_t shutdown_cmd = 0;
+static volatile sig_atomic_t reload_flag = 0;
 
 static char *trim(char *s) {
     while (*s && isspace(*s)) s++;
@@ -115,6 +117,11 @@ static void release_service(struct service *svc) {
 static void reap_children(int sig) {
     (void)sig;
     got_signal = 1;
+}
+
+static void handle_reload(int sig) {
+    (void)sig;
+    reload_flag = 1;
 }
 
 static void handle_shutdown(int sig) {
@@ -256,6 +263,55 @@ static void read_rc_conf(void) {
     status("Reading /etc/rc.conf", 1);
 }
 
+static void write_services(void) {
+    FILE *f = fopen("/var/run/services", "w");
+    if (!f) return;
+    for (int i = 0; i < nservices; i++)
+        fprintf(f, "%-20s %d %s\n", services[i].name, services[i].pid,
+                services[i].pid > 0 ? "running" : "stopped");
+    fclose(f);
+}
+
+static void reload_config(void) {
+    struct service old[MAX_SERVICES];
+    int old_n = nservices;
+    memcpy(old, services, sizeof(old));
+
+    nservices = 0;
+    read_rc_conf();
+
+    for (int i = 0; i < old_n; i++) {
+        bool matched = false;
+        for (int j = 0; j < nservices; j++) {
+            if (strcmp(old[i].name, services[j].name) == 0) {
+                if (old[i].pid > 0) {
+                    services[j].pid = old[i].pid;
+                    services[j].start_fd = old[i].start_fd;
+                    services[j].respawns = old[i].respawns;
+                    services[j].started = old[i].started;
+                }
+                matched = true;
+                break;
+            }
+        }
+        if (!matched && old[i].pid > 0) {
+            kill(old[i].pid, SIGTERM);
+        }
+        for (int k = 0; k < MAX_ARGS && old[i].argv[k]; k++)
+            free(old[i].argv[k]);
+    }
+
+    for (int i = 0; i < nservices; i++) {
+        if (services[i].pid == 0) {
+            char buf[128];
+            snprintf(buf, sizeof(buf), "Starting %.63s", services[i].name);
+            status(buf, spawn_held(&services[i]) == 0);
+        }
+    }
+    write_services();
+    for (int i = 0; i < nservices; i++) release_service(&services[i]);
+}
+
 int main(void) {
     int fd = open("/dev/tty", O_RDWR);
     if (fd >= 0) {
@@ -271,8 +327,10 @@ int main(void) {
     signal(SIGUSR1, handle_shutdown);
     signal(SIGUSR2, handle_shutdown);
     signal(SIGTERM, handle_shutdown);
+    signal(SIGHUP, handle_reload);
 
     mkdir("/var/log", 0755);
+    mkdir("/var/run", 0755);
     log_event("init started");
 
     setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin", 1);
@@ -295,9 +353,14 @@ int main(void) {
     fprintf(stderr, "\n");
     fflush(stderr);
     for (int i = 0; i < nservices; i++) release_service(&services[i]);
+    write_services();
 
     for (;;) {
         pause();
+        if (reload_flag) {
+            reload_flag = 0;
+            reload_config();
+        }
         if (shutdown_cmd) {
             int cmd = shutdown_cmd;
             shutdown_cmd = -1;
