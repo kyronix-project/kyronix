@@ -7,15 +7,25 @@ static bool show_files = true;
 static bool show_dirs = true;
 static bool show_symlinks = true;
 static bool show_only_dirs = false;
+static bool show_size = false;
+static bool show_perms = false;
+static bool show_type = false;
+static FILE *out_file = NULL;
+
+#define out_printf(...) fprintf(out_file ? out_file : stdout, __VA_ARGS__)
 
 static void usage(void) {
-    fprintf(stderr, "usage: tree [-adfhl] [-L LEVEL] [PATH...]\n");
+    fprintf(stderr, "usage: tree [-adfFhlps] [-L LEVEL] [-o FILE] [PATH...]\n");
     fprintf(stderr, "  -a          show hidden files\n");
     fprintf(stderr, "  -d          list directories only\n");
     fprintf(stderr, "  -f          show full path prefix for each file\n");
+    fprintf(stderr, "  -F          append / @ * = | indicator\n");
     fprintf(stderr, "  -h          show help\n");
     fprintf(stderr, "  -l          follow symlinks\n");
     fprintf(stderr, "  -L LEVEL    max display depth\n");
+    fprintf(stderr, "  -o FILE     output to file\n");
+    fprintf(stderr, "  -p          show permissions\n");
+    fprintf(stderr, "  -s          show file size\n");
 }
 
 static int cmp_name(const void *a, const void *b) {
@@ -42,6 +52,28 @@ static int should_show(const char *name, struct stat *st, bool follow) {
         return show_symlinks;
     }
     return show_files && !show_only_dirs;
+}
+
+static char type_indicator(mode_t m) {
+    if (S_ISDIR(m)) return '/';
+    if (S_ISLNK(m)) return '@';
+    if (S_ISSOCK(m)) return '=';
+    if (S_ISFIFO(m)) return '|';
+    if (m & 0111) return '*';
+    return 0;
+}
+
+static void mode_string(mode_t m, char out[12]) {
+    out[0] = S_ISDIR(m)  ? 'd' :
+             S_ISLNK(m)  ? 'l' :
+             S_ISCHR(m)  ? 'c' :
+             S_ISBLK(m)  ? 'b' :
+             S_ISFIFO(m) ? 'p' :
+             S_ISSOCK(m) ? 's' :
+                           '-';
+    const char *c = "rwx";
+    for (int i = 0; i < 9; i++) out[i + 1] = (m & (1 << (8 - i))) ? c[i % 3] : '-';
+    out[10] = 0;
 }
 
 static char **list_dir(const char *path, int *out_n, bool follow, int *rc) {
@@ -87,6 +119,32 @@ static char **list_dir(const char *path, int *out_n, bool follow, int *rc) {
     return names;
 }
 
+static void print_entry(const char *display, struct stat *st, const char *prefix,
+                        bool last) {
+    if (show_perms || show_size) {
+        out_printf("%s", prefix);
+        out_printf("%s", last ? "\\-- " : "+-- ");
+        out_printf("[");
+        if (show_perms) {
+            char m[12];
+            mode_string(st->st_mode, m);
+            out_printf("%s", m);
+            if (show_size) out_printf(" ");
+        }
+        if (show_size)
+            out_printf("%8lld", (long long)st->st_size);
+        out_printf("]  ");
+        out_printf("%s", display);
+    } else {
+        out_printf("%s%s%s", prefix, last ? "\\-- " : "+-- ", display);
+    }
+
+    if (show_type && S_ISREG(st->st_mode) && (st->st_mode & 0111))
+        out_printf("*");
+
+    out_printf("\n");
+}
+
 static void print_tree(const char *path, int depth, const char *prefix, bool last, bool full_path,
                        bool follow, int *rc) {
     if (depth > max_depth) return;
@@ -101,9 +159,14 @@ static void print_tree(const char *path, int depth, const char *prefix, bool las
 
     const char *display = full_path ? path : kx_base(path);
     if (depth == 0) {
-        printf("%s\n", display);
+        out_printf("%s", display);
+        if (show_type) {
+            char ti = type_indicator(st.st_mode);
+            if (ti) out_printf("%c", ti);
+        }
+        out_printf("\n");
     } else {
-        printf("%s%s%s\n", prefix, last ? "\\-- " : "+-- ", display);
+        print_entry(display, &st, prefix, last);
     }
 
     if (!S_ISDIR(st.st_mode)) return;
@@ -152,7 +215,7 @@ int main(int argc, char **argv) {
             break;
         }
         if (arg[0] != '-' || arg[1] == '\0') break;
-        if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
+        if (strcmp(arg, "--help") == 0) {
             usage();
             return 0;
         }
@@ -161,12 +224,25 @@ int main(int argc, char **argv) {
             if (max_depth < 0) max_depth = INT_MAX;
             continue;
         }
+        if ((strcmp(arg, "-o") == 0) && first + 1 < argc) {
+            first++;
+            out_file = fopen(argv[first], "w");
+            if (!out_file) {
+                kx_warn(argv[first]);
+                return 1;
+            }
+            continue;
+        }
         for (const char *p = arg + 1; *p; p++) {
             switch (*p) {
             case 'a': show_hidden = true; break;
             case 'd': show_dirs = true; show_files = false; show_only_dirs = true; break;
             case 'f': full_path = true; break;
+            case 'F': show_type = true; break;
+            case 'h': usage(); return 0;
             case 'l': follow = true; break;
+            case 'p': show_perms = true; break;
+            case 's': show_size = true; break;
             default: usage(); return 1;
             }
         }
@@ -177,9 +253,11 @@ int main(int argc, char **argv) {
         print_tree(".", 0, "", true, full_path, follow, &rc);
     } else {
         for (int i = first; i < argc; i++) {
-            if (i > first) putchar('\n');
+            if (i > first) out_printf("\n");
             print_tree(argv[i], 0, "", true, full_path, follow, &rc);
         }
     }
+
+    if (out_file) fclose(out_file);
     return rc;
 }
