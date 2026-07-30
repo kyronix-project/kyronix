@@ -2,6 +2,7 @@
 #define PKG_UTIL_H
 
 #include <stddef.h>
+#include <sys/types.h>
 
 #include "pkg.h"
 
@@ -36,5 +37,8 @@ void add_repo(const char *name, const char *url, int priority);
 void remove_repo(const char *name);
 
 long disk_available(const char *path);
+
+pid_t spinner_start(void);
+void spinner_stop(pid_t pid);
 
 #endif
