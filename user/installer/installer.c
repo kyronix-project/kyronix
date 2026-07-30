@@ -129,11 +129,6 @@ static int ui_read_key(void) {
     int key = getch();
     if (key != 27) return key;
 
-    /*
-     * Kyronix's tty currently delivers ANSI cursor sequences byte by byte.
-     * ncurses therefore sometimes returns ESC before it can translate the
-     * remaining "[A"/"[B" bytes into KEY_UP/KEY_DOWN.
-     */
     wtimeout(stdscr, 100);
     int prefix = getch();
     if (prefix != '[' && prefix != 'O') {
