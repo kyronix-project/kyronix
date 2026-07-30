@@ -1482,21 +1482,14 @@ int fd_fstatat(int dirfd, const char *path, struct linux_stat *st, int flags) {
     char _pbuf[512];
     if (!path || !st) return -(int) EINVAL;
     if (!uptr_ok_w(st, sizeof(*st))) return -(int) EFAULT;
+    const char *upath = path;
     if (!(path = vfs_copy_user_path(path, _pbuf))) return -(int) EFAULT;
     if (path[0] == '\0' && (flags & AT_EMPTY_PATH)) return fd_fstat(dirfd, st);
-    if (path[0] == '/' || dirfd == AT_FDCWD) {
-        vfs_node_t *n =
-            (flags & AT_SYMLINK_NOFOLLOW) ? vfs_lookup_nofollow(path) : vfs_lookup(path);
-        if (!n) return -(int) ENOENT;
-        anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
-                                ANTI_TOCTOU_VFS_CHECK);
-        fill_stat(n, st);
-        node_unref(n);
-        return 0;
-    }
-    vfs_file_t *df = fd_get(dirfd);
-    if (!df || !df->node || df->node->type != VFS_TYPE_DIR) return -(int) EBADF;
-    vfs_node_t *n = (flags & AT_SYMLINK_NOFOLLOW) ? vfs_lookup_nofollow(path) : vfs_lookup(path);
+    char abspath[512];
+    int rc = at_resolve(dirfd, upath, abspath, sizeof(abspath));
+    if (rc < 0) return rc;
+    vfs_node_t *n =
+        (flags & AT_SYMLINK_NOFOLLOW) ? vfs_lookup_nofollow(abspath) : vfs_lookup(abspath);
     if (!n) return -(int) ENOENT;
     anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
                             ANTI_TOCTOU_VFS_CHECK);

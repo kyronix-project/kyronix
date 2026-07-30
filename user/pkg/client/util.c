@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <termios.h>
+#include <time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -633,4 +634,35 @@ long disk_available(const char *path) {
     struct statvfs vfs;
     if (statvfs(path, &vfs) != 0) return -1;
     return (long)(vfs.f_bavail * vfs.f_frsize);
+}
+
+pid_t spinner_start(void) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        const char frames[] = "|/-\\";
+        int i = 0;
+        struct sigaction sa;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0;
+        sa.sa_handler = SIG_DFL;
+        sigaction(SIGTERM, &sa, NULL);
+        setbuf(stderr, NULL);
+        while (1) {
+            if (write(STDERR_FILENO, "\r", 1) == -1) break;
+            if (write(STDERR_FILENO, &frames[i], 1) == -1) break;
+            i = (i + 1) & 3;
+            struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000000 };
+            nanosleep(&ts, NULL);
+        }
+        _exit(0);
+    }
+    return pid;
+}
+
+void spinner_stop(pid_t pid) {
+    if (pid <= 0) return;
+    int status;
+    kill(pid, SIGTERM);
+    waitpid(pid, &status, 0);
+    if (write(STDERR_FILENO, "\r \r", 3) == -1) return;
 }

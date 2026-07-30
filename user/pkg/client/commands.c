@@ -496,7 +496,9 @@ static char *fetch_manifest_from_repos(const char *name, char **out_endpoint) {
         snprintf(url, sizeof(url), "%s/packages/%s", repos[i].url, name);
 
         int code = 0;
+        pid_t sp = spinner_start();
         char *manifest = http_get_body(url, &code);
+        spinner_stop(sp);
         if (code == 200 && manifest) {
             *out_endpoint = strdup(repos[i].url);
             return manifest;
@@ -903,7 +905,9 @@ void cmd_repo(const char *subcmd, const char *arg) {
             log_step("pinging", "%s (%s)", repos[i].name, repos[i].url);
 
             int code = 0;
+            pid_t sp = spinner_start();
             char *body = http_get_body(url, &code);
+            spinner_stop(sp);
             free(body);
 
             if (code == 200)

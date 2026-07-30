@@ -80,7 +80,7 @@ uint64_t setup_user_stack(vmm_space_t *space, const elf_load_result_t *elf, int 
         }
     }
 
-    if (vma_add(space, stack_base, (uint64_t) USER_STACK_PAGES * PAGE_SIZE,
+    if (vma_add(space, USER_STACK_GROW_BASE, stack_top - USER_STACK_GROW_BASE,
                 PROT_READ | PROT_WRITE, 0, true) < 0) {
         stack_release(space, stack_base, phys, USER_STACK_PAGES, false);
         return 0;
