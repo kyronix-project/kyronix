@@ -103,7 +103,7 @@ static void print_tree(const char *path, int depth, const char *prefix, bool las
     if (depth == 0) {
         printf("%s\n", display);
     } else {
-        printf("%s%s%s\n", prefix, last ? "└── " : "├── ", display);
+        printf("%s%s%s\n", prefix, last ? "\\-- " : "+-- ", display);
     }
 
     if (!S_ISDIR(st.st_mode)) return;
@@ -117,7 +117,7 @@ static void print_tree(const char *path, int depth, const char *prefix, bool las
     if (!entries) return;
 
     char new_prefix[PATH_MAX];
-    const char *branch = last ? "    " : "│   ";
+    const char *branch = last ? "    " : "|   ";
     if (prefix[0] == '\0')
         snprintf(new_prefix, sizeof(new_prefix), "%s", branch);
     else
