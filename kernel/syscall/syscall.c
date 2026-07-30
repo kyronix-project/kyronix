@@ -976,9 +976,10 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = 0;
         break;
     } /* futimesat: timestamps are not persisted yet */
-    case 262:
+    case 262: {
         ret = fd_fstatat((int) a1, (const char *) a2, (struct linux_stat *) a3, (int) a4);
         break;
+    }
     case 263: {
         char abs[512];
         if (!AT_RESOLVED(ret, a1, a2, abs)) break;
