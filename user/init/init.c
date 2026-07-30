@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/reboot.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -45,12 +46,33 @@ static char *trim(char *s) {
     return s;
 }
 
+#define LOG_PATH "/var/log/messages"
+
+static void log_event(const char *msg) {
+    FILE *log = fopen(LOG_PATH, "a");
+    if (!log) return;
+
+    time_t now = time(NULL);
+    struct tm *tm = localtime(&now);
+    char ts[20];
+    strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", tm);
+
+    fprintf(log, "%s [init] %s\n", ts, msg);
+    fclose(log);
+}
+
 static void status(const char *msg, int ok) {
     fprintf(stderr, COL_GRN " *" COL_RST " %s ...\033[%dG[ %s%s" COL_RST " ]\n", msg, STATUS_COL,
             ok ? COL_GRN : COL_RED, ok ? "ok" : "!!");
+    char buf[256];
+    snprintf(buf, sizeof(buf), "%s ... [%s]", msg, ok ? "ok" : "!!");
+    log_event(buf);
 }
 
-static void info(const char *msg) { fprintf(stderr, "%s\n", msg); }
+static void info(const char *msg) {
+    fprintf(stderr, "%s\n", msg);
+    log_event(msg);
+}
 
 static int spawn_held(struct service *svc) {
     int gate[2];
@@ -104,6 +126,9 @@ static void handle_shutdown(int sig) {
 }
 
 static void do_shutdown(int cmd) {
+    const char *action = (unsigned)cmd == RB_POWER_OFF ? "Powering off" :
+                         (unsigned)cmd == RB_HALT_SYSTEM ? "Halting" : "Rebooting";
+    info(action);
     status("Shutting down services", 1);
     for (int i = 0; i < nservices; i++) {
         if (services[i].pid > 0)
@@ -120,6 +145,7 @@ static void do_shutdown(int cmd) {
 
     status("Halting system", 1);
     fflush(stderr);
+    log_event("system halted");
     sync();
 
     if ((unsigned)cmd == RB_POWER_OFF)
@@ -245,6 +271,9 @@ int main(void) {
     signal(SIGUSR1, handle_shutdown);
     signal(SIGUSR2, handle_shutdown);
     signal(SIGTERM, handle_shutdown);
+
+    mkdir("/var/log", 0755);
+    log_event("init started");
 
     setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin", 1);
     setenv("HOME", "/", 1);
