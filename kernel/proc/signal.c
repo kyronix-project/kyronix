@@ -12,15 +12,25 @@ _Static_assert(sizeof(siginfo_t) == 128, "siginfo_t must be 128 bytes");
 _Static_assert(sizeof(ucontext_t) == 304, "ucontext_t must be 304 bytes");
 _Static_assert(sizeof(rt_sigframe_t) == 440, "rt_sigframe_t must be 440 bytes");
 
+#define SIG_BIT(sig)    (1ULL << ((sig) - 1))
+#define SIG_UNBLOCKABLE (SIG_BIT(SIGKILL) | SIG_BIT(SIGSTOP))
+#define SIG_STOP_MASK \
+    (SIG_BIT(SIGSTOP) | SIG_BIT(SIGTSTP) | SIG_BIT(SIGTTIN) | SIG_BIT(SIGTTOU))
+
 static int sig_default_fatal(int sig) {
     switch (sig) {
     case SIGCHLD:
     case SIGCONT:
     case SIGWINCH:
+    case SIGURG:
         return 0;
     default:
         return 1;
     }
+}
+
+static int sig_default_stop(int sig) {
+    return (SIG_BIT(sig) & SIG_STOP_MASK) != 0;
 }
 
 void proc_send_signal(struct proc *p, int sig) {
@@ -28,13 +38,19 @@ void proc_send_signal(struct proc *p, int sig) {
     proc_t *pp = (proc_t *) p;
     if (!pp || pp->state == PROC_UNUSED) return;
 
+    if (sig == SIGCONT)
+        __atomic_fetch_and(&pp->pending_sigs, ~SIG_STOP_MASK, __ATOMIC_RELAXED);
+    else if (sig_default_stop(sig))
+        __atomic_fetch_and(&pp->pending_sigs, ~SIG_BIT(SIGCONT), __ATOMIC_RELAXED);
+
+    __atomic_fetch_or(&pp->pending_sigs, SIG_BIT(sig), __ATOMIC_RELAXED);
+
     if (pp->job_stopped && (sig == SIGCONT || sig == SIGKILL)) {
         pp->job_stopped = 0;
-        pp->state = PROC_READY;
+        __atomic_store_n(&pp->state, PROC_READY, __ATOMIC_RELEASE);
         proc_set_ready(pp);
+        return;
     }
-
-    __atomic_fetch_or(&pp->pending_sigs, (1ULL << (sig - 1)), __ATOMIC_RELAXED);
 
     if (__sync_bool_compare_and_swap(&pp->state, PROC_WAITING, PROC_READY)) { proc_set_ready(pp); }
 }
@@ -42,8 +58,8 @@ void proc_send_signal(struct proc *p, int sig) {
 static void setup_sigframe(proc_t *p, int sig, syscall_frame_t *f) {
     uint64_t user_rsp = cpu_get_user_rsp();
 
-    bool use_alt =
-        (p->sig_actions[sig - 1].sa_flags & SA_ONSTACK) && p->sig_altstack_size && !p->on_sigstack;
+    bool use_alt = (p->sig_actions[sig - 1].sa_flags & SA_ONSTACK) && !p->on_sigstack &&
+                   p->sig_altstack_size >= sizeof(rt_sigframe_t) + 16;
     uint64_t base = use_alt ? p->sig_altstack_sp + p->sig_altstack_size : user_rsp - 128;
 
     uint64_t sp = base - sizeof(rt_sigframe_t);
@@ -81,8 +97,9 @@ static void setup_sigframe(proc_t *p, int sig, syscall_frame_t *f) {
 
     frame->uc.uc_sigmask = p->sig_mask;
 
-    p->sig_mask |= (1ULL << (sig - 1)) | p->sig_actions[sig - 1].sa_mask;
-    p->sig_mask &= ~((1ULL << (SIGKILL - 1)) | (1ULL << (SIGSTOP - 1)));
+    uint64_t block = p->sig_actions[sig - 1].sa_mask;
+    if (!(p->sig_actions[sig - 1].sa_flags & SA_NODEFER)) block |= SIG_BIT(sig);
+    p->sig_mask = (p->sig_mask | block) & ~SIG_UNBLOCKABLE;
 
     f->rcx = p->sig_actions[sig - 1].sa_handler;
     f->rdi = (uint64_t) sig;
@@ -101,7 +118,12 @@ static void setup_sigframe(proc_t *p, int sig, syscall_frame_t *f) {
 static void deliver_signal(proc_t *p, int sig, syscall_frame_t *f) {
     uint64_t handler = p->sig_actions[sig - 1].sa_handler;
 
-    if (sig == SIGSTOP || (sig == SIGTSTP && handler == SIG_DFL)) {
+    if (sig == SIGKILL) {
+        proc_do_exit(-SIGKILL);
+        return;
+    }
+
+    if (sig_default_stop(sig) && (sig == SIGSTOP || handler == SIG_DFL)) {
         proc_job_stop(p, sig);
         return;
     }
@@ -109,13 +131,14 @@ static void deliver_signal(proc_t *p, int sig, syscall_frame_t *f) {
     if (handler == SIG_IGN) return;
 
     if (handler == SIG_DFL) {
-        if (!sig_default_fatal(sig)) return;
-        proc_do_exit(-sig);
+        if (sig_default_fatal(sig)) proc_do_exit(-sig);
+        return;
     }
 
     if (!p->sig_actions[sig - 1].sa_restorer) {
         log_warn("signal: sig %d has no restorer", sig);
         proc_do_exit(-sig);
+        return;
     }
 
     setup_sigframe(p, sig, f);
@@ -127,7 +150,8 @@ void signal_check(syscall_frame_t *f) {
 
     tty_check_signals();
 
-    uint64_t pending = __atomic_load_n(&p->pending_sigs, __ATOMIC_RELAXED) & ~p->sig_mask;
+    uint64_t blocked = p->sig_mask & ~SIG_UNBLOCKABLE;
+    uint64_t pending = __atomic_load_n(&p->pending_sigs, __ATOMIC_RELAXED) & ~blocked;
     if (!pending) return;
 
     int idx = __builtin_ctzll(pending);
