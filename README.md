@@ -8,7 +8,6 @@ Operating system that sucks less.
 [![test](https://github.com/kyronix-project/kyronix/actions/workflows/test.yml/badge.svg)](https://github.com/kyronix-project/kyronix/actions/workflows/test.yml)
 [![ISC](https://img.shields.io/badge/license-ISC-blue)](#)
 [![x86-64](https://img.shields.io/badge/arch-x86__64-lightgrey)](#)
-[![AI](https://img.shields.io/badge/AI--assisted-blueviolet)](#)
 
 <br clear="left"/>
 
