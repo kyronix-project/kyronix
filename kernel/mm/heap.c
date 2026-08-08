@@ -1,6 +1,7 @@
 #include "heap.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/spinlock.h"
+#include "arch/x86_64/percpu.h"
 #include "lib/log.h"
 #include "lib/printf.h"
 #include "lib/string.h"
@@ -25,6 +26,17 @@ typedef struct block_hdr {
 #define GROW_BYTES ((uint64_t) (GROW_PAGES) * PAGE_SIZE)
 #define HEAP_CAPACITY ((uint64_t) (HEAP_MAX - HEAP_START))
 #define HEAP_BIN_COUNT 32
+#define SMALL_CLASS_COUNT 16
+#define SMALL_CACHE_LIMIT 32
+
+typedef struct small_free {
+    struct small_free *next;
+} small_free_t;
+
+typedef struct __attribute__((aligned(64))) {
+    small_free_t *head[SMALL_CLASS_COUNT];
+    uint8_t count[SMALL_CLASS_COUNT];
+} small_cache_t;
 
 static spinlock_t g_heap_lock = SPINLOCK_INIT;
 static block_hdr_t *g_head = NULL;
@@ -33,6 +45,7 @@ static block_hdr_t *g_free_bins[HEAP_BIN_COUNT];
 static uint64_t g_brk = HEAP_START;
 static uint64_t g_kmalloc_total = 0;
 static uint64_t g_kfree_total = 0;
+static small_cache_t g_small_cache[MAX_CPUS];
 
 static unsigned bin_for_size(uint64_t size) {
     uint64_t units = (size + 15) >> 4;
@@ -100,7 +113,7 @@ static block_hdr_t *heap_grow(uint64_t min_payload) {
     g_brk += need;
 
     if (g_head) {
-        if (g_tail->free) {
+        if (g_tail->free == 1) {
             free_remove(g_tail);
             g_tail->size += need;
             free_insert(g_tail);
@@ -140,6 +153,26 @@ void *kmalloc(uint64_t size) {
 
     size = (size + 15) & ~15ULL;
 
+    if (size <= SMALL_CLASS_COUNT * 16u) {
+        uint64_t flags = irq_save();
+        small_cache_t *cache = &g_small_cache[this_cpu_id()];
+        unsigned cls = (unsigned) (size / 16u - 1u);
+        small_free_t *item = cache->head[cls];
+        if (item) {
+            cache->head[cls] = item->next;
+            cache->count[cls]--;
+            block_hdr_t *blk = (block_hdr_t *) ((uint8_t *) item - HDR_SIZE);
+            __atomic_store_n(&blk->free, 0, __ATOMIC_RELEASE);
+            irq_restore(flags);
+            __atomic_fetch_add(&g_kmalloc_total, size, __ATOMIC_RELAXED);
+#ifdef CONFIG_KMEMLEAK
+            kmemleak_track(item, size);
+#endif
+            return item;
+        }
+        irq_restore(flags);
+    }
+
     uint64_t flags = irq_save();
     spin_lock(&g_heap_lock);
 
@@ -173,7 +206,7 @@ void *kmalloc(uint64_t size) {
     blk->free = 0;
     blk->free_prev = NULL;
     blk->free_next = NULL;
-    g_kmalloc_total += blk->size;
+    __atomic_fetch_add(&g_kmalloc_total, blk->size, __ATOMIC_RELAXED);
     spin_unlock(&g_heap_lock);
     irq_restore(flags);
 #ifdef CONFIG_KMEMLEAK
@@ -189,19 +222,36 @@ void kfree(void *ptr) {
     kmemleak_untrack(ptr);
 #endif
 
+    block_hdr_t *blk = (block_hdr_t *) ((uint8_t *) ptr - HDR_SIZE);
+    /* State 2 claims the block without exposing it to coalescing before it is
+       actually linked into a cache or a global free bin. */
+    if (!__sync_bool_compare_and_swap(&blk->free, 0, 2)) return;
+    if (blk->size && blk->size <= SMALL_CLASS_COUNT * 16u &&
+        !(blk->size & 15u)) {
+        uint64_t flags = irq_save();
+        small_cache_t *cache = &g_small_cache[this_cpu_id()];
+        unsigned cls = (unsigned) (blk->size / 16u - 1u);
+        if (cache->count[cls] < SMALL_CACHE_LIMIT) {
+            small_free_t *item = (small_free_t *) ptr;
+            item->next = cache->head[cls];
+            cache->head[cls] = item;
+            cache->count[cls]++;
+            /* Cached blocks are free, but are not members of a global bin and
+               therefore must never be coalesced by another free operation. */
+            __atomic_store_n(&blk->free, 3, __ATOMIC_RELEASE);
+            irq_restore(flags);
+            __atomic_fetch_add(&g_kfree_total, blk->size, __ATOMIC_RELAXED);
+            return;
+        }
+        irq_restore(flags);
+    }
+
     uint64_t flags = irq_save();
     spin_lock(&g_heap_lock);
 
-    block_hdr_t *blk = (block_hdr_t *) ((uint8_t *) ptr - HDR_SIZE);
-    if (blk->free) {
-        spin_unlock(&g_heap_lock);
-        irq_restore(flags);
-        return;
-    }
-    blk->free = 1;
-    g_kfree_total += blk->size;
+    __atomic_fetch_add(&g_kfree_total, blk->size, __ATOMIC_RELAXED);
 
-    if (blk->next && blk->next->free) {
+    if (blk->next && blk->next->free == 1) {
         block_hdr_t *next = blk->next;
         free_remove(next);
         blk->size += HDR_SIZE + blk->next->size;
@@ -210,7 +260,7 @@ void kfree(void *ptr) {
         if (g_tail == next) g_tail = blk;
     }
 
-    if (blk->prev && blk->prev->free) {
+    if (blk->prev && blk->prev->free == 1) {
         block_hdr_t *prev = blk->prev;
         free_remove(prev);
         prev->size += HDR_SIZE + blk->size;
@@ -219,6 +269,7 @@ void kfree(void *ptr) {
         if (g_tail == blk) g_tail = prev;
         blk = prev;
     }
+    blk->free = 1;
     free_insert(blk);
 
     spin_unlock(&g_heap_lock);

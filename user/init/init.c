@@ -22,6 +22,8 @@
 #define MAX_LINE 256
 #define MAX_SERVICES 32
 #define MAX_ARGS 8
+#define SERVICE_CTL_DIR "/var/run/servctl"
+#define INIT_PID_PATH "/var/run/kyronix-init.pid"
 
 int sethostname(const char *name, size_t len);
 
@@ -40,12 +42,28 @@ static volatile sig_atomic_t got_signal = 0;
 static volatile sig_atomic_t shutdown_cmd = 0;
 static volatile sig_atomic_t reload_flag = 0;
 
+static void write_services(void);
+
 static char *trim(char *s) {
     while (*s && isspace(*s)) s++;
     char *e = s + strlen(s);
     while (e > s && isspace(*(e - 1))) e--;
     *e = '\0';
     return s;
+}
+
+static bool valid_service_name(const char *name) {
+    if (!name || !*name) return false;
+    for (const unsigned char *p = (const unsigned char *)name; *p; p++)
+        if (!isalnum(*p) && *p != '_' && *p != '-' && *p != '.') return false;
+    return true;
+}
+
+static bool service_is_down(const struct service *svc) {
+    if (!svc || !valid_service_name(svc->name)) return false;
+    char path[sizeof(SERVICE_CTL_DIR) + sizeof(svc->name) + 8];
+    snprintf(path, sizeof(path), "%s/%s.down", SERVICE_CTL_DIR, svc->name);
+    return access(path, F_OK) == 0;
 }
 
 #define LOG_PATH "/var/log/messages"
@@ -169,11 +187,19 @@ static void handle_reap(void) {
     int saved_errno = errno;
     int status_code;
     pid_t pid;
+    bool changed = false;
     while ((pid = waitpid(-1, &status_code, WNOHANG)) > 0) {
         for (int i = 0; i < nservices; i++) {
             if (services[i].pid == pid) {
                 char buf[128];
                 services[i].pid = 0;
+                changed = true;
+                if (service_is_down(&services[i])) {
+                    services[i].respawns = 0;
+                    snprintf(buf, sizeof(buf), "Stopped %.63s", services[i].name);
+                    info(buf);
+                    break;
+                }
                 if (services[i].started && time(NULL) - services[i].started >= 30)
                     services[i].respawns = 0;
                 services[i].respawns++;
@@ -192,6 +218,7 @@ static void handle_reap(void) {
             }
         }
     }
+    if (changed) write_services();
     errno = saved_errno;
 }
 
@@ -244,7 +271,7 @@ static void read_rc_conf(void) {
 
         char *name = trim(p);
         char *cmd = trim(colon);
-        if (!*name || !*cmd) continue;
+        if (!valid_service_name(name) || !*cmd) continue;
 
         strncpy(services[nservices].name, name, sizeof(services[nservices].name) - 1);
 
@@ -264,12 +291,25 @@ static void read_rc_conf(void) {
 }
 
 static void write_services(void) {
-    FILE *f = fopen("/var/run/services", "w");
+    FILE *f = fopen("/var/run/services.tmp", "w");
     if (!f) return;
     for (int i = 0; i < nservices; i++)
         fprintf(f, "%-20s %d %s\n", services[i].name, services[i].pid,
                 services[i].pid > 0 ? "running" : "stopped");
+    fflush(f);
+    fsync(fileno(f));
     fclose(f);
+    rename("/var/run/services.tmp", "/var/run/services");
+}
+
+static void write_init_pid(void) {
+    FILE *f = fopen(INIT_PID_PATH ".tmp", "w");
+    if (!f) return;
+    fprintf(f, "%d\n", (int)getpid());
+    fflush(f);
+    fsync(fileno(f));
+    fclose(f);
+    rename(INIT_PID_PATH ".tmp", INIT_PID_PATH);
 }
 
 static void reload_config(void) {
@@ -302,7 +342,7 @@ static void reload_config(void) {
     }
 
     for (int i = 0; i < nservices; i++) {
-        if (services[i].pid == 0) {
+        if (services[i].pid == 0 && !service_is_down(&services[i])) {
             char buf[128];
             snprintf(buf, sizeof(buf), "Starting %.63s", services[i].name);
             status(buf, spawn_held(&services[i]) == 0);
@@ -331,6 +371,8 @@ int main(void) {
 
     mkdir("/var/log", 0755);
     mkdir("/var/run", 0755);
+    mkdir(SERVICE_CTL_DIR, 0755);
+    write_init_pid();
     log_event("init started");
 
     setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin", 1);
@@ -345,6 +387,7 @@ int main(void) {
     info("INIT: Entering runlevel: 2");
 
     for (int i = 0; i < nservices; i++) {
+        if (service_is_down(&services[i])) continue;
         char buf[128];
         snprintf(buf, sizeof(buf), "Starting %.63s", services[i].name);
         status(buf, spawn_held(&services[i]) == 0);

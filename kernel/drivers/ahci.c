@@ -1,5 +1,6 @@
 #include "ahci.h"
 #include "../arch/x86_64/cpu.h"
+#include "../arch/x86_64/pit.h"
 #include "../arch/x86_64/spinlock.h"
 #include "../lib/log.h"
 #include "../lib/printf.h"
@@ -8,6 +9,7 @@
 #include "../mm/kmemleak.h"
 #include "../mm/pmm.h"
 #include "../mm/vmm.h"
+#include "../proc/proc.h"
 #include "block.h"
 #include "pci.h"
 
@@ -117,6 +119,9 @@ typedef struct {
     uint64_t disk_sectors;
     char disk_model[41];
     bool present;
+    bool busy;
+    bool command_pending;
+    uint64_t owner_waiters;
     spinlock_t lock;
 } ahci_port_t;
 
@@ -124,6 +129,93 @@ static hba_mem_t *g_hba = NULL;
 static ahci_port_t g_ports[AHCI_MAX_PORTS];
 static bool g_ready = false;
 static int g_port_count = 0;
+
+static void wake_proc(proc_t *p) {
+    if (p && __sync_bool_compare_and_swap(&p->state, PROC_WAITING, PROC_READY))
+        proc_set_ready(p);
+}
+
+/* A port still has one command table, but contenders sleep instead of burning
+ * another CPU on the port spinlock while the device is busy. */
+static void port_acquire(ahci_port_t *ap) {
+    proc_t *self = g_current_proc;
+    for (;;) {
+        uint64_t flags = irq_save();
+        spin_lock(&ap->lock);
+        if (!ap->busy) {
+            ap->busy = true;
+            if (self) ap->owner_waiters &= ~(1ULL << proc_slot(self));
+            spin_unlock(&ap->lock);
+            irq_restore(flags);
+            return;
+        }
+        if (!self || !self->pid) {
+            spin_unlock(&ap->lock);
+            irq_restore(flags);
+            cpu_relax();
+            continue;
+        }
+        ap->owner_waiters |= 1ULL << proc_slot(self);
+        self->state = PROC_WAITING;
+        spin_unlock(&ap->lock);
+        irq_restore(flags);
+        sched_block_current();
+    }
+}
+
+static void port_release(ahci_port_t *ap) {
+    uint64_t flags = irq_save();
+    spin_lock(&ap->lock);
+    ap->busy = false;
+    uint64_t waiters = ap->owner_waiters;
+    ap->owner_waiters = 0;
+    while (waiters) {
+        int slot = __builtin_ctzll(waiters);
+        wake_proc(&g_proctable[slot]);
+        waiters &= waiters - 1;
+    }
+    spin_unlock(&ap->lock);
+    irq_restore(flags);
+}
+
+/* The generic legacy-IRQ layer currently stores one handler per PIC line,
+ * while PCI INTx lines are shared (and UIO may mask them).  Sleeping for one
+ * scheduler tick is therefore safer than wiring AHCI to that API, and still
+ * removes the old CPU-burning command loop. */
+static int command_wait(ahci_port_t *ap, uint64_t timeout_ms) {
+    hba_port_t *p = ap->regs;
+    proc_t *self = g_current_proc;
+    if (!self || !self->pid) {
+        uint32_t spins = 30000000u;
+        while ((p->ci & 1u) && !(p->is & PORT_IS_FATAL) && spins--) cpu_relax();
+        return ((p->ci & 1u) || (p->is & PORT_IS_FATAL) || (p->tfd & PORT_TFD_ERR)) ? -1 : 0;
+    }
+
+    uint64_t deadline = g_ticks + timeout_ms;
+    for (;;) {
+        uint64_t flags = irq_save();
+        spin_lock(&ap->lock);
+        uint32_t status = p->is;
+        bool done = !(p->ci & 1u) || (status & PORT_IS_FATAL);
+        if (done || g_ticks >= deadline) {
+            ap->command_pending = false;
+            spin_unlock(&ap->lock);
+            irq_restore(flags);
+            self->wakeup_tick = 0;
+            if (g_ticks >= deadline && (p->ci & 1u)) return -1;
+            return ((status & PORT_IS_FATAL) || (p->tfd & PORT_TFD_ERR)) ? -1 : 0;
+        }
+
+        self->wakeup_tick = g_ticks + PIT_TICK_MS;
+        if (self->wakeup_tick > deadline) self->wakeup_tick = deadline;
+        proc_set_timer(self);
+        self->state = PROC_WAITING;
+        spin_unlock(&ap->lock);
+        irq_restore(flags);
+        sched_block_current();
+        self->wakeup_tick = 0;
+    }
+}
 
 static void port_stop(hba_port_t *p) {
     p->cmd &= ~(uint32_t) PORT_CMD_ST;
@@ -261,6 +353,9 @@ static bool port_init(int idx) {
 
     ap->regs = p;
     ap->present = true;
+    ap->busy = false;
+    ap->command_pending = false;
+    ap->owner_waiters = 0;
 
     port_start(p);
 
@@ -494,20 +589,12 @@ static int do_command(ahci_port_t *ap, uint64_t lba, uint32_t sectors, bool writ
 
     p->is = 0xFFFFFFFFu;
     p->serr = 0xFFFFFFFFu;
+    spin_lock(&ap->lock);
+    ap->command_pending = true;
+    spin_unlock(&ap->lock);
     p->ci = 1u;
 
-    uint32_t timeout = 10000000u;
-    while (timeout--) {
-        if (!(p->ci & 1u)) break;
-        if (p->is & PORT_IS_FATAL) {
-            log_error("AHCI: fatal error  IS=0x%08x  TFD=0x%08x  lba=%lu", p->is, p->tfd, lba);
-            port_comreset(p);
-            return -1;
-        }
-        cpu_relax();
-    }
-
-    if (p->ci & 1u) {
+    if (command_wait(ap, 30000u) < 0) {
         log_error("AHCI: timeout  lba=%lu  sectors=%u", lba, sectors);
         port_comreset(p);
         return -1;
@@ -522,28 +609,28 @@ static int do_command(ahci_port_t *ap, uint64_t lba, uint32_t sectors, bool writ
 int ahci_read(int port, uint64_t lba, uint32_t count, void *buf) {
     if (port < 0 || port >= AHCI_MAX_PORTS || !g_ports[port].present) return -1;
     ahci_port_t *ap = &g_ports[port];
-    spin_lock(&ap->lock);
+    port_acquire(ap);
     uint8_t *dst = (uint8_t *) buf;
     uint32_t rem = count;
 
     while (rem > 0) {
         uint32_t batch = rem < AHCI_MAX_SECTORS_PER_CMD ? rem : AHCI_MAX_SECTORS_PER_CMD;
         if (do_command(ap, lba, batch, false, dst) < 0) {
-            spin_unlock(&ap->lock);
+            port_release(ap);
             return -1;
         }
         dst += batch * 512u;
         lba += batch;
         rem -= batch;
     }
-    spin_unlock(&ap->lock);
+    port_release(ap);
     return 0;
 }
 
 int ahci_flush(int port) {
     if (port < 0 || port >= AHCI_MAX_PORTS || !g_ports[port].present) return -1;
     ahci_port_t *ap = &g_ports[port];
-    spin_lock(&ap->lock);
+    port_acquire(ap);
     hba_port_t *p = ap->regs;
     hba_cmd_tbl_t *tbl = ap->cmdtbl;
     hba_cmd_hdr_t *hdr = &ap->cmdlist[0];
@@ -560,45 +647,38 @@ int ahci_flush(int port) {
     __asm__ volatile("" ::: "memory");
     p->is = 0xFFFFFFFFu;
     p->serr = 0xFFFFFFFFu;
+    spin_lock(&ap->lock);
+    ap->command_pending = true;
+    spin_unlock(&ap->lock);
     p->ci = 1u;
 
-    uint32_t timeout = 30000000u;
-    while (timeout--) {
-        if (!(p->ci & 1u)) break;
-        if (p->is & PORT_IS_FATAL) {
-            port_comreset(p);
-            spin_unlock(&ap->lock);
-            return -1;
-        }
-        cpu_relax();
-    }
-    if (p->ci & 1u) {
+    if (command_wait(ap, 30000u) < 0) {
         log_error("AHCI: flush timeout on port %d", port);
         port_comreset(p);
-        spin_unlock(&ap->lock);
+        port_release(ap);
         return -1;
     }
-    spin_unlock(&ap->lock);
+    port_release(ap);
     return 0;
 }
 
 int ahci_write(int port, uint64_t lba, uint32_t count, const void *buf) {
     if (port < 0 || port >= AHCI_MAX_PORTS || !g_ports[port].present) return -1;
     ahci_port_t *ap = &g_ports[port];
-    spin_lock(&ap->lock);
+    port_acquire(ap);
     const uint8_t *src = (const uint8_t *) buf;
     uint32_t rem = count;
 
     while (rem > 0) {
         uint32_t batch = rem < AHCI_MAX_SECTORS_PER_CMD ? rem : AHCI_MAX_SECTORS_PER_CMD;
         if (do_command(ap, lba, batch, true, src) < 0) {
-            spin_unlock(&ap->lock);
+            port_release(ap);
             return -1;
         }
         src += batch * 512u;
         lba += batch;
         rem -= batch;
     }
-    spin_unlock(&ap->lock);
+    port_release(ap);
     return 0;
 }

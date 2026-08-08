@@ -25,7 +25,7 @@ void syscall_set_brk(uint64_t brk_base) {
     if (p) p->brk = p->brk_base = PAGE_ALIGN_UP(brk_base);
 }
 
-int64_t sys_brk(uint64_t addr) {
+static int64_t sys_brk_impl(uint64_t addr) {
     proc_t *p = cur();
     if (!p || !p->space) return -(int64_t) ENOMEM;
     if (addr == 0) return (int64_t) p->brk;
@@ -80,6 +80,15 @@ int64_t sys_brk(uint64_t addr) {
     vma_add(p->space, p->brk_base, new - p->brk_base, PROT_READ | PROT_WRITE, 0, true);
     p->brk = addr;
     return (int64_t) addr;
+}
+
+int64_t sys_brk(uint64_t addr) {
+    proc_t *p = cur();
+    if (!p || !p->space) return -(int64_t) ENOMEM;
+    if (!vmm_space_mutation_begin(p->space)) return -(int64_t) EAGAIN;
+    int64_t rc = sys_brk_impl(addr);
+    vmm_space_mutation_end(p->space);
+    return rc;
 }
 
 static bool user_map_range_ok(uint64_t addr, uint64_t len) {
@@ -153,8 +162,8 @@ static int mmap_fixed_replace(proc_t *p, uint64_t addr, uint64_t len, uint64_t f
     return vma_remove_overlaps(p->space, addr, len);
 }
 
-int64_t sys_mmap(uint64_t addr, uint64_t length, uint64_t prot, uint64_t flags, uint64_t fd,
-                 uint64_t off) {
+static int64_t sys_mmap_impl(uint64_t addr, uint64_t length, uint64_t prot, uint64_t flags,
+                             uint64_t fd, uint64_t off) {
     (void) fd;
     (void) off;
     proc_t *p = cur();
@@ -260,7 +269,17 @@ int64_t sys_mmap(uint64_t addr, uint64_t length, uint64_t prot, uint64_t flags, 
     return (int64_t) va;
 }
 
-int64_t sys_munmap(uint64_t addr, uint64_t len) {
+int64_t sys_mmap(uint64_t addr, uint64_t length, uint64_t prot, uint64_t flags, uint64_t fd,
+                 uint64_t off) {
+    proc_t *p = cur();
+    if (!p || !p->space) return -(int64_t) ENOMEM;
+    if (!vmm_space_mutation_begin(p->space)) return -(int64_t) EAGAIN;
+    int64_t rc = sys_mmap_impl(addr, length, prot, flags, fd, off);
+    vmm_space_mutation_end(p->space);
+    return rc;
+}
+
+static int64_t sys_munmap_impl(uint64_t addr, uint64_t len) {
     proc_t *p = cur();
     if (!p) return -(int64_t) EINVAL;
     if ((addr & (PAGE_SIZE - 1)) || !len) return -(int64_t) EINVAL;
@@ -272,7 +291,16 @@ int64_t sys_munmap(uint64_t addr, uint64_t len) {
     return 0;
 }
 
-int64_t sys_mprotect(uint64_t addr, uint64_t len, uint64_t prot) {
+int64_t sys_munmap(uint64_t addr, uint64_t len) {
+    proc_t *p = cur();
+    if (!p || !p->space) return -(int64_t) EINVAL;
+    if (!vmm_space_mutation_begin(p->space)) return -(int64_t) EAGAIN;
+    int64_t rc = sys_munmap_impl(addr, len);
+    vmm_space_mutation_end(p->space);
+    return rc;
+}
+
+static int64_t sys_mprotect_impl(uint64_t addr, uint64_t len, uint64_t prot) {
     proc_t *p = cur();
     if (!p || !len) return 0;
     if (addr & (PAGE_SIZE - 1)) return -(int64_t) EINVAL;
@@ -302,6 +330,15 @@ int64_t sys_mprotect(uint64_t addr, uint64_t len, uint64_t prot) {
     return 0;
 }
 
+int64_t sys_mprotect(uint64_t addr, uint64_t len, uint64_t prot) {
+    proc_t *p = cur();
+    if (!p || !p->space) return -(int64_t) EINVAL;
+    if (!vmm_space_mutation_begin(p->space)) return -(int64_t) EAGAIN;
+    int64_t rc = sys_mprotect_impl(addr, len, prot);
+    vmm_space_mutation_end(p->space);
+    return rc;
+}
+
 int64_t sys_madvise(void *addr, uint64_t len, int advice) {
     (void) addr;
     (void) len;
@@ -309,8 +346,8 @@ int64_t sys_madvise(void *addr, uint64_t len, int advice) {
     return 0;
 }
 
-int64_t sys_mremap(uint64_t old_addr, uint64_t old_sz, uint64_t new_sz, uint64_t flags,
-                   uint64_t new_addr) {
+static int64_t sys_mremap_impl(uint64_t old_addr, uint64_t old_sz, uint64_t new_sz,
+                               uint64_t flags, uint64_t new_addr) {
     proc_t *p = cur();
     if (!p || !old_sz || !new_sz) return -(int64_t) EINVAL;
     if (flags & ~(uint64_t) (MREMAP_MAYMOVE | MREMAP_FIXED)) return -(int64_t) EINVAL;
@@ -375,4 +412,14 @@ int64_t sys_mremap(uint64_t old_addr, uint64_t old_sz, uint64_t new_sz, uint64_t
     if (rc < 0) return rc;
     p->pages_alloc += new_sz / PAGE_SIZE;
     return (int64_t) new_va;
+}
+
+int64_t sys_mremap(uint64_t old_addr, uint64_t old_sz, uint64_t new_sz, uint64_t flags,
+                   uint64_t new_addr) {
+    proc_t *p = cur();
+    if (!p || !p->space) return -(int64_t) EINVAL;
+    if (!vmm_space_mutation_begin(p->space)) return -(int64_t) EAGAIN;
+    int64_t rc = sys_mremap_impl(old_addr, old_sz, new_sz, flags, new_addr);
+    vmm_space_mutation_end(p->space);
+    return rc;
 }

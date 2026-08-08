@@ -1,6 +1,7 @@
 #include "procfs.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/pit.h"
+#include "drivers/pci.h"
 #include "lib/log.h"
 #include "lib/printf.h"
 #include "lib/string.h"
@@ -91,6 +92,26 @@ static int64_t proc_version_read(vfs_node_t *n, char *buf, uint64_t len, uint64_
     (void) n;
     static const char ver[] = "Kyronix version " KERNEL_VERSION " (x86_64)\n";
     return read_buf(buf, len, off, ver, sizeof(ver) - 1);
+}
+
+static int64_t proc_pci_devices_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
+    (void) n;
+    char data[8192];
+    size_t used = 0;
+    for (int i = 0; i < g_pci_ndevs && used < sizeof(data); i++) {
+        pci_dev_t *d = &g_pci_devs[i];
+        int written = snprintf(data + used, sizeof(data) - used,
+                               "%02x:%02x.%x %04x:%04x class %02x:%02x prog-if %02x irq %u\n",
+                               d->bus, d->dev, d->fn, d->vendor, d->device,
+                               d->class, d->subclass, d->prog_if, d->irq_line);
+        if (written < 0) break;
+        if ((size_t)written >= sizeof(data) - used) {
+            used = sizeof(data);
+            break;
+        }
+        used += (size_t)written;
+    }
+    return read_buf(buf, len, off, data, used);
 }
 
 static int64_t proc_cpuinfo_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
@@ -820,6 +841,7 @@ void procfs_init(void) {
     vfs_mkdir_p("/proc/sys/kernel", 0555);
 
     vfs_create_chr("/proc/version", proc_version_read, NULL);
+    vfs_create_chr("/proc/bus/pci/devices", proc_pci_devices_read, NULL);
     {
         vfs_node_t *km = vfs_create_chr("/proc/kmsg", proc_kmsg_read, NULL);
         if (km) km->mode = S_IFCHR | 0400;

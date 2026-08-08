@@ -121,8 +121,7 @@ int64_t sys_ftruncate(int fd, uint64_t len) {
     vfs_node_t *n = file->node;
     if (!n) return -(int64_t) EBADF;
     if (n->type != VFS_TYPE_REG) return -(int64_t) EINVAL;
-    if (len < n->size) n->size = len;
-    return 0;
+    return vfs_node_truncate(n, len);
 }
 
 int64_t sys_truncate(const char *path, uint64_t len) {

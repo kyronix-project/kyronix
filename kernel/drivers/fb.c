@@ -17,6 +17,7 @@ static bool g_cursor_enabled;
 static bool g_cursor_blink_state = true;
 static uint32_t g_cursor_last_col;
 static uint32_t g_cursor_last_row;
+static uint32_t g_write_depth;
 
 static uint8_t *g_shadow;
 static uint64_t g_shadow_bytes;
@@ -131,6 +132,7 @@ void fb_cursor_blink_tick(uint64_t ticks) {
 }
 
 void fb_cursor_update(void) {
+    if (g_write_depth) return;
     if (!g_cursor_enabled) return;
     uint32_t cols = (uint32_t) (g_fb.width / FONT_W);
     uint32_t rows = (uint32_t) (g_fb.height / FONT_H);
@@ -140,6 +142,12 @@ void fb_cursor_update(void) {
     if (g_fb.col < cols && g_fb.row < rows) cursor_draw(g_fb.col, g_fb.row, g_fb.fg);
     g_cursor_last_col = g_fb.col;
     g_cursor_last_row = g_fb.row;
+}
+
+void fb_begin_write(void) { g_write_depth++; }
+
+void fb_end_write(void) {
+    if (g_write_depth && --g_write_depth == 0) fb_cursor_update();
 }
 
 static void draw_char(uint32_t col, uint32_t row, uint32_t glyph_idx) {
@@ -687,5 +695,7 @@ void fb_putchar(char c) {
 }
 
 void fb_write(const char *s) {
+    fb_begin_write();
     while (*s) fb_putchar(*s++);
+    fb_end_write();
 }

@@ -78,6 +78,7 @@ int elf_load_into(vmm_space_t *space, const void *data, uint64_t size, uint64_t 
             phdr_va = vaddr + (eh->e_phoff - ph->p_offset);
         uint64_t page_base = PAGE_ALIGN_DOWN(vaddr);
         uint64_t page_end = PAGE_ALIGN_UP(vaddr + ph->p_memsz);
+        if (vma_conflicts(space, page_base, page_end - page_base)) return -1;
 
         for (uint64_t pg = page_base; pg < page_end; pg += PAGE_SIZE) {
             void *phys = pmm_alloc_zeroed();

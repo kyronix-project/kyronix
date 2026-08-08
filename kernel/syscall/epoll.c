@@ -66,6 +66,25 @@ static uint64_t epoll_wait_deadline(epoll_t *ep, uint64_t deadline) {
     return deadline;
 }
 
+static uint32_t epoll_objects(epoll_t *ep, void **objects, uint32_t max, bool *wildcard) {
+    uint32_t count = 0;
+    for (int i = 0; i < ep->nw; i++) {
+        void *found[2];
+        int n = fd_poll_objects(ep->w[i].fd, found, 2);
+        for (int j = 0; j < n; j++) {
+            bool duplicate = false;
+            for (uint32_t k = 0; k < count; k++) duplicate |= objects[k] == found[j];
+            if (duplicate) continue;
+            if (count == max) {
+                *wildcard = true;
+                return count;
+            }
+            objects[count++] = found[j];
+        }
+    }
+    return count;
+}
+
 static epoll_t *epoll_find(int epfd) {
     proc_t *p = g_current_proc;
     for (int i = 0; i < EPOLL_SLOTS; i++)
@@ -193,6 +212,10 @@ int64_t sys_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int 
         }
         if (n > 0 || timeout == 0 || (deadline != UINT64_MAX && g_ticks >= deadline)) return n;
         if (p && (p->pending_sigs & ~p->sig_mask)) return -(int64_t) EINTR;
-        poll_wait_once(epoll_wait_deadline(ep, deadline), epoll_ready, ep);
+        void *objects[64];
+        bool wildcard = false;
+        uint32_t object_count = epoll_objects(ep, objects, 64, &wildcard);
+        poll_wait_once(epoll_wait_deadline(ep, deadline), epoll_ready, ep,
+                       objects, object_count, wildcard);
     }
 }

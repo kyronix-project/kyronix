@@ -23,6 +23,8 @@ static uint32_t g_next_ino = 1;
 char g_cwd[512] = "/";
 
 static vfs_file_t *g_default_fds[VFS_FD_MAX];
+static spinlock_t g_fdtable_lock = SPINLOCK_INIT;
+#define VFS_FD_RESERVED ((vfs_file_t *) (uintptr_t) 1)
 
 static inline vfs_file_t **vfs_cur_fds(void) { return g_cur_fds ? g_cur_fds : g_default_fds; }
 
@@ -31,6 +33,7 @@ static struct filesystem *g_filesystems[FS_MAX];
 static int g_filesystem_cnt;
 
 #define VFS_FILE_MAGIC 0x4b59464d41474943ULL
+#define VFS_DIR_BUCKETS 64u
 
 #define EACCES 13
 #define EFAULT 14
@@ -71,10 +74,26 @@ static vfs_node_t *node_alloc(const char *name, uint8_t type, uint32_t mode) {
     return n;
 }
 
+static uint32_t dir_hash(const char *name) {
+    uint32_t h = 2166136261u;
+    while (*name) {
+        h ^= (uint8_t) *name++;
+        h *= 16777619u;
+    }
+    return h & (VFS_DIR_BUCKETS - 1u);
+}
+
 static void dir_insert_nolock(vfs_node_t *dir, vfs_node_t *child) {
     child->parent = dir;
     child->next = dir->children;
     dir->children = child;
+    if (!dir->child_index)
+        dir->child_index = (vfs_node_t **) kcalloc(VFS_DIR_BUCKETS, sizeof(vfs_node_t *));
+    if (dir->child_index) {
+        uint32_t bucket = dir_hash(child->name);
+        child->hash_next = dir->child_index[bucket];
+        dir->child_index[bucket] = child;
+    }
 }
 
 static void dir_insert(vfs_node_t *dir, vfs_node_t *child) {
@@ -90,7 +109,8 @@ vfs_node_t *vfs_node_alloc_internal(const char *name, uint8_t type, uint32_t mod
 void vfs_dir_insert_internal(vfs_node_t *dir, vfs_node_t *child) { dir_insert(dir, child); }
 
 static vfs_node_t *dir_find(vfs_node_t *dir, const char *name) {
-    for (vfs_node_t *c = dir->children; c; c = c->next)
+    vfs_node_t *first = dir->child_index ? dir->child_index[dir_hash(name)] : dir->children;
+    for (vfs_node_t *c = first; c; c = dir->child_index ? c->hash_next : c->next)
         if (strcmp(c->name, name) == 0) return c;
     return NULL;
 }
@@ -119,6 +139,13 @@ static void dir_remove(vfs_node_t *parent, vfs_node_t *child) {
                 break;
             }
     }
+    if (parent->child_index) {
+        uint32_t bucket = dir_hash(child->name);
+        vfs_node_t **link = &parent->child_index[bucket];
+        while (*link && *link != child) link = &(*link)->hash_next;
+        if (*link == child) *link = child->hash_next;
+    }
+    child->hash_next = NULL;
     child->next = NULL;
     child->parent = NULL;
     irq_restore(f);
@@ -129,6 +156,7 @@ static void node_destroy(vfs_node_t *n) {
     if (n->fs_ops && n->fs_ops->close) n->fs_ops->close(n);
     if (n->type == VFS_TYPE_REG && n->data) kfree(n->data);
     if (n->type == VFS_TYPE_SYM && n->symlink) kfree(n->symlink);
+    if (n->child_index) kfree(n->child_index);
     kfree(n);
 }
 
@@ -326,10 +354,19 @@ static vfs_node_t *lookup_internal(const char *path, bool follow_last, int depth
 
             char resolved[512];
             if (child->symlink[0] == '/') {
-                if (*p)
+                const char *root = jail_root_current();
+                if (root[0]) {
+                    if (*p)
+                        snprintf(resolved, sizeof(resolved), "%s%s/%s", root,
+                                 child->symlink, p);
+                    else
+                        snprintf(resolved, sizeof(resolved), "%s%s", root,
+                                 child->symlink);
+                } else if (*p) {
                     snprintf(resolved, sizeof(resolved), "%s/%s", child->symlink, p);
-                else
+                } else {
                     snprintf(resolved, sizeof(resolved), "%s", child->symlink);
+                }
             } else {
                 char base[512];
                 if (vfs_node_path(child->parent, base, sizeof(base)) < 0) return NULL;
@@ -345,6 +382,8 @@ static vfs_node_t *lookup_internal(const char *path, bool follow_last, int depth
                         snprintf(resolved, sizeof(resolved), "%s/%s", base, child->symlink);
                 }
             }
+            const char *root = jail_root_current();
+            if (root[0]) jail_canon_clamp(resolved, sizeof(resolved), root);
             return lookup_internal(resolved, true, depth + 1);
         }
         cur = child;
@@ -670,14 +709,24 @@ int vfs_rename(const char *oldpath, const char *newpath) {
 
 static int fd_alloc_from(int start) {
     vfs_file_t **fds = vfs_cur_fds();
-    for (int i = start; i < VFS_FD_MAX; i++)
-        if (!fds[i]) return i;
+    spin_lock(&g_fdtable_lock);
+    for (int i = start; i < VFS_FD_MAX; i++) {
+        if (!fds[i]) {
+            fds[i] = VFS_FD_RESERVED;
+            spin_unlock(&g_fdtable_lock);
+            return i;
+        }
+    }
+    spin_unlock(&g_fdtable_lock);
     return -1;
 }
 
 static vfs_file_t *file_alloc(void) {
     vfs_file_t *f = (vfs_file_t *) kcalloc(1, sizeof(vfs_file_t));
-    if (f) f->magic = VFS_FILE_MAGIC;
+    if (f) {
+        f->magic = VFS_FILE_MAGIC;
+        f->refs = 1;
+    }
     return f;
 }
 
@@ -687,10 +736,60 @@ static bool file_valid(vfs_file_t *f) {
     return f->magic == VFS_FILE_MAGIC;
 }
 
+static void file_close(vfs_file_t *f);
+
+static bool borrow_register(vfs_file_t *f) {
+    proc_t *p = g_current_proc;
+    if (!p || !p->fd_borrow_active) return true;
+    uint16_t count = p->fd_borrow_count;
+    for (uint16_t i = 0; i < count; i++) {
+        if (p->fd_borrows[i] == f) {
+            file_close(f); /* this syscall already owns a borrow */
+            return true;
+        }
+    }
+    if (count >= VFS_FD_MAX) {
+        file_close(f);
+        return false;
+    }
+    p->fd_borrows[count] = f;
+    p->fd_borrow_count = count + 1;
+    return true;
+}
+
+void vfs_syscall_borrow_begin(void) {
+    proc_t *p = g_current_proc;
+    if (!p) return;
+    p->fd_borrow_count = 0;
+    p->fd_borrow_active = 1;
+}
+
+void vfs_syscall_borrow_end(void) {
+    proc_t *p = g_current_proc;
+    if (!p || !p->fd_borrow_active) return;
+    uint16_t count = p->fd_borrow_count;
+    p->fd_borrow_count = 0;
+    p->fd_borrow_active = 0;
+    for (uint16_t i = 0; i < count; i++) {
+        vfs_file_t *f = p->fd_borrows[i];
+        p->fd_borrows[i] = NULL;
+        file_close(f);
+    }
+}
+
 static vfs_file_t *fd_get(int fd) {
     if (fd < 0 || fd >= VFS_FD_MAX) return NULL;
+    spin_lock(&g_fdtable_lock);
     vfs_file_t *f = vfs_cur_fds()[fd];
-    if (!file_valid(f)) return NULL;
+    if (!file_valid(f)) {
+        spin_unlock(&g_fdtable_lock);
+        return NULL;
+    }
+    bool borrow = g_current_proc && g_current_proc->fd_borrow_active;
+    if (borrow)
+        __atomic_add_fetch(&f->refs, 1, __ATOMIC_ACQ_REL);
+    spin_unlock(&g_fdtable_lock);
+    if (borrow && !borrow_register(f)) return NULL;
     return f;
 }
 
@@ -701,11 +800,32 @@ vfs_file_t *vfs_file_alloc(void) { return file_alloc(); }
 vfs_file_t *vfs_fd_get(int fd) { return fd_get(fd); }
 
 void vfs_fd_install(int fd, vfs_file_t *f) {
-    if (fd >= 0 && fd < VFS_FD_MAX) vfs_cur_fds()[fd] = f;
+    if (fd < 0 || fd >= VFS_FD_MAX) return;
+    spin_lock(&g_fdtable_lock);
+    vfs_cur_fds()[fd] = f;
+    spin_unlock(&g_fdtable_lock);
 }
 
 void vfs_fd_clear(int fd) {
-    if (fd >= 0 && fd < VFS_FD_MAX) vfs_cur_fds()[fd] = NULL;
+    if (fd < 0 || fd >= VFS_FD_MAX) return;
+    spin_lock(&g_fdtable_lock);
+    vfs_cur_fds()[fd] = NULL;
+    spin_unlock(&g_fdtable_lock);
+}
+
+int vfs_fd_replace(int fd, vfs_file_t *f, vfs_file_t **old_out) {
+    if (fd < 0 || fd >= VFS_FD_MAX || !file_valid(f)) return -1;
+    spin_lock(&g_fdtable_lock);
+    vfs_file_t *old = vfs_cur_fds()[fd];
+    /* Do not steal a slot from an in-flight descriptor-creating syscall. */
+    if (old == VFS_FD_RESERVED) {
+        spin_unlock(&g_fdtable_lock);
+        return -1;
+    }
+    vfs_cur_fds()[fd] = f;
+    spin_unlock(&g_fdtable_lock);
+    if (old_out) *old_out = file_valid(old) ? old : NULL;
+    return 0;
 }
 
 bool fd_valid(int fd) { return fd_get(fd) != NULL; }
@@ -722,11 +842,14 @@ int fd_open_node(vfs_node_t *n, int flags) {
     int fd = fd_alloc_from(0);
     if (fd < 0) return -(int) EMFILE;
     vfs_file_t *f = file_alloc();
-    if (!f) return -(int) ENOMEM;
+    if (!f) {
+        vfs_fd_clear(fd);
+        return -(int) ENOMEM;
+    }
     f->node = n;
     f->flags = flags;
     node_ref(n);
-    vfs_cur_fds()[fd] = f;
+    vfs_fd_install(fd, f);
     return fd;
 }
 
@@ -865,21 +988,32 @@ uint64_t fd_poll_deadline(int fd) {
     return (f && f->tfd && f->tfd->next_tick) ? f->tfd->next_tick : UINT64_MAX;
 }
 
-static void pipe_drop_write(pipe_t *p) {
-    if (!p) return;
-    if (p->write_refs) p->write_refs--;
-    if (p->write_refs == 0) pipe_wake(p, 1); /* EOF: wake all blocked readers */
+int fd_poll_objects(int fd, void **objects, int max_objects) {
+    vfs_file_t *f = fd_get(fd);
+    if (!f || !objects || max_objects <= 0) return 0;
+    if (f->efd) objects[0] = f->efd;
+    else if (f->tfd) objects[0] = f->tfd;
+    else if (f->inet) objects[0] = f->inet;
+    else if (f->wpipe) {
+        objects[0] = f->pipe;
+        if (max_objects > 1 && f->wpipe != f->pipe) {
+            objects[1] = f->wpipe;
+            return 2;
+        }
+    } else if (f->pipe) objects[0] = f->pipe;
+    else if (f->node) objects[0] = f->node;
+    else return 0;
+    return 1;
 }
 
+static void pipe_drop_write(pipe_t *p) {
+    pipe_unref_write(p);
+}
+
+void vfs_pipe_drop_read(pipe_t *p) { pipe_unref_read(p); }
 void vfs_pipe_drop_write(pipe_t *p) { pipe_drop_write(p); }
 
-static void pipe_maybe_free(pipe_t *p) {
-    if (p && p->read_refs == 0 && p->write_refs == 0) pipe_free(p);
-}
-
-void vfs_pipe_maybe_free(pipe_t *p) { pipe_maybe_free(p); }
-
-static void file_close(vfs_file_t *f) {
+static void file_destroy(vfs_file_t *f) {
     if (!file_valid(f)) return;
     if (f->efd) {
         if (__sync_sub_and_fetch(&f->efd->refcnt, 1) == 0) kfree(f->efd);
@@ -907,17 +1041,13 @@ static void file_close(vfs_file_t *f) {
         return;
     }
     if (f->wpipe) {
-        if (f->pipe->read_refs) f->pipe->read_refs--;
-        pipe_maybe_free(f->pipe);
+        pipe_unref_read(f->pipe);
         pipe_drop_write(f->wpipe);
-        pipe_maybe_free(f->wpipe);
     } else if (f->pipe) {
-        if (f->pipe_end == PIPE_END_READ) {
-            if (f->pipe->read_refs) f->pipe->read_refs--;
-        } else {
+        if (f->pipe_end == PIPE_END_READ)
+            pipe_unref_read(f->pipe);
+        else
             pipe_drop_write(f->pipe);
-        }
-        pipe_maybe_free(f->pipe);
     }
     if (f->node) {
         vfs_node_t *n = f->node;
@@ -927,6 +1057,18 @@ static void file_close(vfs_file_t *f) {
     }
     f->magic = 0;
     kfree(f);
+}
+
+static void file_close(vfs_file_t *f) {
+    if (!f) return;
+    uint32_t refs = __atomic_load_n(&f->refs, __ATOMIC_ACQUIRE);
+    while (refs) {
+        if (__atomic_compare_exchange_n(&f->refs, &refs, refs - 1, false,
+                                        __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+            if (refs == 1) file_destroy(f);
+            return;
+        }
+    }
 }
 
 void vfs_file_close(vfs_file_t *f) { file_close(f); }
@@ -939,14 +1081,14 @@ static void file_addref(vfs_file_t *f) {
     if (f->node) node_ref(f->node);
     if (!f->pipe) return;
     if (f->wpipe) {
-        f->pipe->read_refs++;
-        f->wpipe->write_refs++;
+        pipe_ref_read(f->pipe);
+        pipe_ref_write(f->wpipe);
         return;
     }
     if (f->pipe_end == PIPE_END_READ)
-        f->pipe->read_refs++;
+        pipe_ref_read(f->pipe);
     else
-        f->pipe->write_refs++;
+        pipe_ref_write(f->pipe);
 }
 
 void vfs_file_addref(vfs_file_t *f) { file_addref(f); }
@@ -957,6 +1099,7 @@ vfs_file_t *vfs_file_clone(vfs_file_t *f) {
     if (!copy) return NULL;
     *copy = *f;
     copy->magic = VFS_FILE_MAGIC;
+    copy->refs = 1;
     copy->cloexec = 0;
     file_addref(copy);
     return copy;
@@ -966,7 +1109,7 @@ int vfs_fd_adopt(vfs_file_t *f) {
     if (!file_valid(f)) return -(int) EBADF;
     int fd = fd_alloc_from(0);
     if (fd < 0) return -(int) EMFILE;
-    vfs_cur_fds()[fd] = f;
+    vfs_fd_install(fd, f);
     return fd;
 }
 
@@ -995,22 +1138,26 @@ static void wire_stdio(vfs_file_t **fds) {
 
 void vfs_copy_fdtable(vfs_file_t **dst, vfs_file_t **src) {
     for (int i = 0; i < VFS_FD_MAX; i++) {
-        if (!src[i]) {
+        spin_lock(&g_fdtable_lock);
+        vfs_file_t *source = src[i];
+        if (!file_valid(source)) {
+            spin_unlock(&g_fdtable_lock);
             dst[i] = NULL;
             continue;
         }
-        if (!file_valid(src[i])) {
-            dst[i] = NULL;
-            continue;
-        }
+        __atomic_add_fetch(&source->refs, 1, __ATOMIC_ACQ_REL);
+        spin_unlock(&g_fdtable_lock);
+
         vfs_file_t *f = file_alloc();
         if (f) {
-            *f = *src[i];
+            *f = *source;
             f->magic = VFS_FILE_MAGIC;
+            f->refs = 1;
             /* child doesnt own a listening sockets lifecycle */
             if (f->node && f->node->type == VFS_TYPE_SOCK) f->node = NULL;
             file_addref(f); /* bump node/pipe ref-counts */
         }
+        file_close(source);
         dst[i] = f;
     }
 }
@@ -1227,6 +1374,7 @@ static int fd_open_impl(const char *path, int flags, int mode, bool reroot, bool
 
     vfs_file_t *f = file_alloc();
     if (!f) {
+        vfs_fd_clear(fd);
         node_unref(n);
         return -(int) ENOMEM;
     }
@@ -1237,10 +1385,18 @@ static int fd_open_impl(const char *path, int flags, int mode, bool reroot, bool
     f->cloexec = (flags & O_CLOEXEC) ? 1 : 0;
     /* n is already reffed: from_lookup -> lookup_ref bumped it; !from_lookup -> node_ref above */
     (void) from_lookup;
-    if ((flags & O_TRUNC) && n->type == VFS_TYPE_REG) n->size = 0;
+    if ((flags & O_TRUNC) && n->type == VFS_TYPE_REG) {
+        int tr = vfs_node_truncate(n, 0);
+        if (tr < 0) {
+            kfree(f);
+            vfs_fd_clear(fd);
+            node_unref(n);
+            return tr;
+        }
+    }
     if (flags & O_APPEND) f->pos = n->size;
 
-    vfs_cur_fds()[fd] = f;
+    vfs_fd_install(fd, f);
     return fd;
 }
 
@@ -1265,10 +1421,16 @@ int fd_openat(int dirfd, const char *path, int flags, int mode) {
 }
 
 int fd_close(int fd) {
-    vfs_file_t *f = fd_get(fd);
-    if (!f) return -(int) EBADF;
-    file_close(f);
+    if (fd < 0 || fd >= VFS_FD_MAX) return -(int) EBADF;
+    spin_lock(&g_fdtable_lock);
+    vfs_file_t *f = vfs_cur_fds()[fd];
+    if (!file_valid(f)) {
+        spin_unlock(&g_fdtable_lock);
+        return -(int) EBADF;
+    }
     vfs_cur_fds()[fd] = NULL;
+    spin_unlock(&g_fdtable_lock);
+    file_close(f);
     return 0;
 }
 
@@ -1788,6 +1950,24 @@ int vfs_fchown(int fd, uint32_t uid, uint32_t gid) {
     return 0;
 }
 
+int vfs_node_truncate(vfs_node_t *n, uint64_t len) {
+    if (!n || n->type != VFS_TYPE_REG) return -(int) EINVAL;
+    if (n->fs_ops && n->fs_ops->truncate) return n->fs_ops->truncate(n, len);
+
+    if (len > n->capacity) {
+        if (len > UINT64_MAX - 4095) return -(int) EFBIG;
+        uint64_t cap = (len + 4095) & ~4095ULL;
+        uint8_t *data = (uint8_t *) krealloc(n->data, cap);
+        if (!data) return -(int) ENOSPC;
+        n->data = data;
+        n->capacity = cap;
+    }
+    if (len > n->size) memset(n->data + n->size, 0, len - n->size);
+    n->size = len;
+    n->dirty = 1;
+    return 0;
+}
+
 int vfs_truncate(const char *path, uint64_t len) {
     vfs_node_t *n = vfs_lookup(path);
     if (!n) return -(int) ENOENT;
@@ -1799,12 +1979,9 @@ int vfs_truncate(const char *path, uint64_t len) {
         node_unref(n);
         return -(int) EACCES;
     }
-    if (len < n->size) {
-        n->size = len;
-        n->dirty = 1;
-    }
+    int rc = vfs_node_truncate(n, len);
     node_unref(n);
-    return 0;
+    return rc;
 }
 
 int vfs_access(const char *path, int mode) {

@@ -168,7 +168,7 @@ static void virtnet_irq(int irq, void *arg) {
     (void) irq;
     (void) arg;
     if (!(io_r8(REG_ISR) & 1u)) return;
-    virtnet_poll();
+    net_schedule_poll();
 }
 
 static const uint8_t *virtnet_mac(void) { return g_mac; }

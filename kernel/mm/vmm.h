@@ -38,6 +38,10 @@ typedef struct {
     uint64_t pml4_phys;
     uint64_t kernel_map_generation;
     vmm_vma_t vmas[VMM_VMA_MAX];
+    volatile uint32_t refcount;
+    volatile uint32_t user_accessors;
+    volatile uint32_t user_mutating;
+    volatile uint64_t fault_lock;
 } vmm_space_t;
 
 extern vmm_space_t g_kernel_space;
@@ -48,8 +52,13 @@ void vmm_unmap(vmm_space_t *sp, uint64_t virt);
 uint64_t vmm_virt_to_phys(vmm_space_t *sp, uint64_t virt);
 bool vmm_user_range_ok(vmm_space_t *sp, uint64_t virt, uint64_t len, bool write);
 bool vmm_user_range_fault_in(vmm_space_t *sp, uint64_t virt, uint64_t len, bool write);
+void vmm_syscall_access_begin(void);
+void vmm_syscall_access_end(void);
+bool vmm_space_mutation_begin(vmm_space_t *sp);
+void vmm_space_mutation_end(vmm_space_t *sp);
 int vmm_protect(vmm_space_t *sp, uint64_t virt, uint64_t flags);
 vmm_space_t *vmm_space_new(void);
+void vmm_space_retain(vmm_space_t *sp);
 void vmm_space_free(vmm_space_t *sp);
 void vmm_switch(vmm_space_t *sp);
 int vmm_fork_user(vmm_space_t *dst, vmm_space_t *src);

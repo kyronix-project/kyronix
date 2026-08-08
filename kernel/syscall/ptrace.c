@@ -157,7 +157,8 @@ static bool ptrace_may_attach(const proc_t *self, const proc_t *target) {
     if (!self) return true;
     if (self == target) return false;
     if (!jail_can_see(self, target)) return false;
-    if (self->euid == 0) return true;
+    if (self->jail_id != target->jail_id && !jail_host_priv(self)) return false;
+    if (jail_host_priv(self)) return true;
     if (target->uid != target->euid || target->uid != target->suid) return false;
     return self->uid == target->uid && self->euid == target->uid && self->suid == target->uid;
 }
@@ -166,8 +167,12 @@ int64_t sys_ptrace(int64_t request, int64_t pid, uint64_t addr, uint64_t data) {
     proc_t *self = cur();
 
     if (request == PTRACE_TRACEME) {
-        self->tracer_pid = self->ppid;
-        return 0;
+        proc_t *parent = proc_find(self->ppid);
+        if (!parent) return -(int64_t) ESRCH;
+        bool allowed = ptrace_may_attach(parent, self);
+        if (allowed && !self->tracer_pid) self->tracer_pid = self->ppid;
+        proc_unref(parent);
+        return allowed ? 0 : -(int64_t) EPERM;
     }
 
     proc_t *t = proc_find((uint32_t) pid);

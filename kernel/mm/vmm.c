@@ -1,8 +1,10 @@
 #include "vmm.h"
 #include "arch/x86_64/cpu.h"
+#include "arch/x86_64/spinlock.h"
 #include "lib/log.h"
 #include "lib/string.h"
 #include "pmm.h"
+#include "proc/proc.h"
 #include "vma.h"
 
 vmm_space_t g_kernel_space;
@@ -10,6 +12,7 @@ vmm_space_t g_kernel_space;
 #define VMM_MAX_SPACES 256
 static vmm_space_t g_pool[VMM_MAX_SPACES];
 static bool g_pool_used[VMM_MAX_SPACES];
+static spinlock_t g_pool_lock = SPINLOCK_INIT;
 static volatile uint64_t g_kernel_map_generation = 1;
 
 #define PML4_IDX(va) (((va) >> 39) & 0x1FFull)
@@ -55,6 +58,7 @@ int vmm_map(vmm_space_t *sp, uint64_t virt, uint64_t phys, uint64_t flags) {
     uint64_t *pt = descend(pd, PD_IDX(virt));
     if (!pt) return -1;
 
+    if (pt[PT_IDX(virt)] & VMM_PRESENT) return -1;
     pt[PT_IDX(virt)] = (phys & PTE_ADDR_MASK) | (flags & PTE_FLAGS_MASK) | VMM_PRESENT;
     if (new_kernel_slot)
         __atomic_add_fetch(&g_kernel_map_generation, 1, __ATOMIC_RELEASE);
@@ -107,30 +111,87 @@ bool vmm_user_range_fault_in(vmm_space_t *sp, uint64_t virt, uint64_t len, bool 
     if (!sp) return false;
     if (len == 0) return true;
     if (virt + len < virt) return false;
+    proc_t *p = g_current_proc;
+    bool already_held = false;
+    if (p && p->user_access_tracking) {
+        for (uint8_t i = 0; i < p->user_access_count; i++)
+            if (p->user_access_spaces[i] == sp) already_held = true;
+    }
+    if (p && p->user_access_tracking && !already_held) {
+        if (p->user_access_count >= 4) return false;
+        for (;;) {
+            if (__atomic_load_n(&sp->user_mutating, __ATOMIC_ACQUIRE)) return false;
+            __atomic_add_fetch(&sp->user_accessors, 1, __ATOMIC_ACQ_REL);
+            if (!__atomic_load_n(&sp->user_mutating, __ATOMIC_ACQUIRE)) break;
+            __atomic_sub_fetch(&sp->user_accessors, 1, __ATOMIC_ACQ_REL);
+        }
+        p->user_access_spaces[p->user_access_count++] = sp;
+    }
+    while (!__sync_bool_compare_and_swap(&sp->fault_lock, 0, 1)) cpu_relax();
     uint64_t pg = virt & ~0xFFFULL;
     uint64_t last = (virt + len - 1) & ~0xFFFULL;
     for (;; pg += 0x1000) {
         uint64_t pte = vmm_leaf_pte(sp, pg);
         if (pte & VMM_PRESENT) {
-            if (!(pte & VMM_USER)) return false;
+            if (!(pte & VMM_USER)) goto fail;
             if (write && !(pte & VMM_WRITE)) {
                 if (!(pte & VMM_COW) || vmm_handle_cow_fault(sp, pg) <= 0)
-                    return false;
+                    goto fail;
             }
         } else {
             /* not present: only ok if a vma covers it - then fault it in now */
-            if (!vma_page_fault_allowed(sp, pg, write, false)) return false;
+            if (!vma_page_fault_allowed(sp, pg, write, false)) goto fail;
             void *phys = pmm_alloc_zeroed();
-            if (!phys) return false;
+            if (!phys) goto fail;
             uint64_t flags = vma_page_flags(sp, pg);
             if (vmm_map(sp, pg, (uint64_t) phys, flags) != 0) {
                 pmm_free(phys);
-                return false;
+                goto fail;
             }
         }
         if (pg == last) break;
     }
+    __atomic_store_n(&sp->fault_lock, 0, __ATOMIC_RELEASE);
     return true;
+fail:
+    __atomic_store_n(&sp->fault_lock, 0, __ATOMIC_RELEASE);
+    return false;
+}
+
+void vmm_syscall_access_begin(void) {
+    proc_t *p = g_current_proc;
+    if (!p) return;
+    p->user_access_count = 0;
+    memset(p->user_access_spaces, 0, sizeof(p->user_access_spaces));
+    p->user_access_tracking = 1;
+}
+
+void vmm_syscall_access_end(void) {
+    proc_t *p = g_current_proc;
+    if (!p || !p->user_access_tracking) return;
+    uint8_t count = p->user_access_count;
+    p->user_access_count = 0;
+    p->user_access_tracking = 0;
+    for (uint8_t i = 0; i < count; i++) {
+        vmm_space_t *sp = p->user_access_spaces[i];
+        p->user_access_spaces[i] = NULL;
+        if (sp) __atomic_sub_fetch(&sp->user_accessors, 1, __ATOMIC_ACQ_REL);
+    }
+}
+
+bool vmm_space_mutation_begin(vmm_space_t *sp) {
+    if (!sp || sp == &g_kernel_space) return true;
+    if (!__sync_bool_compare_and_swap(&sp->user_mutating, 0, 1)) return false;
+    if (__atomic_load_n(&sp->user_accessors, __ATOMIC_ACQUIRE)) {
+        __atomic_store_n(&sp->user_mutating, 0, __ATOMIC_RELEASE);
+        return false;
+    }
+    return true;
+}
+
+void vmm_space_mutation_end(vmm_space_t *sp) {
+    if (sp && sp != &g_kernel_space)
+        __atomic_store_n(&sp->user_mutating, 0, __ATOMIC_RELEASE);
 }
 
 int vmm_protect(vmm_space_t *sp, uint64_t virt, uint64_t flags) {
@@ -166,16 +227,24 @@ void vmm_unmap(vmm_space_t *sp, uint64_t virt) {
 
 vmm_space_t *vmm_space_new(void) {
     int slot = -1;
+    spin_lock(&g_pool_lock);
     for (int i = 0; i < VMM_MAX_SPACES; i++) {
         if (!g_pool_used[i]) {
             slot = i;
+            g_pool_used[i] = true;
             break;
         }
     }
+    spin_unlock(&g_pool_lock);
     if (slot < 0) return NULL;
 
     uint64_t pml4_phys = (uint64_t) pmm_alloc_zeroed();
-    if (!pml4_phys) return NULL;
+    if (!pml4_phys) {
+        spin_lock(&g_pool_lock);
+        g_pool_used[slot] = false;
+        spin_unlock(&g_pool_lock);
+        return NULL;
+    }
 
     // share kernel half (pml4 256-511); user half starts zeroed
     uint64_t *new_pml4 = (uint64_t *) phys_to_virt(pml4_phys);
@@ -187,8 +256,13 @@ vmm_space_t *vmm_space_new(void) {
     g_pool[slot].kernel_map_generation =
         __atomic_load_n(&g_kernel_map_generation, __ATOMIC_ACQUIRE);
     vma_reset(&g_pool[slot]);
-    g_pool_used[slot] = true;
+    __atomic_store_n(&g_pool[slot].refcount, 1, __ATOMIC_RELEASE);
     return &g_pool[slot];
+}
+
+void vmm_space_retain(vmm_space_t *sp) {
+    if (!sp || sp == &g_kernel_space) return;
+    __atomic_add_fetch(&sp->refcount, 1, __ATOMIC_ACQ_REL);
 }
 
 static void free_pt(uint64_t *pt) {
@@ -210,7 +284,8 @@ static void free_pdpt(uint64_t *pdpt) {
 }
 
 void vmm_space_free(vmm_space_t *sp) {
-    if (sp == &g_kernel_space) return;
+    if (!sp || sp == &g_kernel_space) return;
+    if (__atomic_fetch_sub(&sp->refcount, 1, __ATOMIC_ACQ_REL) != 1) return;
 
     uint64_t *pml4 = (uint64_t *) phys_to_virt(sp->pml4_phys);
 
@@ -219,12 +294,14 @@ void vmm_space_free(vmm_space_t *sp) {
 
     pmm_free((void *) sp->pml4_phys);
 
+    spin_lock(&g_pool_lock);
     for (int i = 0; i < VMM_MAX_SPACES; i++) {
         if (&g_pool[i] == sp) {
             g_pool_used[i] = false;
             break;
         }
     }
+    spin_unlock(&g_pool_lock);
 }
 
 void vmm_switch(vmm_space_t *sp) {

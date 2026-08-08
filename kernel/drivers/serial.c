@@ -43,7 +43,20 @@ void serial_putchar(uint16_t port, char c) {
 }
 
 void serial_write(uint16_t port, const char *s) {
-    while (*s) serial_putchar(port, *s++);
+    serial_write_n(port, s, strlen(s));
+}
+
+void serial_write_n(uint16_t port, const char *s, uint64_t len) {
+    spin_lock(&g_serial_lock);
+    while (len) {
+        /* The 16550 FIFO accepts sixteen bytes once THRE reports empty. */
+        while (!(inb(port + UART_LSR) & LSR_THRE)) cpu_relax();
+        uint64_t chunk = len < 16u ? len : 16u;
+        for (uint64_t i = 0; i < chunk; i++) outb(port + UART_DATA, (uint8_t) s[i]);
+        s += chunk;
+        len -= chunk;
+    }
+    spin_unlock(&g_serial_lock);
 }
 
 bool serial_data_ready(uint16_t port) { return (inb(port + UART_LSR) & LSR_DR) != 0; }

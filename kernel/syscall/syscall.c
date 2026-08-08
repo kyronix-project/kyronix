@@ -121,6 +121,8 @@ static int64_t sys_prctl(int op, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t
 }
 
 void syscall_dispatch(syscall_frame_t *f) {
+    vfs_syscall_borrow_begin();
+    vmm_syscall_access_begin();
     phantom_safe_point(f);
     anti_toctou_safe_point();
     uint64_t nr = f->rax;
@@ -1281,4 +1283,6 @@ void syscall_dispatch(syscall_frame_t *f) {
     }
 
     signal_check(f);
+    vmm_syscall_access_end();
+    vfs_syscall_borrow_end();
 }

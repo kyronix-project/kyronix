@@ -4,6 +4,7 @@
 #include "../lib/log.h"
 #include "../lib/string.h"
 #include "../mm/heap.h"
+#include "../proc/proc.h"
 
 #include "lwip/dns.h"
 #include "lwip/etharp.h"
@@ -23,6 +24,39 @@ static const net_driver_ops_t *g_driver;
 static uint32_t g_driver_calls;
 static bool g_lwip_initialized;
 static bool g_netif_active;
+static proc_t *g_net_worker;
+static volatile uint32_t g_poll_pending;
+static const net_driver_ops_t *driver_acquire(bool require_netif);
+static void driver_release(void);
+
+static void net_worker_main(void) {
+    uint8_t timeout_ctr = 0;
+    for (;;) {
+        uint64_t flags = irq_save();
+        if (!__atomic_exchange_n(&g_poll_pending, 0, __ATOMIC_ACQ_REL)) {
+            g_current_proc->state = PROC_WAITING;
+            /* Close the RUNNING->WAITING lost-wakeup window against an IRQ or
+             * another CPU publishing work. */
+            if (__atomic_exchange_n(&g_poll_pending, 0, __ATOMIC_ACQ_REL)) {
+                g_current_proc->state = PROC_RUNNING;
+                __atomic_store_n(&g_poll_pending, 1, __ATOMIC_RELEASE);
+                irq_restore(flags);
+                continue;
+            }
+            irq_restore(flags);
+            sched_block_current();
+            continue;
+        }
+        irq_restore(flags);
+
+        const net_driver_ops_t *ops = driver_acquire(true);
+        if (ops) {
+            ops->poll();
+            driver_release();
+        }
+        if (g_lwip_initialized && ++timeout_ctr == 0) sys_check_timeouts();
+    }
+}
 
 static const net_driver_ops_t *driver_acquire(bool require_netif) {
     const net_driver_ops_t *ops = NULL;
@@ -77,6 +111,8 @@ bool net_driver_register(const net_driver_ops_t *ops) {
     spin_lock_irqsave(&g_driver_lock);
     g_netif_active = true;
     spin_unlock_irqrestore(&g_driver_lock);
+    if (!g_net_worker) g_net_worker = proc_create_kernel("[net-rx]", net_worker_main);
+    net_schedule_poll();
     log_info("net: lwIP initialized, IP 10.0.2.15/24 gw 10.0.2.2 dns 10.0.2.3");
     return true;
 }
@@ -119,11 +155,12 @@ void net_receive(const uint8_t *eth_frame, uint16_t len) {
 }
 
 void net_poll(void) {
-    const net_driver_ops_t *ops = driver_acquire(true);
-    if (ops) {
-        ops->poll(); // drain rx -> works even if irq does not fire on q35
-        driver_release();
-    }
-    static uint8_t s_ctr;
-    if (g_lwip_initialized && ++s_ctr == 0) sys_check_timeouts();
+    net_schedule_poll();
+}
+
+void net_schedule_poll(void) {
+    __atomic_store_n(&g_poll_pending, 1, __ATOMIC_RELEASE);
+    proc_t *worker = g_net_worker;
+    if (worker && __sync_bool_compare_and_swap(&worker->state, PROC_WAITING, PROC_READY))
+        proc_set_ready(worker);
 }

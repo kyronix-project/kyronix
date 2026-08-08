@@ -43,8 +43,51 @@ void pipe_free(pipe_t *p) {
     }
     p->magic = 0;
     spin_unlock(&p->lock);
+    poll_notify_object(p);
     kfree(p);
-    poll_notify();
+}
+
+static void pipe_endpoint_put(pipe_t *p) {
+    if (__atomic_sub_fetch(&p->endpoint_refs, 1, __ATOMIC_ACQ_REL) == 0) pipe_free(p);
+}
+
+void pipe_ref_read(pipe_t *p) {
+    if (!p) return;
+    /* Keep the allocation alive before publishing the new directional ref. */
+    __atomic_add_fetch(&p->endpoint_refs, 1, __ATOMIC_ACQ_REL);
+    __atomic_add_fetch(&p->read_refs, 1, __ATOMIC_RELEASE);
+}
+
+void pipe_ref_write(pipe_t *p) {
+    if (!p) return;
+    __atomic_add_fetch(&p->endpoint_refs, 1, __ATOMIC_ACQ_REL);
+    __atomic_add_fetch(&p->write_refs, 1, __ATOMIC_RELEASE);
+}
+
+void pipe_unref_read(pipe_t *p) {
+    if (!p) return;
+    uint32_t refs = __atomic_load_n(&p->read_refs, __ATOMIC_ACQUIRE);
+    while (refs) {
+        if (__atomic_compare_exchange_n(&p->read_refs, &refs, refs - 1, false,
+                                        __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+            if (refs == 1) pipe_wake(p, 0);
+            pipe_endpoint_put(p);
+            return;
+        }
+    }
+}
+
+void pipe_unref_write(pipe_t *p) {
+    if (!p) return;
+    uint32_t refs = __atomic_load_n(&p->write_refs, __ATOMIC_ACQUIRE);
+    while (refs) {
+        if (__atomic_compare_exchange_n(&p->write_refs, &refs, refs - 1, false,
+                                        __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+            if (refs == 1) pipe_wake(p, 1);
+            pipe_endpoint_put(p);
+            return;
+        }
+    }
 }
 
 static bool pipe_valid(pipe_t *p) {
@@ -68,7 +111,7 @@ void pipe_wake(pipe_t *p, int want_read) {
         waiters &= waiters - 1;
     }
     spin_unlock(&p->lock);
-    poll_notify();
+    poll_notify_object(p);
 }
 
 void pipe_cancel_wait(pipe_t *p, void *proc) {
@@ -102,7 +145,7 @@ int64_t pipe_read(pipe_t *p, void *buf, uint64_t len) {
         spin_lock(&p->lock);
         while (done < len) {
             if (p->count == 0) {
-                if (p->write_refs == 0) {
+                if (__atomic_load_n(&p->write_refs, __ATOMIC_ACQUIRE) == 0) {
                     spin_unlock(&p->lock);
                     return (int64_t) done;
                 }
@@ -146,7 +189,7 @@ int64_t pipe_peek(pipe_t *p, void *buf, uint64_t len, uint64_t skip) {
         spin_lock(&p->lock);
         while (done < len) {
             if (p->count <= skip + done) {
-                if (p->write_refs == 0) {
+                if (__atomic_load_n(&p->write_refs, __ATOMIC_ACQUIRE) == 0) {
                     spin_unlock(&p->lock);
                     return (int64_t) done;
                 }
@@ -183,7 +226,7 @@ int64_t pipe_peek(pipe_t *p, void *buf, uint64_t len, uint64_t skip) {
 
 int64_t pipe_write(pipe_t *p, const void *buf, uint64_t len) {
     if (!pipe_valid(p)) return -(int64_t) EIO;
-    if (p->read_refs == 0) {
+    if (__atomic_load_n(&p->read_refs, __ATOMIC_ACQUIRE) == 0) {
         proc_send_signal(g_current_proc, SIGPIPE);
         return -(int64_t) EPIPE;
     }
@@ -196,7 +239,7 @@ int64_t pipe_write(pipe_t *p, const void *buf, uint64_t len) {
         spin_lock(&p->lock);
         while (done < len) {
             while (p->count == PIPE_BUFSZ) {
-                if (p->read_refs == 0) {
+                if (__atomic_load_n(&p->read_refs, __ATOMIC_ACQUIRE) == 0) {
                     spin_unlock(&p->lock);
                     proc_send_signal(g_current_proc, SIGPIPE);
                     return done ? (int64_t) done : -(int64_t) EPIPE;

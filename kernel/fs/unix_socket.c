@@ -79,6 +79,7 @@ int fd_socket(int domain, int type, int proto) {
     }
     vfs_file_t *f = vfs_file_alloc();
     if (!f) {
+        vfs_fd_clear(fd);
         kfree(s);
         kfree(n);
         return -(int) ENOMEM;
@@ -185,18 +186,15 @@ int fd_accept_unix(int fd, char *path_out, int path_max, int flags) {
     kfree(conn);
     int nfd = vfs_fd_alloc_from(0);
     if (nfd < 0) {
-        if (srv_rx->read_refs) srv_rx->read_refs--;
-        vfs_pipe_maybe_free(srv_rx);
+        vfs_pipe_drop_read(srv_rx);
         vfs_pipe_drop_write(cli_rx);
-        vfs_pipe_maybe_free(cli_rx);
         return -(int) EMFILE;
     }
     vfs_file_t *nf = vfs_file_alloc();
     if (!nf) {
-        if (srv_rx->read_refs) srv_rx->read_refs--;
-        vfs_pipe_maybe_free(srv_rx);
+        vfs_fd_clear(nfd);
+        vfs_pipe_drop_read(srv_rx);
         vfs_pipe_drop_write(cli_rx);
-        vfs_pipe_maybe_free(cli_rx);
         return -(int) ENOMEM;
     }
     nf->pipe = srv_rx;
@@ -246,10 +244,10 @@ int fd_connect_unix(int fd, const char *path) {
         pipe_free(srv_rx);
         return -(int) ENOMEM;
     }
-    cli_rx->read_refs = 1;
-    cli_rx->write_refs = 1;
-    srv_rx->read_refs = 1;
-    srv_rx->write_refs = 1;
+    pipe_ref_read(cli_rx);
+    pipe_ref_write(cli_rx);
+    pipe_ref_read(srv_rx);
+    pipe_ref_write(srv_rx);
     unix_conn_t *conn = (unix_conn_t *) kcalloc(1, sizeof(unix_conn_t));
     if (!conn) {
         pipe_free(cli_rx);
@@ -274,7 +272,7 @@ int fd_connect_unix(int fd, const char *path) {
         if (__sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
     }
     spin_unlock(&srv->lock);
-    poll_notify();
+    poll_notify_object(sn);
     vfs_node_unref_internal(sn);
     unix_sock_t *cs = (unix_sock_t *) f->node->data;
     kfree(cs);
@@ -306,9 +304,7 @@ void unix_socket_close(vfs_file_t *f) {
         while (c) {
             unix_conn_t *nx = c->next;
             vfs_pipe_drop_write(c->cli_rx);
-            vfs_pipe_maybe_free(c->cli_rx);
-            if (c->srv_rx->read_refs) c->srv_rx->read_refs--;
-            vfs_pipe_maybe_free(c->srv_rx);
+            vfs_pipe_drop_read(c->srv_rx);
             kfree(c);
             c = nx;
         }

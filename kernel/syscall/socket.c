@@ -14,6 +14,7 @@
 #define EINVAL 22
 #define EMFILE 24
 #define ENAMETOOLONG 36
+#define EPERM 1
 
 #define AF_UNIX 1
 #define AF_INET 2
@@ -160,6 +161,10 @@ int64_t sys_socket_bind(int fd, struct sockaddr_un *addr, uint64_t addrlen) {
         if (addrlen < sizeof(struct sockaddr_in)) return -(int64_t) EINVAL;
         if (!uptr_ok(addr, sizeof(struct sockaddr_in))) return -(int64_t) EFAULT;
         if (addr->sun_family != AF_INET) return -(int64_t) EINVAL;
+        const struct sockaddr_in *in = (const struct sockaddr_in *) addr;
+        uint16_t port = (uint16_t) ((in->sin_port >> 8) | (in->sin_port << 8));
+        if (port && port < 1024 && !jail_host_priv(g_current_proc))
+            return -(int64_t) EPERM;
         return inet_bind(f->inet, (const struct sockaddr_in *) addr);
     }
     if (addrlen < offsetof(struct sockaddr_un, sun_path) ||

@@ -174,11 +174,17 @@ int64_t sys_setsid(void) {
     return (int64_t) p->pid;
 }
 int64_t sys_setpgid(uint64_t pid, uint64_t pgid) {
-    proc_t *p = pid ? proc_find((uint32_t) pid) : cur();
+    proc_t *self = cur();
+    proc_t *p = pid ? proc_find((uint32_t) pid) : self;
     if (!p) return -(int64_t) ESRCH;
     if (!jail_can_see(cur(), p)) {
         if (pid) proc_unref(p);
         return -(int64_t) ESRCH;
+    }
+    if (p != self && (!self || p->ppid != self->pid || p->jail_id != self->jail_id ||
+                      (!host_priv() && p->uid != self->uid))) {
+        if (pid) proc_unref(p);
+        return -(int64_t) EPERM;
     }
     if (pgid == 0) pgid = p->pid;
     if (pgid > PROC_MAX) {

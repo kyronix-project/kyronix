@@ -37,6 +37,7 @@ typedef uintptr_t mem_ptr_t;
 #define PACK_STRUCT_FLD_S(x) x
 
 #include "../../lib/log.h"
+#include "../../crypto/chacha20.h"
 #define LWIP_PLATFORM_DIAG(x)                                                                      \
     do { log_debug x; } while (0)
 #define LWIP_PLATFORM_ASSERT(x)                                                                    \
@@ -46,8 +47,12 @@ typedef uintptr_t mem_ptr_t;
     } while (0)
 
 #define LWIP_PROVIDE_ERRNO 1
-extern volatile uint64_t g_ticks;
-#define LWIP_RAND() ((u32_t) (g_ticks * 6364136223846793005ULL + 1442695040888963407ULL))
+static inline u32_t kyronix_lwip_rand(void) {
+    u32_t value;
+    chacha20_rng_bytes(&g_chacha20_rng, (uint8_t *) &value, sizeof(value));
+    return value;
+}
+#define LWIP_RAND() kyronix_lwip_rand()
 
 typedef long ssize_t;
 #define SSIZE_MAX 0x7fffffffffffffffL

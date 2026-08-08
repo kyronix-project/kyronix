@@ -88,6 +88,7 @@ struct vfs_node;
 struct vfs_fs_ops {
     int64_t (*read)(struct vfs_node *, char *, uint64_t off, uint64_t len);
     int64_t (*write)(struct vfs_node *, const char *, uint64_t off, uint64_t len);
+    int (*truncate)(struct vfs_node *, uint64_t len);
     void (*close)(struct vfs_node *);
 };
 
@@ -113,6 +114,8 @@ typedef struct vfs_node {
     uint8_t *data;
     uint64_t capacity;
     struct vfs_node *children;
+    struct vfs_node **child_index;
+    struct vfs_node *hash_next;
     struct vfs_node *next;
     struct vfs_node *parent;
     char *symlink;
@@ -164,6 +167,7 @@ typedef struct {
     eventfd_state_t *efd;
     timerfd_state_t *tfd;
     struct net_conn *inet; /* non-null for AF_INET sockets */
+    volatile uint32_t refs; /* descriptor ownership plus in-flight syscall borrows */
 
 } vfs_file_t;
 
@@ -180,6 +184,8 @@ void vfs_init(void);
 void vfs_cloexec_flush(void);
 void vfs_set_fdtable(vfs_file_t **fds);
 vfs_file_t **vfs_get_fdtable(void);
+void vfs_syscall_borrow_begin(void);
+void vfs_syscall_borrow_end(void);
 void vfs_copy_fdtable(vfs_file_t **dst, vfs_file_t **src);
 int vfs_phantom_sanitize_fdtable(vfs_file_t **fds);
 void vfs_free_fdtable(vfs_file_t **fds);
@@ -218,6 +224,7 @@ bool fd_pollin(int fd);
 bool fd_pollout(int fd);
 bool fd_pollhup(int fd);
 uint64_t fd_poll_deadline(int fd);
+int fd_poll_objects(int fd, void **objects, int max_objects);
 int fd_pipe(int pipefd[2]);
 int fd_socketpair(int sv[2]);
 int fd_eventfd(uint32_t initval, int eflags);
@@ -261,6 +268,7 @@ int vfs_chown(const char *path, uint32_t uid, uint32_t gid);
 int vfs_lchown(const char *path, uint32_t uid, uint32_t gid);
 int vfs_fchown(int fd, uint32_t uid, uint32_t gid);
 int vfs_truncate(const char *path, uint64_t len);
+int vfs_node_truncate(vfs_node_t *node, uint64_t len);
 int vfs_access(const char *path, int mode);
 int vfs_mknod(const char *path, uint32_t mode, uint64_t dev);
 char *vfs_node_abspath(vfs_node_t *n, char *buf, size_t sz);

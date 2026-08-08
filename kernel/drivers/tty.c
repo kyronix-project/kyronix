@@ -202,22 +202,31 @@ int64_t tty_read(char *buf, uint64_t len) {
 
 int64_t tty_write(const char *buf, uint64_t len) {
     tty_process_input();
+#ifdef CONFIG_SERIAL_CONSOLE
+    uint64_t serial_start = 0;
+    if (tty_termios.c_oflag & ONLCR) {
+        for (uint64_t i = 0; i < len; i++) {
+            if (buf[i] != '\n') continue;
+            if (i > serial_start) serial_write_n(COM1, buf + serial_start, i - serial_start);
+            serial_write_n(COM1, "\r\n", 2);
+            serial_start = i + 1;
+        }
+        if (serial_start < len) serial_write_n(COM1, buf + serial_start, len - serial_start);
+    } else {
+        serial_write_n(COM1, buf, len);
+    }
+#endif
+    if (g_fb.addr) fb_begin_write();
     for (uint64_t i = 0; i < len; i++) {
         char c = buf[i];
 
         // ONLCR: map \n -> \r\n on output
         if ((tty_termios.c_oflag & ONLCR) && c == '\n') {
-#ifdef CONFIG_SERIAL_CONSOLE
-            serial_putchar(COM1, '\r');
-#endif
             if (g_fb.addr) fb_putchar('\r');
         }
-
-#ifdef CONFIG_SERIAL_CONSOLE
-        serial_putchar(COM1, c);
-#endif
         if (g_fb.addr) fb_putchar(c);
     }
+    if (g_fb.addr) fb_end_write();
     return (int64_t) len;
 }
 

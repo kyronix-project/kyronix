@@ -18,4 +18,5 @@ void net_driver_unregister(const net_driver_ops_t *ops);
 bool net_driver_send(const uint8_t *data, uint16_t len);
 bool net_driver_mac(uint8_t mac[6]);
 void net_poll(void);
+void net_schedule_poll(void);
 void net_receive(const uint8_t *eth_frame, uint16_t len);

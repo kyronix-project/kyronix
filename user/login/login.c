@@ -79,19 +79,20 @@ static void print_issue(void) {
     puts("");
 }
 
-static int has_password(const char *user) {
+/* 1 = password required, 0 = intentionally empty, -1 = locked account */
+static int password_state(const char *user) {
     struct spwd *sp = getspnam(user);
     if (sp && sp->sp_pwdp) {
         const char *p = sp->sp_pwdp;
-        if (p[0] == '\0' || p[0] == '*' || p[0] == '!')
-            return 0;
+        if (p[0] == '*' || p[0] == '!') return -1;
+        if (p[0] == '\0') return 0;
         return 1;
     }
 
     struct passwd *pw = getpwnam(user);
     if (!pw || !pw->pw_passwd) return 0;
     if (pw->pw_passwd[0] == '\0') return 0;
-    if (pw->pw_passwd[0] == '*' || pw->pw_passwd[0] == '!') return 0;
+    if (pw->pw_passwd[0] == '*' || pw->pw_passwd[0] == '!') return -1;
 
     return 1;
 }
@@ -154,7 +155,13 @@ int main(void) {
                 continue;
             }
 
-            if (!has_password(user)) {
+            int pwstate = password_state(user);
+            if (pwstate < 0) {
+                putstr("Login incorrect\n");
+                sleep(1);
+                continue;
+            }
+            if (pwstate == 0) {
                 break;
             }
 

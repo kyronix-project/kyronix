@@ -173,7 +173,7 @@ int main(int argc, char **argv) {
         const char *hash = crypt(password, salt);
         fprintf(fs, "%s:%s:%ld:0:99999:7:::\n", login, hash ? hash : password, today);
     } else {
-        fprintf(fs, "%s::%ld:0:99999:7:::\n", login, today);
+        fprintf(fs, "%s:!:%ld:0:99999:7:::\n", login, today);
     }
     fflush(fs);
     fsync(fileno(fs));

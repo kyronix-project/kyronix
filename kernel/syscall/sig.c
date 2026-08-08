@@ -36,31 +36,48 @@ int64_t sys_kill(int64_t pid, int sig) {
         if (sig) proc_send_signal(target, sig);
         proc_unref(target);
     } else if (pid == -1) {
+        bool found = false, permitted = false;
         for (int i = 0; i < PROC_MAX; i++) {
             if (g_proctable[i].state == PROC_UNUSED) continue;
             if (g_proctable[i].pid == 1) continue;
+            if (self == &g_proctable[i]) continue;
             if (!jail_can_see(self, &g_proctable[i])) continue;
+            found = true;
+            if (!kill_permitted(self, &g_proctable[i])) continue;
+            permitted = true;
             if (sig) proc_send_signal(&g_proctable[i], sig);
         }
+        if (!found) return -(int64_t) ESRCH;
+        if (!permitted) return -(int64_t) EPERM;
     } else if (pid < -1) {
         uint32_t pgid = (uint32_t) (-pid);
-        bool found = false;
+        bool found = false, permitted = false;
         for (int i = 0; i < PROC_MAX; i++) {
             if (g_proctable[i].state == PROC_UNUSED) continue;
             if (!jail_can_see(self, &g_proctable[i])) continue;
             if (g_proctable[i].pgid == (int) pgid) {
-                if (sig) proc_send_signal(&g_proctable[i], sig);
                 found = true;
+                if (!kill_permitted(self, &g_proctable[i])) continue;
+                permitted = true;
+                if (sig) proc_send_signal(&g_proctable[i], sig);
             }
         }
         if (!found) return -(int64_t) ESRCH;
+        if (!permitted) return -(int64_t) EPERM;
     } else {
+        bool found = false, permitted = false;
         for (int i = 0; i < PROC_MAX; i++) {
             if (g_proctable[i].state == PROC_UNUSED) continue;
             if (!jail_can_see(self, &g_proctable[i])) continue;
-            if (self && g_proctable[i].pgid == self->pgid && sig)
-                proc_send_signal(&g_proctable[i], sig);
+            if (self && g_proctable[i].pgid == self->pgid) {
+                found = true;
+                if (!kill_permitted(self, &g_proctable[i])) continue;
+                permitted = true;
+                if (sig) proc_send_signal(&g_proctable[i], sig);
+            }
         }
+        if (!found) return -(int64_t) ESRCH;
+        if (!permitted) return -(int64_t) EPERM;
     }
     return 0;
 }

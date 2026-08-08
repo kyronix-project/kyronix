@@ -28,6 +28,7 @@ int fd_eventfd(uint32_t initval, int eflags) {
     }
     vfs_file_t *f = vfs_file_alloc();
     if (!f) {
+        vfs_fd_clear(fd);
         kfree(e);
         return -(int) ENOMEM;
     }
@@ -55,6 +56,7 @@ int64_t eventfd_read(vfs_file_t *f, char *buf, uint64_t len) {
                 e->counter = 0;
             }
             spin_unlock(&e->lock);
+            poll_notify_object(e);
             __builtin_memcpy(buf, &val, 8);
             return 8;
         }
@@ -89,7 +91,7 @@ int64_t eventfd_write(vfs_file_t *f, const char *buf, uint64_t len) {
         e->waiter = NULL;
     }
     spin_unlock(&e->lock);
-    poll_notify();
+    poll_notify_object(e);
     return 8;
 }
 
@@ -107,6 +109,7 @@ int fd_timerfd_create(int clockid, int tflags) {
     }
     vfs_file_t *f = vfs_file_alloc();
     if (!f) {
+        vfs_fd_clear(fd);
         kfree(t);
         return -(int) ENOMEM;
     }
@@ -140,7 +143,7 @@ int fd_timerfd_settime(int fd, int flags, const kitimerspec_t *new_val, kitimers
     if (waiter && __sync_bool_compare_and_swap(&waiter->state, PROC_WAITING, PROC_READY))
         proc_set_ready(waiter);
     spin_unlock(&t->lock);
-    poll_notify();
+    poll_notify_object(t);
     return 0;
 }
 

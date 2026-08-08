@@ -7,14 +7,14 @@
 #include <unistd.h>
 
 static void usage(void) {
-    fprintf(stderr, "usage: logger [-t tag] message...\n");
-    fprintf(stderr, "       logger [-t tag] < /dev/stdin\n");
-    fprintf(stderr, "  -t tag    use specified tag (default: logger)\n");
+    fprintf(stderr, "usage: logctl [-t tag] message...\n");
+    fprintf(stderr, "       logctl [-t tag] < /dev/stdin\n");
+    fprintf(stderr, "  -t tag    use specified tag (default: logctl)\n");
     fprintf(stderr, "  -h        show help\n");
 }
 
 int main(int argc, char **argv) {
-    char tag[32] = "logger";
+    char tag[32] = "logctl";
     int first = 1;
 
     if (first < argc && strcmp(argv[first], "-h") == 0) {
@@ -29,7 +29,7 @@ int main(int argc, char **argv) {
 
     FILE *log = fopen("/var/log/messages", "a");
     if (!log) {
-        fprintf(stderr, "logger: %s: %s\n", "/var/log/messages", strerror(errno));
+        fprintf(stderr, "logctl: %s: %s\n", "/var/log/messages", strerror(errno));
         return 1;
     }
 

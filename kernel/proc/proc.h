@@ -100,6 +100,12 @@ typedef struct proc {
     uint32_t sup_groups[64];
     int ngroups;
     volatile uint32_t anti_toctou_pending_us; // consumed at the next syscall safe point
+    vfs_file_t *fd_borrows[VFS_FD_MAX];
+    uint16_t fd_borrow_count;
+    uint8_t fd_borrow_active;
+    vmm_space_t *user_access_spaces[4];
+    uint8_t user_access_count;
+    uint8_t user_access_tracking;
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX] __attribute__((aligned(16)));

@@ -10,6 +10,7 @@
 #define EINVAL 22
 #define EMFILE 24
 #define ENOMEM 12
+#define EBUSY 16
 #define ENOTTY 25
 
 #define TCGETS 0x5401
@@ -139,7 +140,10 @@ int fd_fcntl(int fd, int cmd, uint64_t arg) {
         int newfd = vfs_fd_alloc_from((int) arg);
         if (newfd < 0) return -(int) EMFILE;
         vfs_file_t *nf = vfs_file_clone(f);
-        if (!nf) return -(int) ENOMEM;
+        if (!nf) {
+            vfs_fd_clear(newfd);
+            return -(int) ENOMEM;
+        }
         nf->cloexec = (cmd == F_DUPFD_CLOEXEC) ? 1 : 0;
         vfs_fd_install(newfd, nf);
         return newfd;
@@ -160,15 +164,15 @@ int fd_dup2(int oldfd, int newfd) {
     vfs_file_t *f = vfs_fd_get(oldfd);
     if (!f) return -(int) EBADF;
     if (newfd < 0 || newfd >= VFS_FD_MAX) return -(int) EBADF;
-    vfs_file_t *old = vfs_fd_get(newfd);
-    if (old) {
-        vfs_file_close(old);
-        vfs_fd_clear(newfd);
-    }
     vfs_file_t *nf = vfs_file_clone(f);
     if (!nf) return -(int) ENOMEM;
     nf->cloexec = 0;
-    vfs_fd_install(newfd, nf);
+    vfs_file_t *old = NULL;
+    if (vfs_fd_replace(newfd, nf, &old) < 0) {
+        vfs_file_close(nf);
+        return -(int) EBUSY;
+    }
+    if (old) vfs_file_close(old);
     return newfd;
 }
 

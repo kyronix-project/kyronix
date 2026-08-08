@@ -4,6 +4,7 @@
 #include "../lib/string.h"
 #include "../mm/heap.h"
 #include "../proc/proc.h"
+#include "../proc/jail.h"
 #include "security/phantom.h"
 #include "../syscall/poll.h"
 #include "../syscall/syscall.h"
@@ -27,6 +28,7 @@
 #define EMSGSIZE 90
 #define ENOTSUP 95
 #define ENOTCONN 107
+#define EPERM 1
 #define ECONNREFUSED 111
 #define EINPROGRESS 115
 
@@ -45,21 +47,23 @@ typedef struct {
 static uint32_t ring_avail(const rx_ring_t *r) { return (r->head - r->tail) & (RX_BUF_SZ - 1); }
 
 static void ring_push(rx_ring_t *r, const uint8_t *data, uint32_t len) {
-    for (uint32_t i = 0; i < len; i++) {
-        uint32_t next = (r->head + 1) & (RX_BUF_SZ - 1);
-        if (next == r->tail) break;
-        r->buf[r->head] = data[i];
-        r->head = next;
-    }
+    uint32_t free = (RX_BUF_SZ - 1u) - ring_avail(r);
+    if (len > free) len = free;
+    uint32_t first = RX_BUF_SZ - r->head;
+    if (first > len) first = len;
+    memcpy(r->buf + r->head, data, first);
+    memcpy(r->buf, data + first, len - first);
+    r->head = (r->head + len) & (RX_BUF_SZ - 1u);
 }
 
 static uint32_t ring_pop(rx_ring_t *r, uint8_t *out, uint32_t want) {
     uint32_t have = ring_avail(r);
     if (want > have) want = have;
-    for (uint32_t i = 0; i < want; i++) {
-        out[i] = r->buf[r->tail];
-        r->tail = (r->tail + 1) & (RX_BUF_SZ - 1);
-    }
+    uint32_t first = RX_BUF_SZ - r->tail;
+    if (first > want) first = want;
+    memcpy(out, r->buf + r->tail, first);
+    memcpy(out + first, r->buf, want - first);
+    r->tail = (r->tail + want) & (RX_BUF_SZ - 1u);
     return want;
 }
 
@@ -110,7 +114,7 @@ static err_t on_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err) 
         proc_t *w = c->rx_waiter;
         if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
             proc_set_ready(w);
-        poll_notify();
+        poll_notify_object(c);
         return ERR_OK;
     }
 
@@ -119,7 +123,7 @@ static err_t on_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err) 
         proc_t *w = c->rx_waiter;
         if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
             proc_set_ready(w);
-        poll_notify();
+        poll_notify_object(c);
         return ERR_MEM;
     }
 
@@ -133,7 +137,7 @@ static err_t on_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err) 
 
     proc_t *w = c->rx_waiter;
     if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
-    poll_notify();
+    poll_notify_object(c);
     return ERR_OK;
 }
 
@@ -148,7 +152,7 @@ static err_t on_connected(void *arg, struct tcp_pcb *pcb, err_t err) {
     }
     proc_t *w = c->connect_waiter;
     if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
-    poll_notify();
+    poll_notify_object(c);
     return ERR_OK;
 }
 
@@ -163,7 +167,7 @@ static void on_err(void *arg, err_t err) {
     if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
     proc_t *r = c->rx_waiter;
     if (r && __sync_bool_compare_and_swap(&r->state, PROC_WAITING, PROC_READY)) proc_set_ready(r);
-    poll_notify();
+    poll_notify_object(c);
 }
 
 static err_t on_accept(void *arg, struct tcp_pcb *new_pcb, err_t err) {
@@ -199,7 +203,7 @@ static err_t on_accept(void *arg, struct tcp_pcb *new_pcb, err_t err) {
     spin_unlock(&srv->accept_lock);
 
     tcp_accepted(srv->pcb);
-    poll_notify();
+    poll_notify_object(srv);
     return ERR_OK;
 }
 
@@ -229,7 +233,7 @@ static void on_udp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip
     c->udq_head = next;
     proc_t *w = c->rx_waiter;
     if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
-    poll_notify();
+    poll_notify_object(c);
 }
 
 static uint8_t on_raw_recv(void *arg, struct raw_pcb *pcb, struct pbuf *p, const ip4_addr_t *addr) {
@@ -252,7 +256,7 @@ static uint8_t on_raw_recv(void *arg, struct raw_pcb *pcb, struct pbuf *p, const
     pbuf_free(p);
     proc_t *w = c->rx_waiter;
     if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
-    poll_notify();
+    poll_notify_object(c);
     return 1; /* consumed */
 }
 
@@ -260,6 +264,7 @@ int fd_inet_socket(int type, int flags) {
     int sock_type = type & 0xF;
     if (sock_type != SOCK_STREAM && sock_type != SOCK_DGRAM && sock_type != SOCK_RAW)
         return -(int) ENOTSUP;
+    if (sock_type == SOCK_RAW && !jail_host_priv(g_current_proc)) return -(int) EPERM;
 
     net_conn_t *c = (net_conn_t *) kcalloc(1, sizeof(net_conn_t));
     if (!c) return -(int) ENOMEM;
@@ -304,6 +309,7 @@ int fd_inet_socket(int type, int flags) {
 
     vfs_file_t *f = vfs_file_alloc();
     if (!f) {
+        vfs_fd_clear(fd);
         if (sock_type == SOCK_STREAM)
             tcp_abort(c->pcb);
         else if (sock_type == SOCK_DGRAM)
@@ -540,6 +546,7 @@ int64_t inet_accept(net_conn_t *c, struct sockaddr_in *addr_out, int flags) {
 
     vfs_file_t *f = vfs_file_alloc();
     if (!f) {
+        vfs_fd_clear(fd);
         inet_conn_close(child);
         return -(int64_t) ENOMEM;
     }

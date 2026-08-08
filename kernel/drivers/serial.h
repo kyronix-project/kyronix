@@ -9,6 +9,7 @@
 bool serial_init(uint16_t port);
 void serial_putchar(uint16_t port, char c);
 void serial_write(uint16_t port, const char *s);
+void serial_write_n(uint16_t port, const char *s, uint64_t len);
 
 bool serial_data_ready(uint16_t port);
 

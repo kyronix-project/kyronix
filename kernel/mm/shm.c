@@ -13,6 +13,7 @@
 #define ENOMEM 12
 #define EPERM 1
 #define EACCES 13
+#define EAGAIN 11
 
 #define IPC_PRIVATE 0
 #define IPC_CREAT 01000
@@ -134,7 +135,7 @@ int sys_shmget(int key, uint64_t size, int flags) {
     return slot->shmid;
 }
 
-uint64_t sys_shmat(int shmid, uint64_t shmaddr, int shmflg) {
+static uint64_t sys_shmat_impl(int shmid, uint64_t shmaddr, int shmflg) {
     shm_seg_t *s = seg_by_id(shmid);
     if (!s || !seg_visible(s)) return (uint64_t) (-(int64_t) EINVAL);
     if (!seg_access_ok(s, !(shmflg & SHM_RDONLY))) return (uint64_t) (-(int64_t) EACCES);
@@ -179,7 +180,16 @@ uint64_t sys_shmat(int shmid, uint64_t shmaddr, int shmflg) {
     return va;
 }
 
-int sys_shmdt(uint64_t addr) {
+uint64_t sys_shmat(int shmid, uint64_t shmaddr, int shmflg) {
+    proc_t *p = g_current_proc;
+    if (!p || !p->space) return (uint64_t) (-(int64_t) EINVAL);
+    if (!vmm_space_mutation_begin(p->space)) return (uint64_t) (-(int64_t) EAGAIN);
+    uint64_t rc = sys_shmat_impl(shmid, shmaddr, shmflg);
+    vmm_space_mutation_end(p->space);
+    return rc;
+}
+
+static int sys_shmdt_impl(uint64_t addr) {
     proc_t *p = g_current_proc;
     if (!p) return -EINVAL;
 
@@ -199,6 +209,15 @@ int sys_shmdt(uint64_t addr) {
         return 0;
     }
     return -EINVAL;
+}
+
+int sys_shmdt(uint64_t addr) {
+    proc_t *p = g_current_proc;
+    if (!p || !p->space) return -EINVAL;
+    if (!vmm_space_mutation_begin(p->space)) return -EAGAIN;
+    int rc = sys_shmdt_impl(addr);
+    vmm_space_mutation_end(p->space);
+    return rc;
 }
 
 /* 0 + fill key fields */
@@ -242,4 +261,10 @@ void shm_proc_exit(uint32_t pid) {
         }
         g_attaches[i].shmid = 0;
     }
+}
+
+void shm_proc_reassign(uint32_t from_pid, uint32_t to_pid) {
+    for (int i = 0; i < SHM_MAX_ATTACH; i++)
+        if (g_attaches[i].shmid && g_attaches[i].pid == from_pid)
+            g_attaches[i].pid = to_pid;
 }

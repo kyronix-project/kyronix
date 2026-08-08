@@ -57,7 +57,9 @@ void path_canon(const char *in, char *out, size_t sz) {
 void jail_canon_clamp(char *path, size_t sz, const char *root) {
     size_t rlen = strlen(root);
     if (rlen == 0) return; /* host: keep current behavior */
-    const char *sub = (strncmp(path, root, rlen) == 0) ? path + rlen : path;
+    bool under_root = strncmp(path, root, rlen) == 0 &&
+                      (path[rlen] == '\0' || path[rlen] == '/');
+    const char *sub = under_root ? path + rlen : path;
     char canon[512];
     path_canon(sub, canon, sizeof(canon));
     char tmp[768];

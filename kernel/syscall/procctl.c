@@ -25,9 +25,9 @@
 
 static void proc_release_fdtable(proc_t *p) {
     if (!p || !p->fds) return;
-    if (p->fds_refcnt && *p->fds_refcnt > 1) {
-        (*p->fds_refcnt)--;
-    } else {
+    bool last = !p->fds_refcnt ||
+                __atomic_fetch_sub(p->fds_refcnt, 1, __ATOMIC_ACQ_REL) == 1;
+    if (last) {
         vfs_free_fdtable(p->fds);
         if (p->fds_refcnt) kfree(p->fds_refcnt);
     }
@@ -38,7 +38,7 @@ static void proc_release_fdtable(proc_t *p) {
 static void proc_discard_embryo(proc_t *p) {
     if (!p) return;
     proc_release_fdtable(p);
-    if (p->space && !p->is_thread) vmm_space_free(p->space);
+    if (p->space) vmm_space_free(p->space);
     proc_kstack_free(p);
     spin_lock(&g_proctable_lock);
     memset(p, 0, sizeof(*p));
@@ -284,6 +284,7 @@ int64_t sys_clone(uint64_t flags, uint64_t child_stack, uint32_t *ptid, uint32_t
     if (!child) return -(int64_t) ENOMEM;
 
     child->space = parent->space; // shared address space
+    vmm_space_retain(child->space);
     child->is_thread = 1;
 
     if (flags & CLONE_FILES) {
@@ -291,7 +292,8 @@ int64_t sys_clone(uint64_t flags, uint64_t child_stack, uint32_t *ptid, uint32_t
         kfree(child->fds_refcnt);
         child->fds = parent->fds;
         child->fds_refcnt = parent->fds_refcnt;
-        if (child->fds_refcnt) (*child->fds_refcnt)++;
+        if (child->fds_refcnt)
+            __atomic_add_fetch(child->fds_refcnt, 1, __ATOMIC_ACQ_REL);
     } else {
         vfs_copy_fdtable(child->fds, parent->fds);
         if (child->fds_refcnt) *child->fds_refcnt = 1;
@@ -590,8 +592,12 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
         res.interp_base = 0x7f0000000000ULL;
     }
 
+    uint32_t next_euid = (exec_mode & S_ISUID) ? exec_uid : cur()->euid;
+    uint32_t next_egid = (exec_mode & S_ISGID) ? exec_gid : cur()->egid;
+    bool secure_exec = next_euid != cur()->uid || next_egid != cur()->gid;
     uint64_t rsp = setup_user_stack(res.space, &res, argc, (const char *const *) kargv,
-                                    (const char *const *) kenvp);
+                                    (const char *const *) kenvp, cur()->uid, next_euid,
+                                    cur()->gid, next_egid, secure_exec);
     FREE_EXEC_STRS();
 
     if (!rsp) {
@@ -609,6 +615,16 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
     strncpy(p->exe_path, exec_path, sizeof(p->exe_path) - 1);
     g_current_space = p->space;
 
+    bool privileged_exec = ((exec_mode & S_ISUID) && exec_uid != p->euid) ||
+                           ((exec_mode & S_ISGID) && exec_gid != p->egid);
+    if (privileged_exec && p->tracer_pid) {
+        p->tracer_pid = 0;
+        p->ptrace_syscall_trace = 0;
+        p->ptrace_step = 0;
+        p->ptrace_stopped = 0;
+        p->ptrace_reported = 0;
+    }
+
     // setuid/setgid on exec: elevate euid/egid to file owner
     if (exec_mode & S_ISUID) {
         p->suid = p->euid = p->fsuid = exec_uid;
@@ -617,6 +633,7 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
         p->sgid = p->egid = p->fsgid = exec_gid;
     }
 
+    vmm_syscall_access_end();
     vmm_switch(p->space);
     vmm_space_free(old);
 
@@ -649,14 +666,20 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
         exec_frame.r11 = 0x202ULL;
         p->user_rsp = rsp;
         proc_ptrace_stop(p, SIGTRAP, 1, &exec_frame, &exec_frame.r11);
+        vmm_syscall_access_end();
+        vfs_syscall_borrow_end();
         enter_userspace_exec(exec_frame.rcx, p->user_rsp, exec_frame.r11);
     }
 
+    vmm_syscall_access_end();
+    vfs_syscall_borrow_end();
     enter_userspace_exec(res.entry, rsp, 0x202ULL);
 }
 
 __attribute__((noreturn)) void proc_do_exit(int code) {
     proc_t *p = cur();
+    vmm_syscall_access_end();
+    vfs_syscall_borrow_end();
     log_info("[pid %u] exit(%d)", p->pid, code);
 
     // clear stale pipe waiting pointer before slot is reused
@@ -665,7 +688,10 @@ __attribute__((noreturn)) void proc_do_exit(int code) {
         pipe_cancel_wait(bp, p);
     }
 
-    shm_proc_exit(p->pid);
+    if (p->is_thread)
+        shm_proc_reassign(p->pid, p->ppid);
+    else
+        shm_proc_exit(p->pid);
     if (p->phantom_sandbox) {
         jail_t *sandbox = jail_find(p->jail_id);
         if (sandbox) {
@@ -700,6 +726,8 @@ __attribute__((noreturn)) void proc_do_exit(int code) {
             *p->cleartid_addr = 0;
             cleartid_wake(p->cleartid_addr);
         }
+        vmm_space_free(p->space);
+        p->space = NULL;
         p->state = PROC_DYING;
         proc_clear_ready(p);
         proc_defer_thread_reap(p);

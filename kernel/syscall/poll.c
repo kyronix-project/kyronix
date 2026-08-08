@@ -18,24 +18,41 @@ extern volatile uint64_t g_ticks;
 
 static spinlock_t g_poll_lock = SPINLOCK_INIT;
 static uint64_t g_poll_waiters;
+#define POLL_WATCH_MAX 64
+static void *g_poll_objects[PROC_MAX][POLL_WATCH_MAX];
+static uint8_t g_poll_object_count[PROC_MAX];
+static uint8_t g_poll_wildcard[PROC_MAX];
 
-void poll_notify(void) {
+void poll_notify_object(const void *object) {
     uint64_t flags = irq_save();
     spin_lock(&g_poll_lock);
     uint64_t waiters = g_poll_waiters;
     g_poll_waiters = 0;
     while (waiters) {
         int slot = __builtin_ctzll(waiters);
+        bool match = !object || g_poll_wildcard[slot];
+        for (uint8_t i = 0; !match && i < g_poll_object_count[slot]; i++)
+            match = g_poll_objects[slot][i] == object;
+        if (!match) {
+            waiters &= waiters - 1;
+            continue;
+        }
         proc_t *p = &g_proctable[slot];
         if (__sync_bool_compare_and_swap(&p->state, PROC_WAITING, PROC_READY))
             proc_set_ready(p);
+        g_poll_waiters &= ~(1ULL << slot);
+        g_poll_object_count[slot] = 0;
+        g_poll_wildcard[slot] = 0;
         waiters &= waiters - 1;
     }
     spin_unlock(&g_poll_lock);
     irq_restore(flags);
 }
 
-bool poll_wait_once(uint64_t deadline, poll_ready_fn ready, void *ctx) {
+void poll_notify(void) { poll_notify_object(NULL); }
+
+bool poll_wait_once(uint64_t deadline, poll_ready_fn ready, void *ctx,
+                    void *const *objects, uint32_t object_count, bool wildcard) {
     proc_t *p = g_current_proc;
     if (!p) return false;
 
@@ -53,7 +70,15 @@ bool poll_wait_once(uint64_t deadline, poll_ready_fn ready, void *ctx) {
         proc_set_timer(p);
     }
     p->state = PROC_WAITING;
-    g_poll_waiters |= 1ULL << proc_slot(p);
+    int slot = proc_slot(p);
+    if (object_count > POLL_WATCH_MAX) {
+        object_count = 0;
+        wildcard = true;
+    }
+    for (uint32_t i = 0; i < object_count; i++) g_poll_objects[slot][i] = objects[i];
+    g_poll_object_count[slot] = (uint8_t) object_count;
+    g_poll_wildcard[slot] = wildcard || object_count == 0;
+    g_poll_waiters |= 1ULL << slot;
     spin_unlock(&g_poll_lock);
     irq_restore(flags);
 
@@ -61,11 +86,30 @@ bool poll_wait_once(uint64_t deadline, poll_ready_fn ready, void *ctx) {
 
     flags = irq_save();
     spin_lock(&g_poll_lock);
-    g_poll_waiters &= ~(1ULL << proc_slot(p));
+    slot = proc_slot(p);
+    g_poll_waiters &= ~(1ULL << slot);
+    g_poll_object_count[slot] = 0;
+    g_poll_wildcard[slot] = 0;
     spin_unlock(&g_poll_lock);
     irq_restore(flags);
     p->wakeup_tick = 0;
     return true;
+}
+
+static uint32_t add_fd_objects(int fd, void **objects, uint32_t count, bool *wildcard) {
+    void *found[2];
+    int n = fd_poll_objects(fd, found, 2);
+    for (int i = 0; i < n; i++) {
+        bool duplicate = false;
+        for (uint32_t j = 0; j < count; j++) duplicate |= objects[j] == found[i];
+        if (duplicate) continue;
+        if (count == POLL_WATCH_MAX) {
+            *wildcard = true;
+            return count;
+        }
+        objects[count++] = found[i];
+    }
+    return count;
 }
 
 static uint64_t timeout_deadline(int timeout) {
@@ -128,11 +172,17 @@ int64_t sys_poll(struct pollfd_s *fds, uint64_t nfds, int timeout) {
     proc_t *p = g_current_proc;
     uint64_t deadline = timeout_deadline(timeout);
     poll_wait_ctx_t ctx = { fds, nfds };
+    void *objects[POLL_WATCH_MAX];
+    uint32_t object_count = 0;
+    bool wildcard = false;
+    for (uint64_t i = 0; i < nfds && !wildcard; i++)
+        if (fds[i].fd >= 0)
+            object_count = add_fd_objects(fds[i].fd, objects, object_count, &wildcard);
     while (!ready) {
         if (deadline != UINT64_MAX && g_ticks >= deadline) break;
         if (p && (p->pending_sigs & ~p->sig_mask)) return -(int64_t) EINTR;
         uint64_t wait_deadline = poll_fd_deadline(fds, nfds, deadline);
-        poll_wait_once(wait_deadline, poll_wait_ready, &ctx);
+        poll_wait_once(wait_deadline, poll_wait_ready, &ctx, objects, object_count, wildcard);
         if (nfds) ready = poll_check(fds, nfds);
     }
     return (int64_t) ready;
@@ -208,6 +258,12 @@ static int64_t sys_select_common(int nfds, void *rfds, void *wfds, void *efds, v
     proc_t *p = g_current_proc;
     select_wait_ctx_t ctx = { nfds, (const uint8_t *) rfds, (const uint8_t *) wfds,
                               rout, wout, 0 };
+    void *objects[POLL_WATCH_MAX];
+    uint32_t object_count = 0;
+    bool wildcard = false;
+    for (int fd = 0; fd < nfds && !wildcard; fd++)
+        if (fds_test((const uint8_t *) rfds, fd) || fds_test((const uint8_t *) wfds, fd))
+            object_count = add_fd_objects(fd, objects, object_count, &wildcard);
     for (;;) {
         select_check(&ctx);
         int ready = ctx.ready;
@@ -226,7 +282,7 @@ static int64_t sys_select_common(int nfds, void *rfds, void *wfds, void *efds, v
             uint64_t fd_deadline = fd_poll_deadline(fd);
             if (fd_deadline < wait_deadline) wait_deadline = fd_deadline;
         }
-        poll_wait_once(wait_deadline, select_check, &ctx);
+        poll_wait_once(wait_deadline, select_check, &ctx, objects, object_count, wildcard);
     }
 }
 
