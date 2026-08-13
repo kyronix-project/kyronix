@@ -19,19 +19,20 @@ LIMINE_FILES := \
 $(LIMINE)/limine: $(LIMINE)/limine.c
 	$(HOSTCC) $< -o $@
 
-$(BOOT_FAT): $(KERNEL) limine-disk.conf $(LIMINE)/limine-bios.sys
+$(BOOT_FAT): $(KERNEL) boot/limine-disk.conf boot/wallpaper.jpg $(LIMINE)/limine-bios.sys
 	@mkdir -p $(@D)
 	rm -f $@
 	truncate -s 16M $@
 	mkfs.vfat -F 16 -n KYRONIXBOOT $@ >/dev/null
-	mmd -i $@ ::/boot ::/boot/limine
+	mmd -i $@ ::/boot ::/boot/limine ::/limine
 	mcopy -i $@ $(KERNEL) ::/boot/kernel.elf
-	mcopy -i $@ limine-disk.conf ::/boot/limine/limine.conf
+	mcopy -i $@ boot/limine-disk.conf ::/boot/limine/limine.conf
+	mcopy -i $@ boot/wallpaper.jpg ::/limine/wallpaper.jpg
 	mcopy -i $@ $(LIMINE)/limine-bios.sys ::/boot/limine/
 	@echo "  Built: $@"
 
 $(INITRD): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROOTFS_SOURCES) \
-		limine-disk.conf $(LIMINE)/limine-bios.sys
+		boot/limine-disk.conf $(LIMINE)/limine-bios.sys
 	rm -rf $(INITRD_ROOT)
 	mkdir -p $(INITRD_ROOT)/boot/limine
 	mkdir -p $(INITRD_ROOT)/lib/modules
@@ -39,7 +40,8 @@ $(INITRD): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROOTFS_S
 	cp -a rootfs/. $(INITRD_ROOT)/
 	cp $(KERNEL_MODULES) $(INITRD_ROOT)/lib/modules/
 	cp $(KERNEL) $(INITRD_ROOT)/boot/kernel.elf
-	cp limine-disk.conf $(INITRD_ROOT)/boot/limine/limine.conf
+	cp boot/limine-disk.conf $(INITRD_ROOT)/boot/limine/limine.conf
+	cp boot/wallpaper.jpg $(INITRD_ROOT)/boot/limine/wallpaper.jpg
 	cp $(LIMINE)/limine-bios.sys $(INITRD_ROOT)/boot/limine/
 	split -b 1M -d -a 2 $(BOOT_FAT) \
 	    $(INITRD_ROOT)/usr/share/kyronix/boot.fat.
@@ -59,6 +61,10 @@ define build_iso
 	cp $(LIMINE)/limine-uefi-cd.bin $(1)/boot/limine/
 	cp $(LIMINE)/BOOTX64.EFI $(1)/EFI/BOOT/
 	cp $(LIMINE)/BOOTIA32.EFI $(1)/EFI/BOOT/
+	if [ -n "$(5)" ]; then \
+	    mkdir -p $(1)/limine; \
+	    cp $(5) $(1)/limine/wallpaper.jpg; \
+	fi
 	xorriso -as mkisofs \
 	    -b boot/limine/limine-bios-cd.bin \
 	    -no-emul-boot -boot-load-size 4 -boot-info-table \
@@ -69,9 +75,9 @@ define build_iso
 	@echo "  Built: $(4)"
 endef
 
-$(ISO): $(KERNEL) $(INITRD) limine.conf $(LIMINE_FILES) $(LIMINE)/limine
+$(ISO): $(KERNEL) $(INITRD) boot/limine.conf boot/wallpaper.jpg $(LIMINE_FILES) $(LIMINE)/limine
 	@mkdir -p $(@D)
-	$(call build_iso,$(ISO_ROOT),limine.conf,$(INITRD),$(ISO))
+	$(call build_iso,$(ISO_ROOT),boot/limine.conf,$(INITRD),$(ISO),boot/wallpaper.jpg)
 
 $(DISK):
 	@mkdir -p $(@D)

@@ -21,7 +21,7 @@ performance, security and stability.
 ### Kernel
 - x86-64, 4-level paging, SMEP, NX-bit
 - Limine bootloader (BIOS + UEFI)
-- Preemptive scheduler (~1000 Hz)
+- Preemptive scheduler (~250 Hz)
 - ELF64 loader (PIE + musl)
 - 150+ Linux-compatible syscalls
 - Loadable ELF64 kernel modules (`insmod`, `rmmod`, `lsmod`)
@@ -92,8 +92,8 @@ then delays the flagged thread's next wake-up by 25–250 µs.
 ### Dependencies
 
 ```sh
-gcc musl-tools qemu-system xorriso cpio dosfstools mtools e2fsprogs
-libncurses-dev curl file
+gcc binutils make nasm bison flex musl-tools qemu-system xorriso cpio
+dosfstools mtools e2fsprogs gawk libncurses-dev curl wget tar file git
 ```
 
 ### Quick start
@@ -133,6 +133,7 @@ To build in a container, append `CRUNTIME=podman` or `CRUNTIME=docker`.
 | `kernel/` | Kernel source |
 | `user/` | Userspace |
 | `rootfs/` | Initramfs |
+| `boot/` | Limine boot configs & boot wallpaper |
 | `limine/` | Bootloader |
 | `meta/` | Assets & screenshots |
 

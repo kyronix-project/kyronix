@@ -28,7 +28,7 @@ help:
 	@echo "  make run      Build and boot the live ISO with $(DISK)"
 	@echo "  make boot     Boot the system already installed on $(DISK)"
 	@echo "  make test     Build and run the test suite in QEMU"
-	@echo "  make iso INSTRUMENT=1  Build with kmemleak and profiler"
+	@echo "  make iso INSTRUMENT=1  Build with frame pointers (kmemleak/profiler backtraces)"
 	@echo "  make clean    Remove build output (the installed disk is kept)"
 	@echo ""
 	@echo "Container build: append CRUNTIME=podman or CRUNTIME=docker"
@@ -36,7 +36,7 @@ help:
 clean:
 	rm -rf $(BUILD)
 	rm -rf .config include/config include/generated scripts/kconfig
-	rm -rf iso_root test_rootfs
+	rm -rf build/iso-root build/test-rootfs build/test-iso-root
 	rm -f test.log
 	rm -f $(ISO) $(TEST_ISO)
 	rm -f $(DIST)/kernel.elf $(DIST)/initrd.cpio $(DIST)/kyronix-boot.fat
