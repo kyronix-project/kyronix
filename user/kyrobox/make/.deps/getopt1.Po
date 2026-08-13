@@ -1,9 +1,0 @@
-getopt1.o: getopt1.c /usr/include/stdc-predef.h config.h getopt.h \
- /usr/include/stdio.h /usr/include/features.h \
- /usr/include/bits/alltypes.h
-/usr/include/stdc-predef.h:
-config.h:
-getopt.h:
-/usr/include/stdio.h:
-/usr/include/features.h:
-/usr/include/bits/alltypes.h:

@@ -17,13 +17,14 @@ scripts/kconfig/
 # build artifacts
 *.o
 *.elf
-test_rootfs/*
 build/*
-iso_root/*
 dist/
 test.log
 limine/limine
 
-# unecessary blobs
+# unnecessary blobs
 rootfs/usr/lib/libLLVM.so.19.1
 rootfs/usr/bin/pipes
+
+# vendored GNU make tree (configured & built; artifacts only)
+user/kyrobox/make/

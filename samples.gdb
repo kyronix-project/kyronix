@@ -13,7 +13,7 @@ end
 
 define profiler_reset
     call (void)prof_reset()
-    printf "[profiler] Reset\n"како
+    printf "[profiler] Reset\n"
 end
 
 define profiler_status
