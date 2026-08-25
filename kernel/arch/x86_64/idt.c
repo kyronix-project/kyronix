@@ -250,10 +250,17 @@ void isr_dispatch(cpu_state_t *state) {
                 return;
             }
 
-            kdbg("\n[exc#%lu pid=%u RIP=%lx] -> sig %d\n", n, g_current_proc->pid, state->rip, sig);
+            kdbg("\n[exc#%lu pid=%u %s RIP=%lx] -> sig %d\n", n, g_current_proc->pid,
+                 g_current_proc->exe_path[0] ? g_current_proc->exe_path : "?", state->rip, sig);
             if (n == 14) {
                 uint64_t cr2 = read_cr2();
                 kdbg("  CR2=%lx err=%lx\n", cr2, state->error_code);
+                uint64_t vs = 0, ve = 0;
+                uint32_t vp = 0;
+                if (g_current_proc->space &&
+                    vma_lookup(g_current_proc->space, state->rip, &vs, &ve, &vp))
+                    kdbg("  RIP in [%lx-%lx) len=%lx prot=%x off=%lx\n", vs, ve, ve - vs, vp,
+                         state->rip - vs);
             }
             proc_do_exit(-sig);
         }

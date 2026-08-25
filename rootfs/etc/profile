@@ -1,3 +1,7 @@
-export DISPLAY=:0
 export PATH=/usr/bin:/bin:/sbin
+export TERMINFO=/etc/terminfo
 export LIBGL_ALWAYS_SOFTWARE=1
+
+# Wayland session (see startw)
+export XDG_RUNTIME_DIR=/run/user/0
+export XDG_CONFIG_HOME=/etc

@@ -23,7 +23,15 @@ static uint8_t *g_shadow;
 static uint64_t g_shadow_bytes;
 static uint32_t g_bytes_per_px = 4;
 
-static inline uint8_t *vram_at(uint64_t off) { return (uint8_t *) g_fb.addr + off; }
+static bool g_console_suspended;
+
+static inline bool console_blackholed(void) { return g_console_suspended && !g_shadow; }
+
+static inline uint8_t *vram_base(void) {
+    return (g_console_suspended && g_shadow) ? g_shadow : (uint8_t *) g_fb.addr;
+}
+
+static inline uint8_t *vram_at(uint64_t off) { return vram_base() + off; }
 
 static inline uint64_t px_off(uint32_t x, uint32_t y) {
     return (uint64_t) y * g_fb.pitch + (uint64_t) x * g_bytes_per_px;
@@ -212,12 +220,14 @@ void fb_init(struct limine_framebuffer *fb) {
 
 void fb_put_pixel(uint32_t x, uint32_t y, uint32_t color) {
     if (x >= g_fb.width || y >= g_fb.height) return;
+    if (console_blackholed()) return;
     uint64_t off = px_off(x, y);
     *(uint32_t *) vram_at(off) = color;
     if (g_shadow) *(uint32_t *) (g_shadow + off) = color;
 }
 
 void fb_clear(uint32_t color) {
+    if (console_blackholed()) return;
     for (uint64_t y = 0; y < g_fb.height; y++) {
         uint64_t off = px_off(0, (uint32_t) y);
         uint32_t *v = (uint32_t *) vram_at(off);
@@ -236,6 +246,7 @@ void fb_clear(uint32_t color) {
 
 void fb_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color) {
     if (x >= g_fb.width || y >= g_fb.height) return;
+    if (console_blackholed()) return;
     if (w > g_fb.width - x) w = (uint32_t) (g_fb.width - x);
     if (h > g_fb.height - y) h = (uint32_t) (g_fb.height - y);
     for (uint32_t dy = 0; dy < h; dy++) {
@@ -255,6 +266,7 @@ void fb_set_color(uint32_t fg, uint32_t bg) {
 }
 
 static void scroll_up(void) {
+    if (console_blackholed()) return;
     uint64_t line_bytes = (uint64_t) FONT_H * g_fb.pitch;
     uint64_t rows_total = g_fb.height / FONT_H;
     if (rows_total < 2) return;
@@ -262,7 +274,7 @@ static void scroll_up(void) {
     uint32_t last_y = (uint32_t) ((rows_total - 1) * FONT_H);
 
     if (!g_shadow) {
-        memmove(g_fb.addr, (uint8_t *) g_fb.addr + line_bytes, keep_bytes);
+        memmove(vram_base(), vram_base() + line_bytes, keep_bytes);
         fb_fill_rect(0, last_y, (uint32_t) g_fb.width, FONT_H, g_fb.bg);
         return;
     }
@@ -272,7 +284,20 @@ static void scroll_up(void) {
         uint32_t *s = (uint32_t *) (g_shadow + px_off(0, last_y + dy));
         for (uint64_t x = 0; x < g_fb.width; x++) s[x] = g_fb.bg;
     }
-    memcpy(g_fb.addr, g_shadow, keep_bytes + line_bytes);
+    if (!g_console_suspended) memcpy(g_fb.addr, g_shadow, keep_bytes + line_bytes);
+}
+
+// KDSETMODE: hand video memory over to a display server, or take it back
+void fb_console_suspend(int suspend) {
+    bool off = suspend != 0;
+    if (off == g_console_suspended) return;
+    g_console_suspended = off;
+    if (off) return;
+    if (g_shadow)
+        memcpy(g_fb.addr, g_shadow, g_shadow_bytes);
+    else
+        fb_clear(g_fb.bg);
+    fb_cursor_update();
 }
 
 // sgr

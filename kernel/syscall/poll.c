@@ -3,6 +3,7 @@
 #include "fs/vfs.h"
 #include "lib/string.h"
 #include "proc/proc.h"
+#include "syscall/epoll.h"
 #include "syscall/syscall.h"
 
 #define EFAULT 14
@@ -26,24 +27,22 @@ static uint8_t g_poll_wildcard[PROC_MAX];
 void poll_notify_object(const void *object) {
     uint64_t flags = irq_save();
     spin_lock(&g_poll_lock);
+    // only the waiters that match get unregistered: dropping the others here
+    // would silently lose their next wake-up and hang them forever
     uint64_t waiters = g_poll_waiters;
-    g_poll_waiters = 0;
     while (waiters) {
         int slot = __builtin_ctzll(waiters);
+        waiters &= waiters - 1;
         bool match = !object || g_poll_wildcard[slot];
         for (uint8_t i = 0; !match && i < g_poll_object_count[slot]; i++)
             match = g_poll_objects[slot][i] == object;
-        if (!match) {
-            waiters &= waiters - 1;
-            continue;
-        }
+        if (!match) continue;
         proc_t *p = &g_proctable[slot];
         if (__sync_bool_compare_and_swap(&p->state, PROC_WAITING, PROC_READY))
             proc_set_ready(p);
         g_poll_waiters &= ~(1ULL << slot);
         g_poll_object_count[slot] = 0;
         g_poll_wildcard[slot] = 0;
-        waiters &= waiters - 1;
     }
     spin_unlock(&g_poll_lock);
     irq_restore(flags);
@@ -97,6 +96,10 @@ bool poll_wait_once(uint64_t deadline, poll_ready_fn ready, void *ctx,
 }
 
 static uint32_t add_fd_objects(int fd, void **objects, uint32_t count, bool *wildcard) {
+    if (epoll_fd_is_handle(fd)) {
+        *wildcard = true; // nested epoll: wake on anything and re-check
+        return count;
+    }
     void *found[2];
     int n = fd_poll_objects(fd, found, 2);
     for (int i = 0; i < n; i++) {

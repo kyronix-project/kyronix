@@ -3,6 +3,7 @@
 #include "fs/vfs.h"
 #include "fs/vfs_internal.h"
 #include "lib/string.h"
+#include "mm/shmem.h"
 #include "syscall/syscall.h"
 
 #define EBADF 9
@@ -38,7 +39,7 @@ int fd_ioctl(int fd, uint64_t req, uint64_t arg) {
 
     if (f->node && f->node->type == VFS_TYPE_CHR && f->node->chr_ioctl)
         return (int) f->node->chr_ioctl(f->node, req, arg);
-    // YEYEYEYEYEYEY IM FIXED THIS FUCKING SHIT
+
     switch ((uint32_t) req) {
     case TIOCGWINSZ: {
         struct winsize *ws = (struct winsize *) (uintptr_t) arg;
@@ -115,6 +116,8 @@ int fd_ioctl(int fd, uint64_t req, uint64_t arg) {
 #define F_SETLK 6
 #define F_SETLKW 7
 #define F_DUPFD_CLOEXEC 1030
+#define F_ADD_SEALS 1033
+#define F_GET_SEALS 1034
 #define FD_CLOEXEC 1
 
 int fd_fcntl(int fd, int cmd, uint64_t arg) {
@@ -152,6 +155,13 @@ int fd_fcntl(int fd, int cmd, uint64_t arg) {
     case F_SETLK:
     case F_SETLKW:
         return 0;
+    // memfd seals: wayland's os_create_anonymous_file() gives up if these fail
+    case F_ADD_SEALS:
+        if (!f->node || !f->node->shmem) return -(int) EINVAL;
+        return shmem_add_seals(f->node->shmem, (uint32_t) arg);
+    case F_GET_SEALS:
+        if (!f->node || !f->node->shmem) return -(int) EINVAL;
+        return shmem_get_seals(f->node->shmem);
     default:
         return -(int) EINVAL;
     }

@@ -3,3 +3,15 @@
 /usr/libexec/limine-install
 /lib/libacl.so*
 /lib/libattr.so*
+
+# Wayland/Weston stack fetched by user/wayland at build time
+/usr/lib/wayland/
+/usr/lib/weston/
+/usr/lib/libweston-9/
+/usr/lib/libudev.so*
+/usr/bin/weston*
+/usr/libexec/weston-*
+/usr/share/X11/
+/usr/share/weston/
+/usr/share/fonts/
+/etc/fonts/

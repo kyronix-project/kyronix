@@ -32,6 +32,7 @@
 #include <sys/syscall.h>
 #include <sys/sysinfo.h>
 #include <sys/time.h>
+#include <sys/timerfd.h>
 #include <sys/times.h>
 #include <sys/types.h>
 #include <sys/uio.h>

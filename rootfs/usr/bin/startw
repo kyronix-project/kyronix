@@ -1,0 +1,40 @@
+#!/bin/sh
+# Start the Weston (Wayland) session on the framebuffer.
+#
+# Weston takes over /dev/fb0 and the VT, so it needs root: launcher-direct is
+# the only launcher available here (there is no logind and no dbus daemon).
+
+user=$(whoami)
+if [ "$user" != "root" ]; then
+    echo "startw: must be run as root"
+    exit 1
+fi
+
+if [ ! -c /dev/fb0 ]; then
+    echo "startw: /dev/fb0 is missing"
+    exit 1
+fi
+
+mkdir -p /run/user/0
+chmod 0700 /run/user/0
+
+export XDG_RUNTIME_DIR=/run/user/0
+# weston looks for weston.ini under XDG_CONFIG_HOME, so point it at /etc
+export XDG_CONFIG_HOME=/etc
+export XKB_CONFIG_ROOT=/usr/share/X11/xkb
+export FONTCONFIG_PATH=/etc/fonts
+export TERMINFO=/etc/terminfo
+export HOME=/root
+export SHELL=/bin/ksh
+export WAYLAND_DISPLAY=wayland-0
+
+# `startw /dev/tty` sends weston's log to the console instead of a file;
+# any further arguments are passed straight to weston
+log=/tmp/weston.log
+if test -n "$1"; then
+    log=$1
+fi
+
+echo "startw: launching weston on tty1 (log: $log)"
+weston --backend=fbdev-backend.so --tty=1 --log="$log" $2 $3 $4
+echo "startw: weston exited"

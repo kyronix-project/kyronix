@@ -44,11 +44,44 @@ bool vma_conflicts(vmm_space_t *sp, uint64_t start, uint64_t len) {
     return false;
 }
 
+static bool vma_same_kind(const vmm_vma_t *v, uint32_t prot, uint32_t map_flags,
+                          bool free_on_unmap) {
+    return v->prot == prot && v->map_flags == map_flags &&
+           v->free_on_unmap == (free_on_unmap ? 1 : 0);
+}
+
 int vma_add(vmm_space_t *sp, uint64_t start, uint64_t len, uint32_t prot, uint32_t map_flags,
             bool free_on_unmap) {
     uint64_t end;
     if (!sp || !range_end(start, len, &end)) return -EINVAL;
     if (vma_conflicts(sp, start, len)) return -EINVAL;
+
+    /*
+     * Coalesce with the neighbours when everything but the range matches.
+     * mmap() hands out consecutive addresses, so without this a program doing
+     * many small mappings (musl's mallocng does exactly that) exhausts the
+     * fixed slot table and every further mmap fails with ENOMEM.
+     */
+    vmm_vma_t *before = NULL, *after = NULL;
+    for (int i = 0; i < VMM_VMA_MAX; i++) {
+        vmm_vma_t *v = &sp->vmas[i];
+        if (!v->used || !vma_same_kind(v, prot, map_flags, free_on_unmap)) continue;
+        if (v->end == start) before = v;
+        else if (v->start == end) after = v;
+    }
+    if (before && after) {
+        before->end = after->end;
+        memset(after, 0, sizeof(*after));
+        return 0;
+    }
+    if (before) {
+        before->end = end;
+        return 0;
+    }
+    if (after) {
+        after->start = start;
+        return 0;
+    }
 
     vmm_vma_t *v = empty_slot(sp);
     if (!v) return -ENOMEM;
@@ -76,6 +109,23 @@ bool vma_range_ok(vmm_space_t *sp, uint64_t start, uint64_t len) {
 }
 
 bool vma_page_mapped(vmm_space_t *sp, uint64_t addr) { return containing(sp, addr) != NULL; }
+
+int vma_used_count(vmm_space_t *sp) {
+    int n = 0;
+    if (!sp) return 0;
+    for (int i = 0; i < VMM_VMA_MAX; i++)
+        if (sp->vmas[i].used) n++;
+    return n;
+}
+
+bool vma_lookup(vmm_space_t *sp, uint64_t addr, uint64_t *start, uint64_t *end, uint32_t *prot) {
+    vmm_vma_t *v = containing(sp, addr);
+    if (!v) return false;
+    if (start) *start = v->start;
+    if (end) *end = v->end;
+    if (prot) *prot = v->prot;
+    return true;
+}
 
 bool vma_page_owned(vmm_space_t *sp, uint64_t addr) {
     vmm_vma_t *v = containing(sp, addr);

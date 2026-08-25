@@ -1,0 +1,6 @@
+LIBUDEV_183 {
+global:
+    udev_*;
+local:
+    *;
+};

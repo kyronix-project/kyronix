@@ -858,6 +858,50 @@ int test_memfd_create(void) {
 }
 REGISTER_TEST(memfd_create, "Phase 2: File System");
 
+/* wayland's os_create_anonymous_file() seals the memfd and gives up if it can't */
+int test_memfd_seals(void) {
+    int fd = memfd_create("seal_mem", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+    if (fd < 0 && errno == ENOSYS) return 1;
+    ASSERT_GE(fd, 0);
+    ASSERT_EQ(0, ftruncate(fd, 4096));
+    ASSERT_EQ(0, fcntl(fd, F_ADD_SEALS, F_SEAL_SHRINK));
+    int seals = fcntl(fd, F_GET_SEALS);
+    ASSERT_TRUE(seals >= 0);
+    ASSERT_TRUE((seals & F_SEAL_SHRINK) != 0);
+    /* shrinking is refused once sealed, growing still works */
+    ASSERT_TRUE(ftruncate(fd, 2048) != 0);
+    ASSERT_EQ(0, ftruncate(fd, 8192));
+    struct stat st;
+    ASSERT_EQ(0, fstat(fd, &st));
+    ASSERT_EQ((off_t) 8192, st.st_size);
+    close(fd);
+    return 1;
+}
+REGISTER_TEST(memfd_seals, "Phase 2: File System");
+
+/* display servers check st_rdev before taking over a VT or a framebuffer */
+int test_device_rdev(void) {
+    struct {
+        const char *path;
+        unsigned major;
+        unsigned minor;
+    } devs[] = {
+        { "/dev/tty1", 4, 1 },
+        { "/dev/fb0", 29, 0 },
+        { "/dev/input/event0", 13, 64 },
+        { "/dev/null", 1, 3 },
+    };
+    for (unsigned i = 0; i < sizeof(devs) / sizeof(devs[0]); i++) {
+        struct stat st;
+        if (stat(devs[i].path, &st) != 0) continue; /* device not present in this build */
+        ASSERT_TRUE(S_ISCHR(st.st_mode));
+        ASSERT_EQ(devs[i].major, (unsigned) ((st.st_rdev >> 8) & 0xfff));
+        ASSERT_EQ(devs[i].minor, (unsigned) (st.st_rdev & 0xff));
+    }
+    return 1;
+}
+REGISTER_TEST(device_rdev, "Phase 2: File System");
+
 int test_sendfile(void) {
     char src[PATH_MAX], dst[PATH_MAX];
     tmpfile_path(src, sizeof(src), "sf_src");

@@ -125,12 +125,18 @@ int64_t sys_pwritev(int fd, const struct iovec *iov, int n, uint64_t off) {
 
 static uint32_t g_memfd_seq;
 
+#define MFD_CLOEXEC 0x0001U
+#define MFD_ALLOW_SEALING 0x0002U
+
 int64_t sys_memfd_create(const char *name, uint32_t flags) {
-    (void) name;
-    (void) flags;
-    char path[32];
-    snprintf(path, sizeof(path), "/tmp/.mfd%u", ++g_memfd_seq);
-    return fd_open_kpath(path, O_RDWR | O_CREAT | O_TRUNC, 0600);
+    if (flags & ~(MFD_CLOEXEC | MFD_ALLOW_SEALING)) return -(int64_t) EINVAL;
+    char kname[512];
+    if (name) {
+        if (!vfs_copy_user_path(name, kname)) return -(int64_t) EFAULT;
+    } else {
+        snprintf(kname, sizeof(kname), "anon%u", ++g_memfd_seq);
+    }
+    return fd_memfd_open(kname, (flags & MFD_CLOEXEC) != 0);
 }
 
 int64_t sys_copy_file_range(int infd, uint64_t *off_in, int outfd, uint64_t *off_out, uint64_t len,
@@ -183,6 +189,8 @@ int64_t sys_statx(int dirfd, const char *path, int flags, uint32_t mask, struct 
     sx->stx_size = n->size;
     sx->stx_blocks = (n->size + 511) / 512;
     sx->stx_dev_major = 1;
+    sx->stx_rdev_major = (n->rdev >> 8) & 0xfffU;
+    sx->stx_rdev_minor = n->rdev & 0xffU;
     vfs_node_unref_internal(n);
     return 0;
 }

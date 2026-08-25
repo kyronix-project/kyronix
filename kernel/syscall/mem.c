@@ -4,9 +4,11 @@
 #include "internal.h"
 #include "lib/string.h"
 #include "mm/pmm.h"
+#include "mm/shmem.h"
 #include "mm/vma.h"
 #include "mm/vmm.h"
 #include "proc/proc.h"
+#include "lib/log.h"
 #include "security/anti_toctou.h"
 
 #define PROT_READ 0x1
@@ -213,6 +215,40 @@ static int64_t sys_mmap_impl(uint64_t addr, uint64_t length, uint64_t prot, uint
         }
 
         if (fn->type != VFS_TYPE_REG) return -(int64_t) EBADF;
+        if (fn->shmem) {
+            if (off > UINT64_MAX - length) return -(int64_t) EINVAL;
+            int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, true);
+            if (rc < 0) return rc;
+            if (reserve_only) return (int64_t) va;
+            for (uint64_t o = 0; o < length; o += PAGE_SIZE) {
+                if (flags & MAP_SHARED) {
+                    uint64_t phys = shmem_page_phys(fn->shmem, off + o);
+                    if (!phys || !pmm_retain((void *) phys)) {
+                        rollback_new_mapping(p, va, o, length);
+                        return -(int64_t) ENOMEM;
+                    }
+                    if (vmm_map(p->space, va + o, phys, vf) < 0) {
+                        pmm_free((void *) phys);
+                        rollback_new_mapping(p, va, o, length);
+                        return -(int64_t) ENOMEM;
+                    }
+                    continue;
+                }
+                void *ph = pmm_alloc_zeroed();
+                if (!ph) {
+                    rollback_new_mapping(p, va, o, length);
+                    return -(int64_t) ENOMEM;
+                }
+                if (vmm_map(p->space, va + o, (uint64_t) ph, vf) < 0) {
+                    pmm_free(ph);
+                    rollback_new_mapping(p, va, o, length);
+                    return -(int64_t) ENOMEM;
+                }
+                shmem_read(fn->shmem, phys_to_virt((uint64_t) ph), off + o, PAGE_SIZE);
+            }
+            p->pages_alloc += (flags & MAP_SHARED) ? 0 : length / PAGE_SIZE;
+            return (int64_t) va;
+        }
 
         int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, true);
         if (rc < 0) return rc;
@@ -276,6 +312,10 @@ int64_t sys_mmap(uint64_t addr, uint64_t length, uint64_t prot, uint64_t flags, 
     if (!vmm_space_mutation_begin(p->space)) return -(int64_t) EAGAIN;
     int64_t rc = sys_mmap_impl(addr, length, prot, flags, fd, off);
     vmm_space_mutation_end(p->space);
+    if (rc < 0)
+        log_warn("DBG mmap fail pid=%u rc=%ld len=%lx prot=%lx flags=%lx vmas=%d bump=%lx", p->pid,
+                 (long) rc, (unsigned long) length, (unsigned long) prot, (unsigned long) flags,
+                 vma_used_count(p->space), (unsigned long) p->mmap_bump);
     return rc;
 }
 
@@ -335,6 +375,9 @@ int64_t sys_mprotect(uint64_t addr, uint64_t len, uint64_t prot) {
     if (!p || !p->space) return -(int64_t) EINVAL;
     if (!vmm_space_mutation_begin(p->space)) return -(int64_t) EAGAIN;
     int64_t rc = sys_mprotect_impl(addr, len, prot);
+    if (rc < 0)
+        log_warn("DBG mprotect fail pid=%u rc=%ld addr=%lx len=%lx prot=%lx", p->pid, (long) rc,
+                 (unsigned long) addr, (unsigned long) len, (unsigned long) prot);
     vmm_space_mutation_end(p->space);
     return rc;
 }

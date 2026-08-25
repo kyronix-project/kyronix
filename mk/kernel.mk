@@ -28,6 +28,7 @@ KERNEL_C_SRCS := \
 	kernel/security/anti_toctou.c \
 	kernel/mm/heap.c \
 	kernel/mm/shm.c \
+	kernel/mm/shmem.c \
 	kernel/arch/x86_64/syscall_setup.c \
 	kernel/syscall/syscall.c \
 	kernel/syscall/mem.c \
@@ -58,6 +59,7 @@ KERNEL_C_SRCS := \
 	kernel/fs/vfs.c \
 	kernel/fs/devfs.c \
 	kernel/fs/eventfd.c \
+	kernel/fs/signalfd.c \
 	kernel/fs/fdctl.c \
 	kernel/fs/fdpipe.c \
 	kernel/fs/procfs.c \
