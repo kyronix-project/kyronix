@@ -27,6 +27,8 @@ export TERMINFO=/etc/terminfo
 export HOME=/root
 export SHELL=/bin/ksh
 export WAYLAND_DISPLAY=wayland-0
+export XCURSOR_THEME=whiteglass
+export XCURSOR_SIZE=24
 
 # `startw /dev/tty` sends weston's log to the console instead of a file;
 # any further arguments are passed straight to weston

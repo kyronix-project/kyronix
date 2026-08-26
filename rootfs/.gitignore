@@ -4,7 +4,7 @@
 /lib/libacl.so*
 /lib/libattr.so*
 
-# Wayland/Weston stack fetched by user/wayland at build time
+# Wayland/Weston stack fetched by user/extras/blobs/wayland at build time
 /usr/lib/wayland/
 /usr/lib/weston/
 /usr/lib/libweston-9/
@@ -15,3 +15,4 @@
 /usr/share/weston/
 /usr/share/fonts/
 /etc/fonts/
+/usr/share/icons/whiteglass/

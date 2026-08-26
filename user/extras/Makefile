@@ -1,7 +1,7 @@
-ALPINE_REPO := https://dl-cdn.alpinelinux.org/alpine/v3.20
-OUT         := ../../build/bin
-ROOTFS      := ../../rootfs
-TMPDIR      := /tmp/kyronix-extras
+BLOBS   := blobs
+OUT     := ../../build/bin
+ROOTFS  := ../../rootfs
+TMPDIR  := /tmp/kyronix-extras
 
 APK_VERSIONS := \
 	gzip-1.13-r0 \
@@ -40,18 +40,13 @@ $(OUT)/bunzip2: $(OUT)/bzip2
 $(OUT)/unxz: $(OUT)/xz
 	@ln -sf xz $@
 
-$(OUT)/.extras-fetch: $(APK_FILES:%=$(TMPDIR)/%)
+$(OUT)/.extras-fetch: $(APK_FILES:%=$(BLOBS)/%)
 	@mkdir -p $(TMPDIR)/extracted
-	@for apk in $(APK_FILES:%=$(TMPDIR)/%); do \
+	@for apk in $(APK_FILES:%=$(BLOBS)/%); do \
 		echo "  extras: extracting $$apk"; \
 		tar -xzf $$apk -C $(TMPDIR)/extracted; \
 	done
 	@touch $@
-
-$(TMPDIR)/%.apk:
-	@mkdir -p $(TMPDIR)
-	@curl -sL -o $@ $(ALPINE_REPO)/main/x86_64/$*.apk
-	@if file $@ 2>/dev/null | grep -q HTML; then rm -f $@; touch $@; fi
 
 install: all
 	@mkdir -p $(ROOTFS)/bin $(ROOTFS)/lib
