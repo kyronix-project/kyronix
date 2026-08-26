@@ -8,6 +8,7 @@
 #include "input.h"
 #include "kbd.h"
 #include "serial.h"
+#include "vt.h"
 
 #define EINTR 4
 #define TTY_BUF_SIZE 256
@@ -142,7 +143,7 @@ void tty_process_input(void) {
 
     if (kbd_data_ready()) {
         int c = kbd_getchar(); // always drain ps/2 buffer; evdev hook fires inside
-        if (c > 0 && !g_evdev_kbd_open) tty_input_char((uint8_t) c);
+        if (c > 0 && !g_evdev_kbd_open && !vt_kbd_muted()) tty_input_char((uint8_t) c);
     }
     irq_restore(flags);
 }

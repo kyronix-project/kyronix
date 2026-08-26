@@ -156,6 +156,18 @@ static bool parse_or(parser_t *p) {
 int main(int argc, char **argv) {
     kx_prog = "test";
     int first = 1;
+
+    // invoked as `[`: the closing bracket is part of the syntax, not a token
+    const char *base = strrchr(argv[0], '/');
+    base = base ? base + 1 : argv[0];
+    if (strcmp(base, "[") == 0) {
+        if (argc < 2 || strcmp(argv[argc - 1], "]") != 0) {
+            fprintf(stderr, "test: missing ]\n");
+            return 2;
+        }
+        argc--;
+    }
+
     if (first < argc && strcmp(argv[first], "--") == 0) first++;
     if (first == argc) return 1;
     parser_t p = { .argc = argc, .argv = argv, .pos = first, .error = false };

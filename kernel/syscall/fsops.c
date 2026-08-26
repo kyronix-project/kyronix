@@ -124,6 +124,20 @@ int64_t sys_ftruncate(int fd, uint64_t len) {
     return vfs_node_truncate(n, len);
 }
 
+// fallocate(fd, mode, off, len): only the "extend to off+len" case matters,
+// which is what wayland's os_create_anonymous_file() uses to size a memfd
+int64_t sys_fallocate(int fd, int mode, uint64_t off, uint64_t len) {
+    (void) mode;
+    vfs_file_t *file = fd_get_file(fd);
+    if (!file) return -(int64_t) EBADF;
+    if ((file->flags & O_ACCMODE) == O_RDONLY) return -(int64_t) EBADF;
+    vfs_node_t *n = file->node;
+    if (!n || n->type != VFS_TYPE_REG) return -(int64_t) EINVAL;
+    if (off > UINT64_MAX - len) return -(int64_t) EINVAL;
+    if (off + len <= n->size) return 0;
+    return vfs_node_truncate(n, off + len);
+}
+
 int64_t sys_truncate(const char *path, uint64_t len) {
     if (!path) return -(int64_t) EFAULT;
     char abs[512];
@@ -147,9 +161,9 @@ int64_t sys_statfs(const char *path, void *buf) {
         memset(buf, 0, 120);
         uint64_t *w = (uint64_t *) buf;
         w[0] = 0x858458f6;              // f_type = RAMFS_MAGIC
-        w[1] = 4096;                    // f_bsize 
+        w[1] = 4096;                    // f_bsize
         w[2] = 65536;                   // f_blocks
-        w[3] = 65536;                   // f_bfree 
+        w[3] = 65536;                   // f_bfree
         w[4] = 65536;                   // f_bavail
         w[5] = 4096;                    // f_files
         w[6] = 4096;                    // f_ffree

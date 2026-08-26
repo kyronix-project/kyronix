@@ -77,6 +77,9 @@ typedef struct {
 static int g_kd_mode = KD_TEXT;
 static int g_kb_mode = K_XLATE;
 
+// set while a display server drives the keyboard itself (KDSKBMODE K_OFF)
+bool vt_kbd_muted(void) { return g_kb_mode != K_XLATE && g_kb_mode != K_UNICODE; }
+
 static int64_t vt_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
     (void) n;
     switch (req) {
@@ -86,6 +89,7 @@ static int64_t vt_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
         return 0;
     case KDSETMODE:
         g_kd_mode = (int) arg;
+        fb_console_suspend(g_kd_mode == KD_GRAPHICS);
         return 0;
     case KDGKBMODE:
         if (arg && !uptr_ok_w((void *) (uintptr_t) arg, sizeof(int))) return -14;
@@ -224,18 +228,26 @@ void vt_init(void) {
     for (int i = 0; i <= 7; i++) {
         snprintf(path, sizeof(path), "/dev/tty%d", i);
         vfs_node_t *n = vfs_create_chr(path, vt_read, vt_write);
-        if (n) n->chr_ioctl = vt_ioctl;
+        if (n) {
+            n->chr_ioctl = vt_ioctl;
+            // TTY_MAJOR:minor - display servers verify this before taking a VT
+            n->rdev = VFS_MKDEV(4, i);
+        }
     }
 
     // replace /dev/console symlink with proper vt chr dev
     vfs_unlink("/dev/console");
     vfs_node_t *nc = vfs_create_chr("/dev/console", vt_read, vt_write);
-    if (nc) nc->chr_ioctl = vt_ioctl;
+    if (nc) {
+        nc->chr_ioctl = vt_ioctl;
+        nc->rdev = VFS_MKDEV(5, 1);
+    }
 
     // attach vt_ioctl to /dev/tty so VT/KD ioctls work on the controlling terminal too
     vfs_node_t *tty = vfs_lookup("/dev/tty");
     if (tty) {
         tty->chr_ioctl = vt_ioctl;
+        tty->rdev = VFS_MKDEV(5, 0);
         vfs_node_unref_internal(tty);
     }
 }

@@ -111,21 +111,24 @@ bool vmm_user_range_fault_in(vmm_space_t *sp, uint64_t virt, uint64_t len, bool 
     if (!sp) return false;
     if (len == 0) return true;
     if (virt + len < virt) return false;
-    proc_t *p = g_current_proc;
-    bool already_held = false;
-    if (p && p->user_access_tracking) {
-        for (uint8_t i = 0; i < p->user_access_count; i++)
-            if (p->user_access_spaces[i] == sp) already_held = true;
-    }
-    if (p && p->user_access_tracking && !already_held) {
-        if (p->user_access_count >= 4) return false;
+
+    /*
+     * The accessor reference keeps the address space from being mutated while
+     * this walk runs. It must be released again as soon as the walk is over:
+     * holding it for the whole syscall makes every mmap()/brk() in a sibling
+     * thread fail, which userspace allocators report as out of memory.
+     */
+    bool guard = sp != &g_kernel_space;
+    if (guard) {
         for (;;) {
-            if (__atomic_load_n(&sp->user_mutating, __ATOMIC_ACQUIRE)) return false;
+            if (__atomic_load_n(&sp->user_mutating, __ATOMIC_ACQUIRE)) {
+                cpu_relax();
+                continue;
+            }
             __atomic_add_fetch(&sp->user_accessors, 1, __ATOMIC_ACQ_REL);
             if (!__atomic_load_n(&sp->user_mutating, __ATOMIC_ACQUIRE)) break;
             __atomic_sub_fetch(&sp->user_accessors, 1, __ATOMIC_ACQ_REL);
         }
-        p->user_access_spaces[p->user_access_count++] = sp;
     }
     while (!__sync_bool_compare_and_swap(&sp->fault_lock, 0, 1)) cpu_relax();
     uint64_t pg = virt & ~0xFFFULL;
@@ -152,9 +155,11 @@ bool vmm_user_range_fault_in(vmm_space_t *sp, uint64_t virt, uint64_t len, bool 
         if (pg == last) break;
     }
     __atomic_store_n(&sp->fault_lock, 0, __ATOMIC_RELEASE);
+    if (guard) __atomic_sub_fetch(&sp->user_accessors, 1, __ATOMIC_ACQ_REL);
     return true;
 fail:
     __atomic_store_n(&sp->fault_lock, 0, __ATOMIC_RELEASE);
+    if (guard) __atomic_sub_fetch(&sp->user_accessors, 1, __ATOMIC_ACQ_REL);
     return false;
 }
 
@@ -179,14 +184,18 @@ void vmm_syscall_access_end(void) {
     }
 }
 
+/* Waits out concurrent user-memory walks instead of failing: callers turn a
+   refusal into EAGAIN, and userspace treats that as an allocation failure. */
 bool vmm_space_mutation_begin(vmm_space_t *sp) {
     if (!sp || sp == &g_kernel_space) return true;
-    if (!__sync_bool_compare_and_swap(&sp->user_mutating, 0, 1)) return false;
-    if (__atomic_load_n(&sp->user_accessors, __ATOMIC_ACQUIRE)) {
-        __atomic_store_n(&sp->user_mutating, 0, __ATOMIC_RELEASE);
-        return false;
+    for (int attempt = 0; attempt < 1000000; attempt++) {
+        if (__sync_bool_compare_and_swap(&sp->user_mutating, 0, 1)) {
+            if (!__atomic_load_n(&sp->user_accessors, __ATOMIC_ACQUIRE)) return true;
+            __atomic_store_n(&sp->user_mutating, 0, __ATOMIC_RELEASE);
+        }
+        cpu_relax();
     }
-    return true;
+    return false;
 }
 
 void vmm_space_mutation_end(vmm_space_t *sp) {

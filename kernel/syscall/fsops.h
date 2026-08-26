@@ -20,6 +20,7 @@ int64_t sys_link(const char *old, const char *lnew);
 int64_t sys_symlink(const char *target, const char *linkpath);
 int64_t sys_truncate(const char *path, uint64_t len);
 int64_t sys_ftruncate(int fd, uint64_t len);
+int64_t sys_fallocate(int fd, int mode, uint64_t off, uint64_t len);
 int64_t sys_statfs(const char *path, void *buf);
 int64_t sys_access(const char *p, int m);
 int64_t sys_umask(uint64_t mask);

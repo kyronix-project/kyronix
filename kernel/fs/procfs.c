@@ -468,13 +468,15 @@ static int64_t proc_self_status_read(vfs_node_t *n, char *buf, uint64_t len, uin
         "Threads:\t%d\n"
         "SigPnd:\t%016lx\n"
         "SigBlk:\t%016lx\n"
+        "Syscall:\t%lu\n"
         "VmPeak:\t0 kB\n"
         "VmSize:\t0 kB\n"
         "VmRSS:\t%lu kB\n"
         "VmLeak:\t%ld kB\n",
         proc_name(p), proc_state_char(p), p->pid, p->pid, p->ppid, p->uid, p->euid, p->suid,
         p->fsuid, p->gid, p->egid, p->sgid, p->fsgid, VFS_FD_MAX, threads ? threads : 1,
-        p->pending_sigs, p->sig_mask, (unsigned long) ((p->pages_alloc * PAGE_SIZE) / 1024),
+        p->pending_sigs, p->sig_mask, (unsigned long) p->ptrace_orig_rax,
+        (unsigned long) ((p->pages_alloc * PAGE_SIZE) / 1024),
         (long) ((int64_t) (p->pages_alloc - p->pages_freed) * (int64_t) (PAGE_SIZE / 1024)));
     if (n->fs_private) proc_unref(p);
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
@@ -497,7 +499,7 @@ static int64_t proc_self_maps_read(vfs_node_t *n, char *buf, uint64_t len, uint6
     if (!p) return 0;
     char tmp[768];
     const char *exe = p->exe_path[0] ? p->exe_path : "";
-    /* randomized addresses: don't leak actual VA to non-root */
+    // randomized addresses: don't leak actual VA to non-root
     int sz = snprintf(tmp, sizeof(tmp),
                       "00400000-00800000 r-xp 00000000 00:00 0 %s\n"
                       "xxxxxxxx-xxxxxxxx rw-p 00000000 00:00 0 [heap]\n"
@@ -589,7 +591,7 @@ static int parse_fd_link(const char *path) {
     int fd = 0;
     while (*s) {
         if (*s < '0' || *s > '9') return -1;
-        if (fd >= 102400) /* prevent overflow - max fd is 1024 */
+        if (fd >= 102400) // prevent overflow - max fd is 1024
             return -1;
         fd = fd * 10 + (*s - '0');
         s++;
@@ -666,7 +668,7 @@ bool procfs_readlink(const char *path, char *buf, uint64_t bufsz, int *out) {
 bool procfs_try_pid_dir(vfs_node_t *parent, const char *name) {
     if (!parent || !name || !*name) return false;
 
-    /* name must be purely numeric */
+    // name must be purely numeric
     for (const char *c = name; *c; c++)
         if (*c < '0' || *c > '9') return false;
 
@@ -678,13 +680,13 @@ bool procfs_try_pid_dir(vfs_node_t *parent, const char *name) {
     if (!p) return false;
     proc_unref(p);
 
-    /* create /proc/<N>/ directory */
+    // create /proc/<N>/ directory
     char dir_path[128];
     snprintf(dir_path, sizeof(dir_path), "/proc/%s", name);
     vfs_node_t *dir = vfs_mkdir_p(dir_path, 0555);
     if (!dir) return false;
 
-    /* create stat, status, cmdline, exe inside the directory */
+    // create stat, status, cmdline, exe inside the directory
     void *pid_tag = (void *) (uintptr_t) pid;
 
     char stat_path[160];

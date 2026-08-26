@@ -25,15 +25,15 @@ typedef struct {
     uint32_t hsync_len, vsync_len;
     uint32_t sync, vmode, rotate, colorspace;
     uint32_t reserved[4];
-} __attribute__((packed)) fb_var_t;
+} fb_var_t;
 
 typedef struct {
     char id[16];
     uint64_t smem_start;
     uint32_t smem_len;
-    uint32_t type; /* 0 = PACKED_PIXELS */
+    uint32_t type; // 0 = PACKED_PIXELS
     uint32_t type_aux;
-    uint32_t visual; /* 2 = TRUECOLOR */
+    uint32_t visual; // 2 = TRUECOLOR
     uint16_t xpanstep, ypanstep, ywrapstep;
     uint32_t line_length;
     uint64_t mmio_start;
@@ -41,7 +41,7 @@ typedef struct {
     uint32_t accel;
     uint16_t capabilities;
     uint16_t reserved[2];
-} __attribute__((packed)) fb_fix_t;
+} fb_fix_t;
 
 #define FBIOGET_VSCREENINFO 0x4600
 #define FBIOPUT_VSCREENINFO 0x4601
@@ -71,11 +71,11 @@ static int64_t fb0_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
             v->blue = (fb_bitfield_t) { 0, 8, 0 };
         }
         v->activate = 0;
-        v->height = v->width = 0xFFFFFFFF; /* unknown physical size */
+        v->height = v->width = 0xFFFFFFFF;
         return 0;
     }
     case FBIOPUT_VSCREENINFO:
-        return 0; /* accept but ignore mode changes */
+        return 0; // accept but ignore mode changes
     case FBIOGET_FSCREENINFO: {
         fb_fix_t *f = (fb_fix_t *) (uintptr_t) arg;
         if (!f) return -22;
@@ -84,15 +84,15 @@ static int64_t fb0_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
         memcpy(f->id, "kyronixfb", 9);
         f->smem_start = g_fb.phys_addr;
         f->smem_len = (uint32_t) (g_fb.pitch * g_fb.height);
-        f->type = 0;   /* PACKED_PIXELS */
-        f->visual = 2; /* TRUECOLOR */
+        f->type = 0;   // PACKED_PIXELS
+        f->visual = 2; // TRUECOLOR
         f->line_length = (uint32_t) g_fb.pitch;
         return 0;
     }
     case FBIOBLANK:
         return 0;
     default:
-        return -22; /* EINVAL */
+        return -22; // EINVAL
     }
 }
 
@@ -130,5 +130,6 @@ void fbdev_init(void) {
     n->mode = S_IFCHR | 0600;
     n->chr_ioctl = fb0_ioctl;
     n->chr_mmap = fb0_mmap;
+    n->rdev = VFS_MKDEV(29, 0); // FB_MAJOR:fb0
     vfs_create_symlink("/dev/fb", "/dev/fb0");
 }

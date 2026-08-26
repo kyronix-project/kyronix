@@ -458,9 +458,14 @@ int test_signalfd(void) {
     sigset_t mask;
     sigemptyset(&mask);
     sigaddset(&mask, SIGUSR1);
+    /* signalfd only sees signals that stay pending, i.e. blocked ones */
+    ASSERT_EQ(0, sigprocmask(SIG_BLOCK, &mask, NULL));
 
     int fd = signalfd(-1, &mask, SFD_NONBLOCK);
-    if (fd < 0 && (errno == ENOSYS || errno == ENOTSUP)) return 1;
+    if (fd < 0 && (errno == ENOSYS || errno == ENOTSUP)) {
+        sigprocmask(SIG_UNBLOCK, &mask, NULL);
+        return 1;
+    }
     ASSERT_GE(fd, 0);
     kill(getpid(), SIGUSR1);
 
@@ -470,6 +475,220 @@ int test_signalfd(void) {
     ASSERT_EQ(SIGUSR1, info.ssi_signo);
 
     close(fd);
+    sigprocmask(SIG_UNBLOCK, &mask, NULL);
     return 1;
 }
 REGISTER_TEST(signalfd, "Phase 5: Pipes & IPC");
+
+/* Wayland's event loop waits on signalfd through epoll. */
+int test_signalfd_epoll(void) {
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGUSR2);
+    ASSERT_EQ(0, sigprocmask(SIG_BLOCK, &mask, NULL));
+
+    int sfd = signalfd(-1, &mask, SFD_CLOEXEC);
+    ASSERT_GE(sfd, 0);
+    int ep = epoll_create1(0);
+    ASSERT_GE(ep, 0);
+    struct epoll_event ev = { .events = EPOLLIN, .data = { .fd = sfd } };
+    ASSERT_EQ(0, epoll_ctl(ep, EPOLL_CTL_ADD, sfd, &ev));
+
+    kill(getpid(), SIGUSR2);
+
+    struct epoll_event out[2];
+    int ready = epoll_wait(ep, out, 2, 2000);
+    ASSERT_EQ(1, ready);
+    ASSERT_EQ(sfd, out[0].data.fd);
+
+    struct signalfd_siginfo info;
+    ASSERT_EQ((ssize_t) sizeof(info), read(sfd, &info, sizeof(info)));
+    ASSERT_EQ(SIGUSR2, info.ssi_signo);
+
+    close(ep);
+    close(sfd);
+    sigprocmask(SIG_UNBLOCK, &mask, NULL);
+    return 1;
+}
+REGISTER_TEST(signalfd_epoll, "Phase 5: Pipes & IPC");
+
+/*
+ * The wl_shm handshake: one process creates a memfd, passes it over a unix
+ * socket, both sides mmap it MAP_SHARED and close their descriptors, and the
+ * memory stays shared and alive.
+ */
+static int send_fd(int sock, int fd) {
+    char body = 'F';
+    struct iovec iov = { .iov_base = &body, .iov_len = 1 };
+    char cbuf[CMSG_SPACE(sizeof(int))];
+    memset(cbuf, 0, sizeof(cbuf));
+    struct msghdr msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = cbuf;
+    msg.msg_controllen = sizeof(cbuf);
+    struct cmsghdr *cm = CMSG_FIRSTHDR(&msg);
+    cm->cmsg_level = SOL_SOCKET;
+    cm->cmsg_type = SCM_RIGHTS;
+    cm->cmsg_len = CMSG_LEN(sizeof(int));
+    memcpy(CMSG_DATA(cm), &fd, sizeof(int));
+    return sendmsg(sock, &msg, 0) < 0 ? -1 : 0;
+}
+
+static int recv_fd(int sock) {
+    char body = 0;
+    struct iovec iov = { .iov_base = &body, .iov_len = 1 };
+    char cbuf[CMSG_SPACE(sizeof(int))];
+    memset(cbuf, 0, sizeof(cbuf));
+    struct msghdr msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = cbuf;
+    msg.msg_controllen = sizeof(cbuf);
+    if (recvmsg(sock, &msg, 0) < 0) return -1;
+    struct cmsghdr *cm = CMSG_FIRSTHDR(&msg);
+    if (!cm || cm->cmsg_type != SCM_RIGHTS) return -1;
+    int fd = -1;
+    memcpy(&fd, CMSG_DATA(cm), sizeof(int));
+    return fd;
+}
+
+#define SHM_TEST_SIZE 8192
+
+int test_memfd_shared_across_processes(void) {
+    int sv[2];
+    ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, sv));
+
+    int fd = memfd_create("shm-test", MFD_CLOEXEC);
+    if (fd < 0 && errno == ENOSYS) {
+        close(sv[0]);
+        close(sv[1]);
+        return 1;
+    }
+    ASSERT_GE(fd, 0);
+    ASSERT_EQ(0, ftruncate(fd, SHM_TEST_SIZE));
+
+    unsigned char *map =
+        mmap(NULL, SHM_TEST_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    ASSERT_TRUE(map != MAP_FAILED);
+
+    pid_t pid = fork();
+    ASSERT_GE(pid, 0);
+    if (pid == 0) {
+        close(sv[0]);
+        munmap(map, SHM_TEST_SIZE);
+        int rfd = recv_fd(sv[1]);
+        if (rfd < 0) _exit(11);
+        unsigned char *cmap =
+            mmap(NULL, SHM_TEST_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, rfd, 0);
+        close(rfd); /* the mapping must outlive the descriptor */
+        if (cmap == MAP_FAILED) _exit(12);
+        /* wait for the parent's pattern to show up */
+        for (int i = 0; i < 500 && cmap[0] != 0xAB; i++) usleep(1000);
+        if (cmap[0] != 0xAB || cmap[SHM_TEST_SIZE - 1] != 0xCD) _exit(13);
+        cmap[1] = 0x5A;
+        cmap[SHM_TEST_SIZE - 2] = 0xA5;
+        char ack = 'A';
+        if (write(sv[1], &ack, 1) != 1) _exit(14);
+        usleep(50000);
+        _exit(0);
+    }
+
+    close(sv[1]);
+    ASSERT_EQ(0, send_fd(sv[0], fd));
+    close(fd); /* both sides drop the descriptor, wl_shm style */
+    map[0] = 0xAB;
+    map[SHM_TEST_SIZE - 1] = 0xCD;
+
+    char ack = 0;
+    ASSERT_EQ((ssize_t) 1, read(sv[0], &ack, 1));
+    ASSERT_EQ('A', ack);
+    ASSERT_EQ(0x5A, map[1]);
+    ASSERT_EQ(0xA5, map[SHM_TEST_SIZE - 2]);
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    ASSERT_TRUE(WIFEXITED(status));
+    ASSERT_EQ(0, WEXITSTATUS(status));
+
+    munmap(map, SHM_TEST_SIZE);
+    close(sv[0]);
+    return 1;
+}
+REGISTER_TEST(memfd_shared_across_processes, "Phase 5: Pipes & IPC");
+
+/*
+ * Event-driven servers (weston, dbus) wait for connections with poll/epoll
+ * instead of a blocking accept(), so a listening AF_UNIX socket must report
+ * itself readable as soon as a client connects.
+ */
+int test_unix_listen_poll(void) {
+    char path[PATH_MAX];
+    tmpfile_path(path, sizeof(path), "listen_poll.sock");
+    unlink(path);
+
+    int srv = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (srv < 0 && (errno == ENOSYS || errno == EAFNOSUPPORT)) return 1;
+    ASSERT_GE(srv, 0);
+
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    memcpy(addr.sun_path, path, strlen(path) + 1);
+    ASSERT_EQ(0, bind(srv, (struct sockaddr *) &addr, sizeof(addr)));
+    ASSERT_EQ(0, listen(srv, 5));
+
+    /* nothing pending yet */
+    struct pollfd pfd = { .fd = srv, .events = POLLIN };
+    ASSERT_EQ(0, poll(&pfd, 1, 0));
+
+    pid_t pid = fork();
+    ASSERT_GE(pid, 0);
+    if (pid == 0) {
+        int c = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (c < 0) _exit(1);
+        if (connect(c, (struct sockaddr *) &addr, sizeof(addr)) < 0) _exit(2);
+        if (write(c, "hi", 2) != 2) _exit(3);
+        usleep(200000);
+        close(c);
+        _exit(0);
+    }
+
+    int ep = epoll_create1(0);
+    ASSERT_GE(ep, 0);
+    struct epoll_event ev = { .events = EPOLLIN, .data = { .fd = srv } };
+    ASSERT_EQ(0, epoll_ctl(ep, EPOLL_CTL_ADD, srv, &ev));
+
+    struct epoll_event out[1];
+    ASSERT_EQ(1, epoll_wait(ep, out, 1, 3000));
+    ASSERT_EQ(srv, out[0].data.fd);
+
+    /* poll() has to agree, and the connection must be acceptable */
+    pfd.revents = 0;
+    ASSERT_EQ(1, poll(&pfd, 1, 0));
+    ASSERT_TRUE(pfd.revents & POLLIN);
+
+    int cfd = accept(srv, NULL, NULL);
+    ASSERT_GE(cfd, 0);
+    char buf[4] = { 0 };
+    ASSERT_EQ((ssize_t) 2, read(cfd, buf, 2));
+    ASSERT_STREQ("hi", buf);
+
+    /* the queue is empty again */
+    pfd.revents = 0;
+    ASSERT_EQ(0, poll(&pfd, 1, 0));
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    ASSERT_TRUE(WIFEXITED(status));
+    ASSERT_EQ(0, WEXITSTATUS(status));
+
+    close(cfd);
+    close(ep);
+    close(srv);
+    unlink(path);
+    return 1;
+}
+REGISTER_TEST(unix_listen_poll, "Phase 5: Pipes & IPC");

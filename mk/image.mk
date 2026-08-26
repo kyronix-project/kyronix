@@ -5,6 +5,14 @@ ISO_ROOT    := $(BUILD)/iso-root
 ROOTFS_SOURCES := $(shell find rootfs -type f \
 	-not -path 'rootfs/bin/*' \
 	-not -path 'rootfs/usr/libexec/*' \
+	-not -path 'rootfs/usr/lib/wayland/*' \
+	-not -path 'rootfs/usr/lib/weston/*' \
+	-not -path 'rootfs/usr/lib/libweston-9/*' \
+	-not -path 'rootfs/usr/bin/weston*' \
+	-not -path 'rootfs/usr/share/X11/*' \
+	-not -path 'rootfs/usr/share/weston/*' \
+	-not -path 'rootfs/usr/share/fonts/*' \
+	-not -path 'rootfs/etc/fonts/*' \
 	-not -name '.gitignore' \
 	-not -name 'libacl.so*' \
 	-not -name 'libattr.so*' | sort)
@@ -47,7 +55,7 @@ $(INITRD): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROOTFS_S
 	    $(INITRD_ROOT)/usr/share/kyronix/boot.fat.
 	@cd $(INITRD_ROOT) && find . -not -name '.gitignore' | sort | \
 	    cpio -o --format=newc --owner=0:0 --reproducible \
-	    > $(abspath $(INITRD)) 2>/dev/null
+	    > "$(abspath $(INITRD))" 2>/dev/null
 	@echo "  Built: $(INITRD)"
 
 define build_iso

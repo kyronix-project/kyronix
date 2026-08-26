@@ -141,3 +141,67 @@ int test_prlimit(void) {
     return 1;
 }
 REGISTER_TEST(prlimit, "Phase 8: Random / Misc");
+
+/* linux/fb.h is not available to musl-gcc here, so mirror the ABI locally */
+#define KFBIOGET_VSCREENINFO 0x4600
+#define KFBIOGET_FSCREENINFO 0x4602
+
+struct kfb_bitfield {
+    uint32_t offset, length, msb_right;
+};
+
+struct kfb_var_screeninfo {
+    uint32_t xres, yres, xres_virtual, yres_virtual, xoffset, yoffset;
+    uint32_t bits_per_pixel, grayscale;
+    struct kfb_bitfield red, green, blue, transp;
+    uint32_t nonstd, activate, height, width, accel_flags, pixclock;
+    uint32_t left_margin, right_margin, upper_margin, lower_margin;
+    uint32_t hsync_len, vsync_len, sync, vmode, rotate, colorspace;
+    uint32_t reserved[4];
+};
+
+struct kfb_fix_screeninfo {
+    char id[16];
+    unsigned long smem_start;
+    uint32_t smem_len, type, type_aux, visual;
+    uint16_t xpanstep, ypanstep, ywrapstep;
+    uint32_t line_length;
+    unsigned long mmio_start;
+    uint32_t mmio_len, accel;
+    uint16_t capabilities, reserved[2];
+};
+
+/* A display server's first contact with the framebuffer: probe, then map it. */
+int test_fbdev_screeninfo(void) {
+    int fd = open("/dev/fb0", O_RDWR);
+    if (fd < 0) return 1; /* no framebuffer on this boot */
+
+    struct kfb_fix_screeninfo fix;
+    struct kfb_var_screeninfo var;
+    memset(&fix, 0xAA, sizeof(fix));
+    memset(&var, 0xAA, sizeof(var));
+
+    ASSERT_EQ(0, ioctl(fd, KFBIOGET_FSCREENINFO, &fix));
+    ASSERT_EQ(0, ioctl(fd, KFBIOGET_VSCREENINFO, &var));
+
+    ASSERT_GT(var.xres, 0u);
+    ASSERT_GT(var.yres, 0u);
+    ASSERT_TRUE(var.bits_per_pixel == 32 || var.bits_per_pixel == 24);
+    ASSERT_EQ(0u, (unsigned) var.grayscale);
+    ASSERT_EQ(0u, (unsigned) fix.type);   /* FB_TYPE_PACKED_PIXELS */
+    ASSERT_EQ(2u, (unsigned) fix.visual); /* FB_VISUAL_TRUECOLOR */
+    ASSERT_GT(fix.line_length, 0u);
+    ASSERT_GE(fix.smem_len, fix.line_length * var.yres);
+    ASSERT_EQ(0u, (unsigned) var.red.msb_right);
+    ASSERT_GT(var.red.length, 0u);
+
+    /* weston's fbdev backend maps the whole thing MAP_SHARED, write-only */
+    void *fb = mmap(NULL, fix.smem_len, PROT_WRITE, MAP_SHARED, fd, 0);
+    ASSERT_TRUE(fb != MAP_FAILED);
+    memset(fb, 0, 4096);
+    ASSERT_EQ(0, munmap(fb, fix.smem_len));
+
+    close(fd);
+    return 1;
+}
+REGISTER_TEST(fbdev_screeninfo, "Phase 8: Random / Misc");

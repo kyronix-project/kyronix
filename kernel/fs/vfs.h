@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 struct net_conn;
+struct shmem_obj;
 
 extern char g_cwd[512];
 
@@ -132,6 +133,8 @@ typedef struct vfs_node {
 
     void *fs_private;          /* filesystem per-node data (e.g. ext2 inode) */
     struct vfs_fs_ops *fs_ops; /* NULL = ramfs / chr / symlink */
+    struct shmem_obj *shmem;   /* non-null for memfd_create() nodes */
+    uint32_t rdev;             /* device number reported as st_rdev */
     uint8_t dirty;
 } vfs_node_t;
 
@@ -154,6 +157,12 @@ typedef struct {
 } timerfd_state_t;
 
 typedef struct {
+    uint64_t mask; /* signals this descriptor accepts */
+    uint32_t refcnt;
+    spinlock_t lock;
+} sigfd_state_t;
+
+typedef struct {
     uint64_t magic;
     vfs_node_t *node;
     uint64_t pos;
@@ -166,6 +175,8 @@ typedef struct {
     uint8_t cloexec;
     eventfd_state_t *efd;
     timerfd_state_t *tfd;
+    sigfd_state_t *sfd;
+    void *epoll; /* non-null for epoll handles; survives dup() (see syscall/epoll.c) */
     struct net_conn *inet; /* non-null for AF_INET sockets */
     volatile uint32_t refs; /* descriptor ownership plus in-flight syscall borrows */
 
@@ -242,6 +253,10 @@ typedef struct {
 int fd_timerfd_settime(int fd, int flags, const kitimerspec_t *new_val, kitimerspec_t *old_val);
 int fd_timerfd_gettime(int fd, kitimerspec_t *cur_val);
 
+int fd_signalfd(int fd, uint64_t mask, int flags);
+int64_t signalfd_read(vfs_file_t *f, char *buf, uint64_t len);
+bool signalfd_pollin(vfs_file_t *f);
+
 int fd_socket(int domain, int type, int proto);
 int fd_bind_unix(int fd, const char *path);
 int fd_listen_unix(int fd, int backlog);
@@ -256,6 +271,13 @@ vfs_node_t *vfs_create_symlink(const char *path, const char *target);
 vfs_node_t *vfs_create_chr(const char *path,
                            int64_t (*rfn)(vfs_node_t *, char *, uint64_t, uint64_t),
                            int64_t (*wfn)(vfs_node_t *, const char *, uint64_t, uint64_t));
+
+/* st_rdev encoding matching the Linux/musl major:minor split */
+#define VFS_MKDEV(maj, min) ((uint32_t) ((((maj) & 0xfffu) << 8) | ((min) & 0xffu)))
+void vfs_set_rdev(const char *path, uint32_t rdev);
+
+/* Anonymous shmem-backed regular file with no directory entry (memfd_create). */
+int fd_memfd_open(const char *name, int cloexec);
 
 int vfs_mkdir(const char *path, uint32_t mode);
 int vfs_unlink(const char *path);

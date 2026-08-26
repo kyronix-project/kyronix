@@ -13,6 +13,7 @@ all:
 	$(MAKE) -C kyrobox
 	$(MAKE) -C pkg/client
 	$(MAKE) -C installer
+	$(MAKE) -C libudev
 	mkdir -p $(ROOTFS)/bin
 	cp ../build/bin/kyronix-init $(ROOTFS)/bin/init
 	rm -f $(ROOTFS)/bin/logger $(ROOTFS)/bin/sv
@@ -38,7 +39,11 @@ all:
 	ln -sf test $(ROOTFS)/bin/[
 	ln -sf reboot $(ROOTFS)/bin/poweroff
 	ln -sf reboot $(ROOTFS)/bin/halt
+	$(MAKE) -C libudev install
 	$(MAKE) -C extras install
+ifneq ($(WAYLAND),0)
+	$(MAKE) -C wayland install
+endif
 
 clean:
 	$(MAKE) -C init clean
@@ -52,5 +57,7 @@ clean:
 	$(MAKE) -C pkg/client clean
 	$(MAKE) -C installer clean
 	$(MAKE) -C extras clean
+	$(MAKE) -C libudev clean
+	$(MAKE) -C wayland clean
 	rm -f $(ROOTFS)/bin/*
 	rm -f $(ROOTFS)/usr/libexec/limine-install

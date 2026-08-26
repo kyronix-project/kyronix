@@ -1084,8 +1084,12 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = sys_epoll_wait((int) a1, (struct epoll_event *) a2, (int) a3, (int) a4);
         break; /* epoll_pwait */
     case 282:
-        ret = -(int64_t) ENOSYS;
-        break; /* signalfd: not implemented */
+        if (!a2 || !uptr_ok((void *) a2, 8)) {
+            ret = -(int64_t) EFAULT;
+            break;
+        }
+        ret = fd_signalfd((int) a1, *(const uint64_t *) a2, 0);
+        break; /* signalfd */
     case 283:
         ret = fd_timerfd_create((int) a1, (int) a2);
         break; /* timerfd_create */
@@ -1093,8 +1097,8 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = fd_eventfd((uint32_t) a1, (int) a2);
         break; /* eventfd */
     case 285:
-        ret = 0;
-        break; /* fallocate: no-op */
+        ret = sys_fallocate((int) a1, (int) a2, a3, a4);
+        break; /* fallocate */
     case 286:  /* timerfd_settime(fd, flags, new, old) */
         if (!a3 || !uptr_ok((void *) a3, 32)) {
             ret = -(int64_t) EFAULT;
@@ -1118,8 +1122,12 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = sys_socket_accept((int) a1, (struct sockaddr_un *) a2, (int *) a3, (int) a4);
         break;
     case 289:
-        ret = -(int64_t) ENOSYS;
-        break; /* signalfd4: not implemented */
+        if (!a2 || !uptr_ok((void *) a2, 8)) {
+            ret = -(int64_t) EFAULT;
+            break;
+        }
+        ret = fd_signalfd((int) a1, *(const uint64_t *) a2, (int) a4);
+        break; /* signalfd4 */
     case 290:
         ret = fd_eventfd((uint32_t) a1, (int) a2);
         break; /* eventfd2 */
@@ -1275,6 +1283,8 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = -(int64_t) ENOSYS;
         break;
     }
+    if (ret < 0 && ret >= -140)
+        log_warn("DBG sys %lu -> %ld pid=%u", nr, (long) ret, tp ? tp->pid : 0);
     f->rax = (uint64_t) ret;
 
     if (tp && tp->ptrace_syscall_trace && nr != 101) {

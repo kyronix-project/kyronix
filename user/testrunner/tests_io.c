@@ -378,3 +378,72 @@ int test_epoll_hup(void) {
     return 1;
 }
 REGISTER_TEST(epoll_hup, "Phase 7: I/O Multiplexing");
+
+/*
+ * libinput hands its clients a single epoll handle, which weston then watches
+ * from its own event loop, so an epoll fd has to be pollable itself.
+ */
+int test_epoll_nested(void) {
+    int p[2];
+    ASSERT_EQ(0, pipe(p));
+    int inner = epoll_create1(0);
+    ASSERT_GE(inner, 0);
+    int outer = epoll_create1(0);
+    ASSERT_GE(outer, 0);
+
+    struct epoll_event ev = { .events = EPOLLIN, .data = { .fd = p[0] } };
+    ASSERT_EQ(0, epoll_ctl(inner, EPOLL_CTL_ADD, p[0], &ev));
+    ev.data.fd = inner;
+    ASSERT_EQ(0, epoll_ctl(outer, EPOLL_CTL_ADD, inner, &ev));
+
+    struct epoll_event out[2];
+    ASSERT_EQ(0, epoll_wait(outer, out, 2, 0));
+
+    ASSERT_EQ((ssize_t) 1, write(p[1], "x", 1));
+    ASSERT_EQ(1, epoll_wait(outer, out, 2, 1000));
+    ASSERT_EQ(inner, out[0].data.fd);
+    /* the inner set reports the real fd */
+    ASSERT_EQ(1, epoll_wait(inner, out, 2, 0));
+    ASSERT_EQ(p[0], out[0].data.fd);
+
+    char c = 0;
+    ASSERT_EQ((ssize_t) 1, read(p[0], &c, 1));
+    ASSERT_EQ(0, epoll_wait(outer, out, 2, 0));
+
+    /* libwayland dups the fd before watching it, so a dup of an epoll handle
+       has to behave like the original */
+    int dup_inner = dup(inner);
+    ASSERT_GE(dup_inner, 0);
+    ev.data.fd = dup_inner;
+    ASSERT_EQ(0, epoll_ctl(outer, EPOLL_CTL_DEL, inner, &ev));
+    ASSERT_EQ(0, epoll_ctl(outer, EPOLL_CTL_ADD, dup_inner, &ev));
+    ASSERT_EQ((ssize_t) 1, write(p[1], "z", 1));
+    ASSERT_EQ(1, epoll_wait(outer, out, 2, 1000));
+    ASSERT_EQ(dup_inner, out[0].data.fd);
+    ASSERT_EQ((ssize_t) 1, read(p[0], &c, 1));
+    ASSERT_EQ(0, epoll_wait(outer, out, 2, 0));
+    ASSERT_EQ(0, epoll_ctl(outer, EPOLL_CTL_DEL, dup_inner, &ev));
+    close(dup_inner);
+    ev.data.fd = inner;
+    ASSERT_EQ(0, epoll_ctl(outer, EPOLL_CTL_ADD, inner, &ev));
+
+    /* and a blocking wait must be woken when the inner fd becomes ready */
+    pid_t pid = fork();
+    ASSERT_GE(pid, 0);
+    if (pid == 0) {
+        usleep(150000);
+        write(p[1], "y", 1);
+        _exit(0);
+    }
+    ASSERT_EQ(1, epoll_wait(outer, out, 2, 3000));
+    ASSERT_EQ(inner, out[0].data.fd);
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    close(inner);
+    close(outer);
+    close(p[0]);
+    close(p[1]);
+    return 1;
+}
+REGISTER_TEST(epoll_nested, "Phase 7: I/O Multiplexing");

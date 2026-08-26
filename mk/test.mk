@@ -39,7 +39,7 @@ $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/test
 	done
 	@cd $(TEST_ROOTFS) && find . | sort | \
 	    cpio -o --format=newc --owner=0:0 --reproducible \
-	    > $(abspath $(TEST_INITRD)) 2>/dev/null
+	    > "$(abspath $(TEST_INITRD))" 2>/dev/null
 	@echo "  Built: $(TEST_INITRD)"
 
 $(TEST_ISO): $(KERNEL) $(TEST_INITRD) boot/limine-test.conf \
