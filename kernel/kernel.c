@@ -24,6 +24,7 @@
 #include "drivers/pci.h"
 #include "drivers/ps2mouse.h"
 #include "drivers/serial.h"
+#include "drivers/tmp117.h"
 #include "drivers/tty.h"
 #include "drivers/uio.h"
 #include "drivers/vt.h"
@@ -371,6 +372,8 @@ void kmain(void) {
     }
     vt_init();
     kstatus("Initialising virtual tty", true);
+    tmp117_subsys_init();
+    kstatus("Initialising TMP117 sensor", true);
     pit_init();
     kstatus("Starting PIT timer", true);
     lapic_calibrate_timer();
