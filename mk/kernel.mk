@@ -79,6 +79,8 @@ KERNEL_C_SRCS := \
 	kernel/drivers/fb.c \
 	kernel/drivers/pci.c \
 	kernel/drivers/acpi.c \
+	kernel/drivers/i2c.c \
+	kernel/drivers/tmp117.c \
 	kernel/net/net.c \
 	kernel/net/lwip_glue.c \
 	kernel/net/netif/kyronix_netif.c \
