@@ -19,6 +19,7 @@ static volatile int tty_buf_tail;
 static uint32_t tty_canon_chars;
 static int tty_fg_pgid = 1;
 static proc_t *tty_waiter;
+static spinlock_irqsave_t tty_lock = { .lock = SPINLOCK_INIT, .flags = 0 };
 
 static struct termios_s tty_termios = {
     .c_iflag = ICRNL | IXON,
@@ -42,16 +43,17 @@ static bool tty_buf_empty(void) { return tty_buf_head == tty_buf_tail; }
 static bool tty_buf_full(void) { return ((tty_buf_head + 1) % TTY_BUF_SIZE) == tty_buf_tail; }
 
 static void tty_enqueue(uint8_t c) {
+    spin_lock_irqsave(&tty_lock);
     int next = (tty_buf_head + 1) % TTY_BUF_SIZE;
     if (next != tty_buf_tail) {
         tty_buf[tty_buf_head] = c;
         tty_buf_head = next;
     }
-    if (tty_waiter && tty_waiter->state == PROC_WAITING) {
-        tty_waiter->state = PROC_READY;
-        proc_set_ready(tty_waiter);
-    }
+    proc_t *w = tty_waiter;
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
+        proc_set_ready(w);
     tty_waiter = NULL;
+    spin_unlock_irqrestore(&tty_lock);
     poll_notify();
 }
 
@@ -186,14 +188,14 @@ int64_t tty_read(char *buf, uint64_t len) {
             }
         }
 
-        uint64_t irq_flags = irq_save();
+        spin_lock_irqsave(&tty_lock);
         if (!tty_buf_empty()) {
-            irq_restore(irq_flags);
+            spin_unlock_irqrestore(&tty_lock);
             continue;
         }
         tty_waiter = g_current_proc;
         if (g_current_proc) g_current_proc->state = PROC_WAITING;
-        irq_restore(irq_flags);
+        spin_unlock_irqrestore(&tty_lock);
         if (g_current_proc) sched_block_current();
         if (tty_waiter == g_current_proc) tty_waiter = NULL;
     }

@@ -200,8 +200,13 @@ proc_t *sched_claim_next(proc_t *skip) {
             __atomic_fetch_and(&g_ready_mask, ~(1ULL << proc_slot(next)), __ATOMIC_RELAXED);
             return next;
         }
-        if (__atomic_load_n(&next->state, __ATOMIC_ACQUIRE) != PROC_READY)
+        int st = __atomic_load_n(&next->state, __ATOMIC_ACQUIRE);
+        if (st != PROC_READY) {
+            if (st == PROC_RUNNING)
+                log_warn("SCHED: proc slot=%d pid=%d RUNNING while still in ready mask (double-sched)",
+                         proc_slot(next), next->pid);
             __atomic_fetch_and(&g_ready_mask, ~(1ULL << proc_slot(next)), __ATOMIC_RELAXED);
+        }
     }
     return NULL;
 }
@@ -224,6 +229,7 @@ void sched_block_current(void) {
     // its ready bit and sleeping forever
     if (__sync_bool_compare_and_swap(&p->state, PROC_READY, PROC_RUNNING)) {
         proc_clear_ready(p);
+        log_debug("SCHED: pid=%d consumed lost-wakeup while blocking", p->pid);
         return;
     }
 
@@ -267,6 +273,27 @@ void sched_block_current(void) {
 void sched_yield_blocking(void) {
     g_current_proc->state = PROC_WAITING;
     sched_block_current();
+}
+
+// non-blocking voluntary yield: requeue ourselves and run the next ready task
+void sched_yield(void) {
+    proc_t *p = g_current_proc;
+    if (!p) return;
+    uint64_t flags = irq_save();
+    proc_t *next = sched_claim_next(p);
+    if (next) {
+        p->state = PROC_READY;
+        proc_set_ready(p);
+        vfs_set_fdtable(next->fds);
+        g_current_space = next->space;
+        cpu_set_kernel_stack(next->kstack_top);
+        sched_switch(next);
+        p->state = PROC_RUNNING;
+        vfs_set_fdtable(p->fds);
+        g_current_space = p->space;
+        cpu_set_kernel_stack(p->kstack_top);
+    }
+    irq_restore(flags);
 }
 
 proc_t *proc_create_idle(uint32_t cpu_id, void (*entry)(void)) {

@@ -1,6 +1,7 @@
 #include "input.h"
 #include "../arch/x86_64/pit.h"
 #include "../fs/vfs.h"
+#include "../lib/log.h"
 #include "../lib/printf.h"
 #include "../lib/string.h"
 #include "../proc/proc.h"
@@ -12,11 +13,14 @@
 #define EINVAL 22
 #define ENOSYS 38
 
-#define EVBUF 128
+#define EVBUF 512
 typedef struct {
     input_event_t buf[EVBUF];
     volatile int head, tail;
+    volatile uint32_t count;
     proc_t *waiter;
+    spinlock_irqsave_t lock;
+    uint32_t dropped;
 } evdev_t;
 
 static evdev_t g_evdev[INPUT_NDEVS];
@@ -25,19 +29,30 @@ int g_evdev_kbd_open = 0;
 void input_push(int dev, uint16_t type, uint16_t code, int32_t value) {
     if ((unsigned) dev >= INPUT_NDEVS) return;
     evdev_t *e = &g_evdev[dev];
+    spin_lock_irqsave(&e->lock);
     int next = (e->head + 1) % EVBUF;
-    if (next == e->tail) return; // full, drop
-    e->buf[e->head] = (input_event_t) { .sec = g_ticks / 1000,
-                                        .usec = (g_ticks % 1000) * 1000,
-                                        .type = type,
-                                        .code = code,
-                                        .value = value };
-    e->head = next;
-    if (e->waiter && e->waiter->state == PROC_WAITING) {
-        e->waiter->state = PROC_READY;
-        proc_set_ready(e->waiter);
+    bool pushed = false;
+    if (next != e->tail) {
+        e->buf[e->head] = (input_event_t) { .sec = g_ticks / 1000,
+                                            .usec = (g_ticks % 1000) * 1000,
+                                            .type = type,
+                                            .code = code,
+                                            .value = value };
+        e->head = next;
+        if (e->count < EVBUF) e->count++;
+        pushed = true;
+    } else {
+        e->dropped++;
+        if ((e->dropped & 0x3F) == 1)
+            log_warn("INPUT: evdev dev=%d overflow (%u dropped so far in burst)", dev,
+                     e->dropped);
     }
-    poll_notify();
+    proc_t *w = e->waiter;
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
+        proc_set_ready(w);
+    e->waiter = NULL;
+    spin_unlock_irqrestore(&e->lock);
+    if (pushed) poll_notify();
 }
 
 static void kbd_evdev_push(uint16_t key, int value) {
@@ -48,7 +63,11 @@ static void kbd_evdev_push(uint16_t key, int value) {
 static bool evdev_pollin(vfs_node_t *n) {
     int dev = (int) (uintptr_t) n->data;
     if ((unsigned) dev >= INPUT_NDEVS) return false;
-    return g_evdev[dev].head != g_evdev[dev].tail;
+    evdev_t *e = &g_evdev[dev];
+    spin_lock_irqsave(&e->lock);
+    bool ready = e->count > 0;
+    spin_unlock_irqrestore(&e->lock);
+    return ready;
 }
 
 static int64_t evdev_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
@@ -58,25 +77,32 @@ static int64_t evdev_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) 
     if (dev == INPUT_DEV_KBD) g_evdev_kbd_open = 1;
 
     evdev_t *e = &g_evdev[dev];
-    while (e->head == e->tail) {
-        uint64_t irq_flags = irq_save();
-        if (e->head != e->tail) {
-            irq_restore(irq_flags);
+    uint8_t *out = (uint8_t *) buf;
+    uint64_t written = 0;
+    for (;;) {
+        spin_lock_irqsave(&e->lock);
+        while (e->count > 0 && written + sizeof(input_event_t) <= len) {
+            __builtin_memcpy(out + written, &e->buf[e->tail], sizeof(input_event_t));
+            e->tail = (e->tail + 1) % EVBUF;
+            e->count--;
+            written += sizeof(input_event_t);
+        }
+        if (written > 0 || e->count > 0 || len < sizeof(input_event_t)) {
+            if (e->dropped && written > 0) {
+                log_warn("INPUT: evdev dev=%d flushed %lu events after %u dropped", dev,
+                         written, e->dropped);
+                e->dropped = 0;
+            }
+            spin_unlock_irqrestore(&e->lock);
             break;
         }
         proc_t *p = g_current_proc;
         e->waiter = p;
         if (p) p->state = PROC_WAITING;
-        irq_restore(irq_flags);
-        if (p) sched_block_current();
-    }
-    e->waiter = NULL;
-
-    uint64_t written = 0;
-    while (e->head != e->tail && written + sizeof(input_event_t) <= len) {
-        __builtin_memcpy(buf + written, &e->buf[e->tail], sizeof(input_event_t));
-        e->tail = (e->tail + 1) % EVBUF;
-        written += sizeof(input_event_t);
+        spin_unlock_irqrestore(&e->lock);
+        if (!p) break;
+        sched_block_current();
+        e->waiter = NULL;
     }
     return (int64_t) written;
 }
@@ -163,7 +189,13 @@ static int64_t evdev_ioctl(vfs_node_t *n, uint64_t req64, uint64_t arg) {
     }
 }
 
+static int evdev_open(vfs_node_t *n, int flags) {
+    (void) flags;
+    return fd_open_node(n, flags);
+}
+
 void input_init(void) {
+    for (int i = 0; i < INPUT_NDEVS; i++) g_evdev[i].lock.lock.lock = 0;
     vfs_node_t *kbd_node = vfs_create_chr("/dev/input/event0", evdev_read, NULL);
     vfs_node_t *mouse_node = vfs_create_chr("/dev/input/event1", evdev_read, NULL);
 
@@ -172,6 +204,7 @@ void input_init(void) {
         kbd_node->data = (uint8_t *) (uintptr_t) INPUT_DEV_KBD;
         kbd_node->chr_ioctl = evdev_ioctl;
         kbd_node->chr_pollin = evdev_pollin;
+        kbd_node->chr_open = evdev_open;
         kbd_node->rdev = VFS_MKDEV(13, 64); // INPUT_MAJOR:event0
     }
     if (mouse_node) {
@@ -179,6 +212,7 @@ void input_init(void) {
         mouse_node->data = (uint8_t *) (uintptr_t) INPUT_DEV_MOUSE;
         mouse_node->chr_ioctl = evdev_ioctl;
         mouse_node->chr_pollin = evdev_pollin;
+        mouse_node->chr_open = evdev_open;
         mouse_node->rdev = VFS_MKDEV(13, 65); // event1
     }
 

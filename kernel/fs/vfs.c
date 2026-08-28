@@ -1028,8 +1028,12 @@ int fd_poll_objects(int fd, void **objects, int max_objects) {
         /* wake on the shared socket state, which is what connect() notifies */
         void *sock = unix_socket_wait_object(f->node);
         objects[0] = sock ? sock : (void *) f->node;
-    } else if (f->node) objects[0] = f->node;
-    else return 0;
+    } else if (f->node) {
+        if (f->node->type == VFS_TYPE_CHR && f->node->chr_pollobj)
+            objects[0] = f->node->chr_pollobj(f->node);
+        else
+            objects[0] = f->node;
+    } else return 0;
     return 1;
 }
 

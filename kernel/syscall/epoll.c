@@ -2,6 +2,7 @@
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/spinlock.h"
 #include "fs/vfs.h"
+#include "lib/log.h"
 #include "mm/vmm.h"
 #include "proc/proc.h"
 #include "syscall/poll.h"

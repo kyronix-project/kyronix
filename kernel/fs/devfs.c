@@ -8,6 +8,7 @@
 #include "lib/string.h"
 #include "mm/vmm.h"
 #include "proc/proc.h"
+#include "proc/signal.h"
 #include "syscall/syscall.h"
 
 #define EFAULT 14
@@ -100,6 +101,8 @@ typedef struct {
     pty_winsize_t ws;
     vfs_node_t master_node; // not in vfs tree
     vfs_node_t *slave;
+    uint8_t canon[256];
+    int canon_len;
 } pty_inst_t;
 
 static pty_inst_t g_ptys[PTY_MAX];
@@ -110,21 +113,123 @@ static pty_inst_t *pty_of(vfs_node_t *n) {
     return &g_ptys[idx];
 }
 
-// master r/w/ioctl/close
+// master read (terminal output from the slave)
 static int64_t ptym_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     (void) off;
     pty_inst_t *p = pty_of(n);
     return p ? pipe_read(p->s2m, buf, len) : -(int64_t) EINVAL;
 }
 
+static void pty_send_sig(int pgid, int sig) {
+    if (pgid <= 0) return;
+    for (int i = 0; i < PROC_MAX; i++) {
+        proc_t *pt = &g_proctable[i];
+        if (pt->state == PROC_UNUSED) continue;
+        if (pt->pgid == pgid) proc_send_signal(pt, sig);
+    }
+}
+
+static void pty_canon_deliver(pty_inst_t *p) {
+    if (p->canon_len > 0) {
+        pipe_write(p->m2s, (const char *) p->canon, (uint64_t) p->canon_len);
+        p->canon_len = 0;
+    }
+}
+
+static void pty_echo(pty_inst_t *p, uint8_t c, bool erase) {
+    if (!(p->termios.c_lflag & ECHO)) return;
+    if (erase) {
+        if (p->termios.c_lflag & ECHOE) pipe_write(p->s2m, "\b \b", 3);
+        return;
+    }
+    if (c == '\n' || c == '\r') {
+        pipe_write(p->s2m, "\r\n", 2);
+        return;
+    }
+    char ch = (char) c;
+    pipe_write(p->s2m, &ch, 1);
+}
+
+// master -> slave: apply the input line discipline (ISIG / ICRNL / ICANON / ECHO)
 static int64_t ptym_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t pos) {
+    (void) pos;
     pty_inst_t *p = pty_of(n);
-    return p ? pipe_write(p->m2s, buf, len) : -(int64_t) EINVAL;
+    if (!p) return -(int64_t) EINVAL;
+    const uint8_t *b = (const uint8_t *) buf;
+    for (uint64_t i = 0; i < len; i++) {
+        uint8_t c = b[i];
+
+        if (p->termios.c_lflag & ISIG) {
+            int sig = 0;
+            uint8_t shown = 0;
+            if (c == p->termios.c_cc[VINTR]) {
+                sig = SIGINT;
+                shown = 'C';
+            } else if (c == p->termios.c_cc[VQUIT]) {
+                sig = SIGQUIT;
+                shown = '\\';
+            } else if (c == p->termios.c_cc[VSUSP]) {
+                sig = SIGTSTP;
+                shown = 'Z';
+            }
+            if (sig) {
+                pipe_write(p->s2m, "\r\n", 2);
+                uint8_t esc[2] = { '^', shown };
+                pipe_write(p->s2m, (const char *) esc, 2);
+                pipe_write(p->s2m, "\r\n", 2);
+                pty_send_sig(p->pgid, sig);
+                continue;
+            }
+        }
+
+        if ((p->termios.c_iflag & IGNCR) && c == '\r') continue;
+        if ((p->termios.c_iflag & INLCR) && c == '\n') c = '\r';
+        if ((p->termios.c_iflag & ICRNL) && c == '\r') c = '\n';
+        if (p->termios.c_iflag & ISTRIP) c &= 0x7F;
+
+        bool canonical = (p->termios.c_lflag & ICANON) != 0;
+        if (canonical) {
+            if (c == p->termios.c_cc[VERASE] || c == '\b') {
+                if (p->canon_len > 0) {
+                    p->canon_len--;
+                    pty_echo(p, 0, true);
+                }
+                continue;
+            }
+            if (c == p->termios.c_cc[VKILL]) {
+                p->canon_len = 0;
+                if (p->termios.c_lflag & ECHOK) pipe_write(p->s2m, "\r\n", 2);
+                continue;
+            }
+        }
+
+        pty_echo(p, c, false);
+
+        if (canonical) {
+            if (c == p->termios.c_cc[VEOF]) {
+                pty_canon_deliver(p);
+                continue;
+            }
+            if (p->canon_len < (int) sizeof(p->canon)) {
+                p->canon[p->canon_len++] = c;
+                if (c == '\n') pty_canon_deliver(p);
+            }
+            continue;
+        }
+
+        pipe_write(p->m2s, (const char *) &c, 1);
+    }
+    return (int64_t) len;
 }
 
 static bool ptym_pollin(vfs_node_t *n) {
     pty_inst_t *p = pty_of(n);
     return p && p->s2m->count > 0;
+}
+
+static void *ptym_pollobj(vfs_node_t *n) {
+    pty_inst_t *p = pty_of(n);
+    return p && p->s2m ? (void *) p->s2m : (void *) n;
 }
 
 /* Terminal ioctls both ends of a pty answer. weston-terminal needs at least
@@ -258,6 +363,11 @@ static bool ptys_pollin(vfs_node_t *n) {
     return p && p->m2s && p->m2s->count > 0;
 }
 
+static void *ptys_pollobj(vfs_node_t *n) {
+    pty_inst_t *p = pty_of(n);
+    return p && p->m2s ? (void *) p->m2s : (void *) n;
+}
+
 // called when /dev/ptmx is opened
 static int ptmx_open(vfs_node_t *n, int flags) {
     (void) n;
@@ -285,6 +395,7 @@ static int ptmx_open(vfs_node_t *n, int flags) {
     pty->num = idx;
     pty->used = 1;
     pty->pgid = g_current_proc ? (int) g_current_proc->pgid : 0;
+    pty->canon_len = 0;
     memset(&pty->termios, 0, sizeof(pty->termios));
     pty->termios.c_iflag = 0x2500;  /* ICRNL | IXON | IUTF8 */
     pty->termios.c_oflag = 0x5;     /* OPOST | ONLCR */
@@ -305,6 +416,7 @@ static int ptmx_open(vfs_node_t *n, int flags) {
     pty->slave = vfs_create_chr(slave_path, ptys_read, ptys_write);
     if (pty->slave) {
         pty->slave->chr_pollin = ptys_pollin;
+        pty->slave->chr_pollobj = ptys_pollobj;
         pty->slave->chr_ioctl = ptys_ioctl;
         pty->slave->rdev = VFS_MKDEV(136, (uint32_t) idx); /* UNIX98_PTY_SLAVE_MAJOR */
         pty->slave->size = (uint64_t) idx;
@@ -321,6 +433,7 @@ static int ptmx_open(vfs_node_t *n, int flags) {
     mn->chr_write = ptym_write;
     mn->chr_ioctl = ptym_ioctl;
     mn->chr_pollin = ptym_pollin;
+    mn->chr_pollobj = ptym_pollobj;
     mn->chr_close = ptym_close;
 
     return fd_open_node(mn, O_RDWR);

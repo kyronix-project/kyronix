@@ -4,8 +4,8 @@
 # keeps CLOCK_REALTIME synchronized after the network becomes available
 ntpd:/bin/ntpd --quiet
 
-# # authenticates and starts shell from /etc/passwd
-# login:/bin/login
+# authenticates and starts shell from /etc/passwd
+login:/bin/login
 
-# desktop workspace
-weston:/usr/bin/startw
+# # desktop workspace
+# weston:/usr/bin/startw

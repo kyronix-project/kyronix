@@ -18,12 +18,14 @@ static int g_uio_ndevs;
 
 static void irq_handler(int irq, void *arg) {
     uio_dev_t *uio = (uio_dev_t *) arg;
+    spin_lock_irqsave(&uio->lock);
     uio->irq_count++;
     pic_mask_irq((uint8_t) irq); // driver re-enables via write()
-    if (uio->waiter && uio->waiter->state == PROC_WAITING) {
-        uio->waiter->state = PROC_READY;
-        proc_set_ready(uio->waiter);
-    }
+    proc_t *w = uio->waiter;
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
+        proc_set_ready(w);
+    uio->waiter = NULL;
+    spin_unlock_irqrestore(&uio->lock);
 }
 
 static int64_t uio_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
@@ -31,14 +33,20 @@ static int64_t uio_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     uio_dev_t *uio = (uio_dev_t *) n->data;
     if (!uio || len < 4) return -(int64_t) EINVAL;
 
-    uio->waiter = g_current_proc;
-    while (!uio->irq_count) sched_yield_blocking();
-    uio->waiter = NULL;
-
-    uint32_t cnt = uio->irq_count;
-    uio->irq_count = 0;
-    __builtin_memcpy(buf, &cnt, 4);
-    return 4;
+    for (;;) {
+        spin_lock_irqsave(&uio->lock);
+        if (uio->irq_count) {
+            uint32_t cnt = uio->irq_count;
+            uio->irq_count = 0;
+            spin_unlock_irqrestore(&uio->lock);
+            __builtin_memcpy(buf, &cnt, 4);
+            return 4;
+        }
+        uio->waiter = g_current_proc;
+        spin_unlock_irqrestore(&uio->lock);
+        sched_yield_blocking();
+        if (uio->waiter == g_current_proc) uio->waiter = NULL;
+    }
 }
 
 static int64_t uio_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t pos) {
@@ -84,6 +92,7 @@ void uio_init(void) {
         uio->pdev = &g_pci_devs[i];
         uio->irq_count = 0;
         uio->waiter = NULL;
+        uio->lock.lock.lock = 0;
 
         snprintf(path, sizeof(path), "/dev/uio%d", i);
         vfs_node_t *node = vfs_create_chr(path, uio_read, uio_write);

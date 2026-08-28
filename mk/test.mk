@@ -45,7 +45,7 @@ $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/test
 $(TEST_ISO): $(KERNEL) $(TEST_INITRD) boot/limine-test.conf \
 		$(LIMINE_FILES) $(LIMINE)/limine
 	@mkdir -p $(@D)
-	$(call build_iso,$(TEST_ISO_ROOT),boot/limine-test.conf,$(TEST_INITRD),$(TEST_ISO))
+	$(call build_iso,$(TEST_ISO_ROOT),boot/limine-test.conf,$(TEST_INITRD),$(TEST_INITRD),,$(TEST_ISO))
 
 .PHONY: test
 test: INSTRUMENT=1

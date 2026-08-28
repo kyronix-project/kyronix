@@ -1,6 +1,8 @@
-BOOT_FAT    := $(BUILD)/installer-boot.fat
-INITRD_ROOT := $(BUILD)/initrd-root
-ISO_ROOT    := $(BUILD)/iso-root
+BOOT_FAT        := $(BUILD)/installer-boot.fat
+INITRD_ROOT     := $(BUILD)/initrd-root
+ISO_ROOT        := $(BUILD)/iso-root
+WESTON_INITRD   := $(BUILD)/initrd-weston.cpio
+CONSOLE_INITRD  := $(BUILD)/initrd-console.cpio
 
 ROOTFS_SOURCES := $(shell find rootfs -type f \
 	-not -path 'rootfs/bin/*' \
@@ -39,8 +41,8 @@ $(BOOT_FAT): $(KERNEL) boot/limine-disk.conf boot/wallpaper.jpg $(LIMINE)/limine
 	mcopy -i $@ $(LIMINE)/limine-bios.sys ::/boot/limine/
 	@echo "  Built: $@"
 
-$(INITRD): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROOTFS_SOURCES) \
-		boot/limine-disk.conf $(LIMINE)/limine-bios.sys
+# --- shared initrd root filesystem ---
+$(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROOTFS_SOURCES)
 	rm -rf $(INITRD_ROOT)
 	mkdir -p $(INITRD_ROOT)/boot/limine
 	mkdir -p $(INITRD_ROOT)/lib/modules
@@ -53,16 +55,30 @@ $(INITRD): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROOTFS_S
 	cp $(LIMINE)/limine-bios.sys $(INITRD_ROOT)/boot/limine/
 	split -b 1M -d -a 2 $(BOOT_FAT) \
 	    $(INITRD_ROOT)/usr/share/kyronix/boot.fat.
+
+# --- weston variant (desktop) ---
+$(WESTON_INITRD): $(INITRD_ROOT) rootfs/etc/rc.conf.weston
+	cp rootfs/etc/rc.conf.weston $(INITRD_ROOT)/etc/rc.conf
 	@cd $(INITRD_ROOT) && find . -not -name '.gitignore' | sort | \
 	    cpio -o --format=newc --owner=0:0 --reproducible \
-	    > "$(abspath $(INITRD))" 2>/dev/null
-	@echo "  Built: $(INITRD)"
+	    > "$(abspath $(WESTON_INITRD))" 2>/dev/null
+	@echo "  Built: $(WESTON_INITRD)"
+
+# --- console variant (login shell) ---
+# depends on WESTON_INITRD to serialize shared INITRD_ROOT usage
+$(CONSOLE_INITRD): $(INITRD_ROOT) $(WESTON_INITRD) rootfs/etc/rc.conf.console
+	cp rootfs/etc/rc.conf.console $(INITRD_ROOT)/etc/rc.conf
+	@cd $(INITRD_ROOT) && find . -not -name '.gitignore' | sort | \
+	    cpio -o --format=newc --owner=0:0 --reproducible \
+	    > "$(abspath $(CONSOLE_INITRD))" 2>/dev/null
+	@echo "  Built: $(CONSOLE_INITRD)"
 
 define build_iso
 	rm -rf $(1)
 	mkdir -p $(1)/boot/limine $(1)/EFI/BOOT
 	cp $(KERNEL) $(1)/boot/kernel.elf
-	cp $(3) $(1)/boot/initrd.cpio
+	cp $(3) $(1)/boot/initrd-weston.cpio
+	cp $(4) $(1)/boot/initrd-console.cpio
 	cp $(2) $(1)/boot/limine/limine.conf
 	cp $(LIMINE)/limine-bios.sys $(1)/boot/limine/
 	cp $(LIMINE)/limine-bios-cd.bin $(1)/boot/limine/
@@ -78,14 +94,15 @@ define build_iso
 	    -no-emul-boot -boot-load-size 4 -boot-info-table \
 	    --efi-boot boot/limine/limine-uefi-cd.bin \
 	    -efi-boot-part --efi-boot-image --protective-msdos-label \
-	    $(1) -o $(4)
-	./$(LIMINE)/limine bios-install $(4)
-	@echo "  Built: $(4)"
+	    $(1) -o $(6)
+	./$(LIMINE)/limine bios-install $(6)
+	@echo "  Built: $(6)"
 endef
 
-$(ISO): $(KERNEL) $(INITRD) boot/limine.conf boot/wallpaper.jpg $(LIMINE_FILES) $(LIMINE)/limine
+$(ISO): $(KERNEL) $(WESTON_INITRD) $(CONSOLE_INITRD) boot/limine.conf \
+		boot/wallpaper.jpg $(LIMINE_FILES) $(LIMINE)/limine
 	@mkdir -p $(@D)
-	$(call build_iso,$(ISO_ROOT),boot/limine.conf,$(INITRD),$(ISO),boot/wallpaper.jpg)
+	$(call build_iso,$(ISO_ROOT),boot/limine.conf,$(WESTON_INITRD),$(CONSOLE_INITRD),boot/wallpaper.jpg,$(ISO))
 
 $(DISK):
 	@mkdir -p $(@D)
