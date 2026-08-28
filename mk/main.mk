@@ -4,7 +4,6 @@ BUILD    := build
 DIST     := dist
 
 KERNEL   := $(BUILD)/kernel.elf
-INITRD   := $(BUILD)/initrd.cpio
 ISO      := $(DIST)/kyronix.iso
 DISK     := $(DIST)/kyronix-disk.img
 TEST_ISO := $(DIST)/kyronix-test.iso
@@ -23,8 +22,8 @@ iso: $(ISO)
 help:
 	@echo "Kyronix build commands"
 	@echo ""
-	@echo "  make          Build $(ISO)"
-	@echo "  make iso      Build $(ISO)"
+	@echo "  make          Build $(ISO) (Desktop + Console variants)"
+	@echo "  make iso      Build $(ISO) (Desktop + Console variants)"
 	@echo "  make run      Build and boot the live ISO with $(DISK)"
 	@echo "  make boot     Boot the system already installed on $(DISK)"
 	@echo "  make test     Build and run the test suite in QEMU"
@@ -39,7 +38,8 @@ clean:
 	rm -rf build/iso-root build/test-rootfs build/test-iso-root
 	rm -f test.log
 	rm -f $(ISO) $(TEST_ISO)
-	rm -f $(DIST)/kernel.elf $(DIST)/initrd.cpio $(DIST)/kyronix-boot.fat
+	rm -f $(BUILD)/initrd-weston.cpio $(BUILD)/initrd-console.cpio
+	rm -f $(DIST)/kernel.elf $(DIST)/kyronix-boot.fat
 	rm -f $(DIST)/test-initrd.cpio $(DIST)/test-disk.img $(DIST)/disk.img
 	rm -f $(DIST)/kyronix-*-$(ARCH).iso
 	rm -f $(DIST)/kyronix-*-$(ARCH)-live.iso $(DIST)/kyronix-*-$(ARCH)-test.iso
