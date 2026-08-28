@@ -24,6 +24,7 @@
 #include "drivers/bus/pci/pci.h"
 #include "drivers/input/ps2mouse.h"
 #include "drivers/char/serial.h"
+#include "drivers/bus/spi/spi.h"
 #include "drivers/hwmon/tmp117.h"
 #include "drivers/tty/tty.h"
 #include "drivers/char/uio.h"
@@ -372,6 +373,7 @@ void kmain(void) {
     }
     vt_init();
     kstatus("Initialising virtual tty", true);
+    spi_stub_create_controller(0);
     tmp117_subsys_init();
     kstatus("Initialising TMP117 sensor", true);
     pit_init();
