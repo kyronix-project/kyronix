@@ -80,6 +80,7 @@ KERNEL_C_SRCS := \
 	kernel/drivers/bus/pci/pci.c \
 	kernel/drivers/acpi/acpi.c \
 	kernel/drivers/bus/i2c/i2c.c \
+	kernel/drivers/bus/spi/spi.c \
 	kernel/drivers/hwmon/tmp117.c \
 	kernel/net/net.c \
 	kernel/net/lwip_glue.c \
