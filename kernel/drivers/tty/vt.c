@@ -4,7 +4,7 @@
 #include "../lib/printf.h"
 #include "../lib/string.h"
 #include "../syscall/syscall.h"
-#include "fb.h"
+#include "../video/fb.h"
 #include "tty.h"
 
 #define KDSETMODE 0x4B3A

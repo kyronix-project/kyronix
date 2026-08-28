@@ -5,7 +5,7 @@
 #include "arch/x86_64/syscall_setup.h"
 #include "cred.h"
 #include "crypto/chacha20.h"
-#include "drivers/acpi.h"
+#include "drivers/acpi/acpi.h"
 #include "epoll.h"
 #include "exec/process.h"
 #include "file.h"

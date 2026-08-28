@@ -1,5 +1,5 @@
 #include "printf.h"
-#include "../drivers/serial.h"
+#include "../drivers/char/serial.h"
 #include "string.h"
 #include <stdbool.h>
 #include <stdint.h>

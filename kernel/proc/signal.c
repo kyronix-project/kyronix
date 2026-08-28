@@ -1,7 +1,7 @@
 #include "signal.h"
 #include "arch/x86_64/gdt.h"
 #include "arch/x86_64/syscall_setup.h"
-#include "drivers/tty.h"
+#include "drivers/tty/tty.h"
 #include "lib/log.h"
 #include "lib/string.h"
 #include "proc.h"

@@ -70,17 +70,17 @@ KERNEL_C_SRCS := \
 	kernel/fs/fat32.c \
 	kernel/fs/fstab.c \
 	kernel/fs/partition.c \
-	kernel/drivers/block.c \
-	kernel/drivers/blockdev.c \
-	kernel/drivers/ahci.c \
-	kernel/drivers/serial.c \
-	kernel/drivers/kbd.c \
-	kernel/drivers/tty.c \
-	kernel/drivers/fb.c \
-	kernel/drivers/pci.c \
-	kernel/drivers/acpi.c \
-	kernel/drivers/i2c.c \
-	kernel/drivers/tmp117.c \
+	kernel/drivers/block/block.c \
+	kernel/drivers/block/blockdev.c \
+	kernel/drivers/ata/ahci.c \
+	kernel/drivers/char/serial.c \
+	kernel/drivers/input/kbd.c \
+	kernel/drivers/tty/tty.c \
+	kernel/drivers/video/fb.c \
+	kernel/drivers/bus/pci/pci.c \
+	kernel/drivers/acpi/acpi.c \
+	kernel/drivers/bus/i2c/i2c.c \
+	kernel/drivers/hwmon/tmp117.c \
 	kernel/net/net.c \
 	kernel/net/lwip_glue.c \
 	kernel/net/netif/kyronix_netif.c \
@@ -107,11 +107,11 @@ KERNEL_C_SRCS := \
 	$(LWIP)/core/ipv4/ip4_addr.c \
 	$(LWIP)/core/ipv4/ip4_frag.c \
 	$(LWIP)/netif/ethernet.c \
-	kernel/drivers/uio.c \
-	kernel/drivers/fbdev.c \
-	kernel/drivers/input.c \
-	kernel/drivers/ps2mouse.c \
-	kernel/drivers/vt.c \
+	kernel/drivers/char/uio.c \
+	kernel/drivers/video/fbdev.c \
+	kernel/drivers/input/input.c \
+	kernel/drivers/input/ps2mouse.c \
+	kernel/drivers/tty/vt.c \
 	kernel/lib/string.c \
 	kernel/lib/printf.c \
 	kernel/lib/log.c \
@@ -131,7 +131,7 @@ KERNEL_ASM_SRCS := \
 	kernel/arch/x86_64/syscall_entry.S \
 	kernel/proc/sched.S \
 	kernel/proc/ap_trampoline.S \
-	kernel/drivers/psf_font.S
+	kernel/drivers/tty/psf_font.S
 
 KERNEL_OBJS := \
 	$(KERNEL_C_SRCS:%.c=$(BUILD)/%.o) \
@@ -161,7 +161,7 @@ $(BUILD)/%.o: %.S
 	@mkdir -p $(@D)
 	$(CC) -m64 -march=x86-64 -c $< -o $@
 
-$(VIRTIO_NET_MODULE): kernel/drivers/virtio_net.c kernel/module.h $(KERNEL_CONFIG)
+$(VIRTIO_NET_MODULE): kernel/drivers/net/virtio_net.c kernel/module.h $(KERNEL_CONFIG)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(KERNEL_INSTRUMENT_CFLAGS) -fno-asynchronous-unwind-tables -MMD -MP -c $< -o $@
 

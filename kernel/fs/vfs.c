@@ -1,7 +1,7 @@
 #include "vfs.h"
 #include "arch/x86_64/cpu.h"
 #include "devfs.h"
-#include "drivers/tty.h"
+#include "drivers/tty/tty.h"
 #include "eventfd.h"
 #include "signalfd.h"
 #include "inet_socket.h"

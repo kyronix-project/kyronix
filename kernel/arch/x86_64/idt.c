@@ -1,7 +1,7 @@
 #include "idt.h"
 #include "arch/x86_64/lapic.h"
 #include "arch/x86_64/syscall_setup.h"
-#include "drivers/fb.h"
+#include "drivers/video/fb.h"
 #include "exec/process.h"
 #include "fs/vfs.h"
 #include "gdt.h"

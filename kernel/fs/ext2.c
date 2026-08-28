@@ -1,5 +1,5 @@
 #include "ext2.h"
-#include "../drivers/block.h"
+#include "../drivers/block/block.h"
 #include "../lib/log.h"
 #include "../lib/printf.h"
 #include "../lib/string.h"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "i2c.h"
+#include "../bus/i2c/i2c.h"
 #include "../fs/vfs.h"
 #include <stdbool.h>
 #include <stdint.h>

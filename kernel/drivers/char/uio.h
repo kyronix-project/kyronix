@@ -1,6 +1,6 @@
 #pragma once
 #include "../proc/proc.h"
-#include "pci.h"
+#include "../bus/pci/pci.h"
 #include <stdint.h>
 
 typedef struct {
