@@ -1,6 +1,6 @@
 #include "devfs.h"
 #include "crypto/chacha20.h"
-#include "drivers/tty.h"
+#include "drivers/tty/tty.h"
 #include "fs/pipe.h"
 #include "fs/vfs.h"
 #include "lib/log.h"

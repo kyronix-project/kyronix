@@ -1,5 +1,5 @@
 #include "fdctl.h"
-#include "drivers/tty.h"
+#include "drivers/tty/tty.h"
 #include "fs/vfs.h"
 #include "fs/vfs_internal.h"
 #include "lib/string.h"

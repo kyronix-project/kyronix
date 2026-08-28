@@ -1,7 +1,7 @@
 #include "procfs.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/pit.h"
-#include "drivers/pci.h"
+#include "drivers/bus/pci/pci.h"
 #include "lib/log.h"
 #include "lib/printf.h"
 #include "lib/string.h"

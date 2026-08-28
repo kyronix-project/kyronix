@@ -1,8 +1,8 @@
 #include "kbd.h"
-#include "../arch/x86_64/cpu.h"
-#include "../arch/x86_64/idt.h"
-#include "../drivers/tty.h"
-#include "../lib/log.h"
+#include "arch/x86_64/cpu.h"
+#include "arch/x86_64/idt.h"
+#include "../tty/tty.h"
+#include "lib/log.h"
 
 #define KBD_DATA 0x60
 #define KBD_STAT 0x64

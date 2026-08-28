@@ -1,7 +1,7 @@
 #include "lib/log.h"
 #include "../arch/x86_64/spinlock.h"
 #include "config.h"
-#include "drivers/serial.h"
+#include "drivers/char/serial.h"
 #include "lib/printf.h"
 #include <stdarg.h>
 

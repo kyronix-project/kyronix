@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 #include "arch/x86_64/cpu.h"
-#include "drivers/pci.h"
+#include "../bus/pci/pci.h"
 #include "lib/log.h"
 #include "lib/string.h"
 #include "mm/pmm.h"

@@ -1,6 +1,6 @@
 #include "partition.h"
-#include "../drivers/block.h"
-#include "../drivers/blockdev.h"
+#include "../drivers/block/block.h"
+#include "../drivers/block/blockdev.h"
 #include "../lib/log.h"
 #include "../lib/printf.h"
 #include "../lib/string.h"

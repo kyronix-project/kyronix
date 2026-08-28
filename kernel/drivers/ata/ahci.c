@@ -10,8 +10,8 @@
 #include "../mm/pmm.h"
 #include "../mm/vmm.h"
 #include "../proc/proc.h"
-#include "block.h"
-#include "pci.h"
+#include "../block/block.h"
+#include "../bus/pci/pci.h"
 
 #define PCI_CLASS_STORAGE 0x01
 #define PCI_SUBCLASS_SATA 0x06

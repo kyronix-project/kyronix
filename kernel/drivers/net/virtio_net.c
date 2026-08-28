@@ -7,7 +7,7 @@
 #include "../mm/pmm.h"
 #include "../module.h"
 #include "../net/net.h"
-#include "pci.h"
+#include "../bus/pci/pci.h"
 
 #define REG_DEVFEAT 0x00u
 #define REG_DRVFEAT 0x04u

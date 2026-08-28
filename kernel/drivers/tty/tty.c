@@ -4,10 +4,10 @@
 #include "../proc/proc.h"
 #include "../proc/signal.h"
 #include "../syscall/poll.h"
-#include "fb.h"
-#include "input.h"
-#include "kbd.h"
-#include "serial.h"
+#include "../video/fb.h"
+#include "../input/input.h"
+#include "../input/kbd.h"
+#include "../char/serial.h"
 #include "vt.h"
 
 #define EINTR 4
