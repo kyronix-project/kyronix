@@ -183,6 +183,7 @@ proc_t *proc_idle_until_ready(proc_t *skip);
 void sched_switch(proc_t *next);
 void sched_block_current(void);
 void sched_yield_blocking(void);
+void sched_yield(void);
 extern void proc_resume_frame(void);
 extern void proc_resume_interrupt_frame(void);
 __attribute__((noreturn)) void proc_do_exit(int code);

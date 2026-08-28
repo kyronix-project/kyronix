@@ -230,6 +230,7 @@ void syscall_dispatch(syscall_frame_t *f) {
         break;
     case 24: {
         ret = 0;
+        sched_yield();
         break;
     }
     case 53:
@@ -1283,8 +1284,6 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = -(int64_t) ENOSYS;
         break;
     }
-    if (ret < 0 && ret >= -140)
-        log_warn("DBG sys %lu -> %ld pid=%u", nr, (long) ret, tp ? tp->pid : 0);
     f->rax = (uint64_t) ret;
 
     if (tp && tp->ptrace_syscall_trace && nr != 101) {

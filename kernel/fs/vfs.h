@@ -124,6 +124,7 @@ typedef struct vfs_node {
     int64_t (*chr_write)(struct vfs_node *, const char *, uint64_t, uint64_t);
     int64_t (*chr_ioctl)(struct vfs_node *, uint64_t req, uint64_t arg);
     bool (*chr_pollin)(struct vfs_node *);
+    void *(*chr_pollobj)(struct vfs_node *);
     int (*chr_open)(struct vfs_node *, int flags);
     void (*chr_close)(struct vfs_node *);
     int64_t (*chr_mmap)(struct vfs_node *, uint64_t off, uint64_t len, uint64_t va,

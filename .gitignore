@@ -1,5 +1,4 @@
 # cache & local configs
-.claude
 .config
 .config.old
 include/config/
