@@ -23,4 +23,5 @@ void pci_enumerate(void);
 uint32_t pci_read32(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg);
 void pci_write32(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg, uint32_t val);
 uint16_t pci_read16(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg);
+void pci_write16(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg, uint16_t val);
 uint8_t pci_read8(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg);

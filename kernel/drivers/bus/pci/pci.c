@@ -25,6 +25,11 @@ uint16_t pci_read16(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg) {
     return (uint16_t) (v >> ((reg & 2) * 8));
 }
 
+void pci_write16(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg, uint16_t val) {
+    outl(PCI_CFG_ADDR, cfg_addr(bus, dev, fn, reg));
+    outw((uint16_t) (PCI_CFG_DATA + (reg & 2)), val);
+}
+
 uint8_t pci_read8(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg) {
     uint32_t v = pci_read32(bus, dev, fn, reg & 0xFC);
     return (uint8_t) (v >> ((reg & 3) * 8));
