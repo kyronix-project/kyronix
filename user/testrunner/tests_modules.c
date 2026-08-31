@@ -1,4 +1,8 @@
 #include "test_harness.h"
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/ip_icmp.h>
 
 static int delete_test_module(void) {
     return (int) syscall(SYS_delete_module, "hello", 0);
@@ -38,13 +42,22 @@ int test_kernel_modules(void) {
 
     char modules[1024];
     MODULE_CHECK(read_file("/proc/modules", modules, sizeof(modules)) >= 0);
-    MODULE_CHECK(strstr(modules, "virtio_net ") != NULL);
-    MODULE_CHECK(syscall(SYS_delete_module, "virtio_net", 0) == 0);
-    MODULE_CHECK(read_file("/proc/modules", modules, sizeof(modules)) >= 0);
-    MODULE_CHECK(strstr(modules, "virtio_net ") == NULL);
-    MODULE_CHECK(load_module_file("/lib/modules/virtio_net.ko") == 0);
-    MODULE_CHECK(read_file("/proc/modules", modules, sizeof(modules)) >= 0);
-    MODULE_CHECK(strstr(modules, "virtio_net ") != NULL);
+    if (strstr(modules, "virtio_net ") != NULL) {
+        MODULE_CHECK(syscall(SYS_delete_module, "virtio_net", 0) == 0);
+        MODULE_CHECK(read_file("/proc/modules", modules, sizeof(modules)) >= 0);
+        MODULE_CHECK(strstr(modules, "virtio_net ") == NULL);
+        MODULE_CHECK(load_module_file("/lib/modules/virtio_net.ko") == 0);
+        MODULE_CHECK(read_file("/proc/modules", modules, sizeof(modules)) >= 0);
+        MODULE_CHECK(strstr(modules, "virtio_net ") != NULL);
+    }
+    if (strstr(modules, "e1000 ") != NULL) {
+        MODULE_CHECK(syscall(SYS_delete_module, "e1000", 0) == 0);
+        MODULE_CHECK(read_file("/proc/modules", modules, sizeof(modules)) >= 0);
+        MODULE_CHECK(strstr(modules, "e1000 ") == NULL);
+        MODULE_CHECK(load_module_file("/lib/modules/e1000.ko") == 0);
+        MODULE_CHECK(read_file("/proc/modules", modules, sizeof(modules)) >= 0);
+        MODULE_CHECK(strstr(modules, "e1000 ") != NULL);
+    }
 
     fd = open(path, O_RDONLY);
     MODULE_CHECK(fd >= 0);
@@ -102,3 +115,55 @@ cleanup:
 #undef MODULE_CHECK
 }
 REGISTER_TEST(kernel_modules, "Phase 8: Random / Misc");
+
+int test_e1000_net_transmit(void) {
+    char modules[1024];
+    if (read_file("/proc/modules", modules, sizeof(modules)) < 0) return TEST_FAIL;
+    if (strstr(modules, "e1000 ") == NULL) return TEST_PASS;
+
+    int fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    if (fd < 0) return TEST_FAIL;
+
+    struct sockaddr_in to;
+    memset(&to, 0, sizeof(to));
+    to.sin_family = AF_INET;
+    to.sin_addr.s_addr = inet_addr("10.0.2.2");
+
+    uint8_t pkt[sizeof(struct icmphdr) + 32];
+    struct icmphdr *icmp = (struct icmphdr *) pkt;
+    memset(icmp, 0, sizeof(*icmp));
+    icmp->type = ICMP_ECHO;
+    icmp->code = 0;
+    icmp->un.echo.id = htons((uint16_t) getpid());
+    icmp->un.echo.sequence = htons(1);
+
+    uint8_t *payload = pkt + sizeof(struct icmphdr);
+    for (int i = 0; i < 32; i++) payload[i] = (uint8_t) i;
+
+    const uint16_t *p = (const uint16_t *) pkt;
+    int len = (int) sizeof(pkt);
+    uint32_t sum = 0;
+    while (len > 1) {
+        sum += *p++;
+        len -= 2;
+    }
+    if (len) sum += *(const uint8_t *) p;
+    while (sum >> 16) sum = (sum & 0xffff) + (sum >> 16);
+    icmp->checksum = (uint16_t) ~sum;
+
+    ssize_t sent = sendto(fd, pkt, sizeof(pkt), 0, (struct sockaddr *) &to, sizeof(to));
+    if (sent != (ssize_t) sizeof(pkt)) {
+        close(fd);
+        return TEST_FAIL;
+    }
+
+    struct pollfd pfd = { .fd = fd, .events = POLLIN };
+    int r = poll(&pfd, 1, 1000);
+    if (r > 0) {
+        uint8_t rbuf[512];
+        recv(fd, rbuf, sizeof(rbuf), 0);
+    }
+    close(fd);
+    return TEST_PASS;
+}
+REGISTER_TEST(e1000_net_transmit, "Phase 8: Random / Misc");

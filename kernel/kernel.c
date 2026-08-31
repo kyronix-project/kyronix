@@ -572,8 +572,15 @@ void kmain(void) {
 
     {
         int result = module_load_path("/lib/modules/virtio_net.ko");
-        kstatus("Loading virtio-net module", result == 0);
-        if (result < 0) log_warn("virtio-net module load failed: %d", result);
+        if (result == 0) {
+            kstatus("Loading virtio-net module", true);
+        }
+    }
+    {
+        int result = module_load_path("/lib/modules/e1000.ko");
+        if (result == 0) {
+            kstatus("Loading e1000 module", true);
+        }
     }
 
     {

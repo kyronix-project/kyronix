@@ -139,7 +139,8 @@ KERNEL_OBJS := \
 	$(KERNEL_ASM_SRCS:%.S=$(BUILD)/%.o)
 KERNEL_DEPS := $(KERNEL_OBJS:.o=.d)
 VIRTIO_NET_MODULE := $(BUILD)/modules/virtio_net.ko
-KERNEL_MODULES := $(VIRTIO_NET_MODULE)
+E1000_MODULE := $(BUILD)/modules/e1000.ko
+KERNEL_MODULES := $(VIRTIO_NET_MODULE) $(E1000_MODULE)
 MODULE_DEPS := $(KERNEL_MODULES:.ko=.d)
 KALLSYMS_SRC := $(BUILD)/kallsyms_data.c
 KALLSYMS_OBJ := $(BUILD)/kernel/kallsyms_data.o
@@ -163,6 +164,10 @@ $(BUILD)/%.o: %.S
 	$(CC) -m64 -march=x86-64 -c $< -o $@
 
 $(VIRTIO_NET_MODULE): kernel/drivers/net/virtio_net.c kernel/module.h $(KERNEL_CONFIG)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(KERNEL_INSTRUMENT_CFLAGS) -fno-asynchronous-unwind-tables -MMD -MP -c $< -o $@
+
+$(E1000_MODULE): kernel/drivers/net/e1000.c kernel/drivers/net/e1000.h kernel/module.h $(KERNEL_CONFIG)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(KERNEL_INSTRUMENT_CFLAGS) -fno-asynchronous-unwind-tables -MMD -MP -c $< -o $@
 

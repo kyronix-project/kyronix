@@ -1,0 +1,273 @@
+#pragma once
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#define INTEL_VENDOR_ID 0x8086
+
+#define E1000_DEV_ID_82542 0x1000
+#define E1000_DEV_ID_82542_FIBER 0x1001
+#define E1000_DEV_ID_82543GC_FIBER 0x1004
+#define E1000_DEV_ID_82543GC_COPPER 0x1008
+#define E1000_DEV_ID_82544EI_COPPER 0x100E
+#define E1000_DEV_ID_82544EI_FIBER 0x100F
+#define E1000_DEV_ID_82544GC_COPPER 0x1011
+#define E1000_DEV_ID_82544GC_LOM 0x1012
+#define E1000_DEV_ID_82540EM 0x100E
+#define E1000_DEV_ID_82540EM_LOM 0x1015
+#define E1000_DEV_ID_82540EP_LOM 0x1016
+#define E1000_DEV_ID_82540EP 0x1017
+#define E1000_DEV_ID_82540EP_LP 0x101E
+#define E1000_DEV_ID_82545EM_COPPER 0x100F
+#define E1000_DEV_ID_82545EM_FIBER 0x1011
+#define E1000_DEV_ID_82545GM_COPPER 0x1026
+#define E1000_DEV_ID_82545GM_FIBER 0x1027
+#define E1000_DEV_ID_82545GM_SERDES 0x1028
+#define E1000_DEV_ID_82546EB_COPPER 0x1010
+#define E1000_DEV_ID_82546EB_FIBER 0x1012
+#define E1000_DEV_ID_82546EB_QUAD_COPPER 0x101D
+#define E1000_DEV_ID_82546GB_COPPER 0x1079
+#define E1000_DEV_ID_82546GB_FIBER 0x107A
+#define E1000_DEV_ID_82546GB_SERDES 0x107B
+#define E1000_DEV_ID_82546GB_PCIE 0x108A
+#define E1000_DEV_ID_82546GB_QUAD_COPPER 0x1099
+#define E1000_DEV_ID_82546GB_QUAD_COPPER_KSP3 0x10B5
+#define E1000_DEV_ID_82541EI 0x1013
+#define E1000_DEV_ID_82541EI_MOBILE 0x1018
+#define E1000_DEV_ID_82541ER_LOM 0x1014
+#define E1000_DEV_ID_82541ER 0x1078
+#define E1000_DEV_ID_82541GI 0x1076
+#define E1000_DEV_ID_82541GI_MOBILE 0x1077
+#define E1000_DEV_ID_82541GI_LF 0x107C
+#define E1000_DEV_ID_82547EI 0x1019
+#define E1000_DEV_ID_82547EI_MOBILE 0x101A
+#define E1000_DEV_ID_82547GI 0x1075
+
+#define E1000_REG_CTRL 0x0000
+#define E1000_REG_STATUS 0x0008
+#define E1000_REG_EECD 0x0010
+#define E1000_REG_EERD 0x0014
+#define E1000_REG_CTRL_EXT 0x0018
+#define E1000_REG_MDIC 0x0020
+#define E1000_REG_FCAL 0x0028
+#define E1000_REG_FCAH 0x002C
+#define E1000_REG_FCT 0x0030
+#define E1000_REG_VET 0x0038
+#define E1000_REG_ICR 0x00C0
+#define E1000_REG_ITR 0x00C4
+#define E1000_REG_ICS 0x00C8
+#define E1000_REG_IMS 0x00D0
+#define E1000_REG_IMC 0x00D8
+#define E1000_REG_RCTL 0x0100
+#define E1000_REG_FCTTV 0x0170
+#define E1000_REG_TXCW 0x0178
+#define E1000_REG_TCTL 0x0400
+#define E1000_REG_TCTL_EXT 0x0404
+#define E1000_REG_TIPG 0x0410
+#define E1000_REG_AIT 0x0458
+#define E1000_REG_LEDCTL 0x0E00
+#define E1000_REG_PBA 0x1000
+#define E1000_REG_RDBAL 0x2800
+#define E1000_REG_RDBAH 0x2804
+#define E1000_REG_RDLEN 0x2808
+#define E1000_REG_RDH 0x2810
+#define E1000_REG_RDT 0x2818
+#define E1000_REG_RDTR 0x2820
+#define E1000_REG_RXDCTL 0x2828
+#define E1000_REG_RADV 0x282C
+#define E1000_REG_RSRPD 0x2C00
+#define E1000_REG_TDBAL 0x3800
+#define E1000_REG_TDBAH 0x3804
+#define E1000_REG_TDLEN 0x3808
+#define E1000_REG_TDH 0x3810
+#define E1000_REG_TDT 0x3818
+#define E1000_REG_TIDV 0x3820
+#define E1000_REG_TXDCTL 0x3828
+#define E1000_REG_TADV 0x382C
+#define E1000_REG_TSPMT 0x3830
+#define E1000_REG_CRCERRS 0x4000
+#define E1000_REG_MPC 0x4010
+#define E1000_REG_SCC 0x4014
+#define E1000_REG_ECOL 0x4018
+#define E1000_REG_MCC 0x401C
+#define E1000_REG_LATECOL 0x4020
+#define E1000_REG_COLC 0x4028
+#define E1000_REG_DC 0x4030
+#define E1000_REG_SEC 0x4038
+#define E1000_REG_RLEC 0x4040
+#define E1000_REG_XONRXC 0x4048
+#define E1000_REG_XONTXC 0x404C
+#define E1000_REG_XOFFRXC 0x4050
+#define E1000_REG_XOFFTXC 0x4054
+#define E1000_REG_FCRUC 0x4058
+#define E1000_REG_PRC64 0x405C
+#define E1000_REG_PRC127 0x4060
+#define E1000_REG_PRC255 0x4064
+#define E1000_REG_PRC511 0x4068
+#define E1000_REG_PRC1023 0x406C
+#define E1000_REG_PRC1522 0x4070
+#define E1000_REG_GPRC 0x4074
+#define E1000_REG_BPRC 0x4078
+#define E1000_REG_MPRC 0x407C
+#define E1000_REG_GPTC 0x4080
+#define E1000_REG_GORCL 0x4088
+#define E1000_REG_GORCH 0x408C
+#define E1000_REG_GOTCL 0x4090
+#define E1000_REG_GOTCH 0x4094
+#define E1000_REG_RNBC 0x40A0
+#define E1000_REG_RUC 0x40A4
+#define E1000_REG_RFC 0x40A8
+#define E1000_REG_ROC 0x40AC
+#define E1000_REG_RJC 0x40B0
+#define E1000_REG_MGTPRC 0x40B4
+#define E1000_REG_MPTC 0x40F0
+#define E1000_REG_BPTC 0x40F4
+#define E1000_REG_RXCSUM 0x5000
+#define E1000_REG_MTA 0x5200
+#define E1000_REG_RAL 0x5400
+#define E1000_REG_RAH 0x5404
+
+#define E1000_CTRL_FD (1u << 0)
+#define E1000_CTRL_BEM (1u << 1)
+#define E1000_CTRL_PRIOR (1u << 2)
+#define E1000_CTRL_GIO_MD (1u << 3)
+#define E1000_CTRL_LRST (1u << 3)
+#define E1000_CTRL_TME (1u << 4)
+#define E1000_CTRL_ASDE (1u << 5)
+#define E1000_CTRL_SLU (1u << 6)
+#define E1000_CTRL_ILOS (1u << 7)
+#define E1000_CTRL_SPEED_10 (0u << 8)
+#define E1000_CTRL_SPEED_100 (1u << 8)
+#define E1000_CTRL_SPEED_1000 (2u << 8)
+#define E1000_CTRL_FRCSPD (1u << 11)
+#define E1000_CTRL_FRCDPX (1u << 12)
+#define E1000_CTRL_SWDPIO0 (1u << 18)
+#define E1000_CTRL_SWDPIO1 (1u << 19)
+#define E1000_CTRL_SWDPIO2 (1u << 20)
+#define E1000_CTRL_SWDPIO3 (1u << 21)
+#define E1000_CTRL_SWDPIN0 (1u << 22)
+#define E1000_CTRL_SWDPIN1 (1u << 23)
+#define E1000_CTRL_SWDPIN2 (1u << 24)
+#define E1000_CTRL_SWDPIN3 (1u << 25)
+#define E1000_CTRL_RST (1u << 26)
+#define E1000_CTRL_RFCE (1u << 27)
+#define E1000_CTRL_TFCE (1u << 28)
+#define E1000_CTRL_VME (1u << 30)
+#define E1000_CTRL_PHY_RST (1u << 31)
+
+#define E1000_STATUS_FD (1u << 0)
+#define E1000_STATUS_LU (1u << 1)
+#define E1000_STATUS_TXOFF (1u << 4)
+#define E1000_STATUS_TBIMODE (1u << 5)
+#define E1000_STATUS_SPEED_10 (0u << 6)
+#define E1000_STATUS_SPEED_100 (1u << 6)
+#define E1000_STATUS_SPEED_1000 (2u << 6)
+#define E1000_STATUS_SPEED_MASK (3u << 6)
+
+#define E1000_EECD_SK (1u << 0)
+#define E1000_EECD_CS (1u << 1)
+#define E1000_EECD_DI (1u << 2)
+#define E1000_EECD_DO (1u << 3)
+#define E1000_EECD_REQ (1u << 6)
+#define E1000_EECD_GNT (1u << 7)
+#define E1000_EECD_PRES (1u << 8)
+#define E1000_EECD_SIZE (1u << 9)
+#define E1000_EECD_TYPE (1u << 13)
+
+#define E1000_EERD_START (1u << 0)
+#define E1000_EERD_DONE (1u << 4)
+#define E1000_EERD_ADDR_SHIFT 8
+#define E1000_EERD_DATA_SHIFT 16
+
+#define E1000_ICR_TXDW (1u << 0)
+#define E1000_ICR_TXQE (1u << 1)
+#define E1000_ICR_LSC (1u << 2)
+#define E1000_ICR_RXSEQ (1u << 3)
+#define E1000_ICR_RXDMT0 (1u << 4)
+#define E1000_ICR_RXO (1u << 6)
+#define E1000_ICR_RXT0 (1u << 7)
+#define E1000_ICR_MDAC (1u << 9)
+#define E1000_ICR_RXCFG (1u << 10)
+#define E1000_ICR_PHYINT (1u << 12)
+#define E1000_ICR_TXDLOW (1u << 15)
+#define E1000_ICR_SRPD (1u << 16)
+
+#define E1000_RCTL_EN (1u << 1)
+#define E1000_RCTL_SBP (1u << 2)
+#define E1000_RCTL_UPE (1u << 3)
+#define E1000_RCTL_MPE (1u << 4)
+#define E1000_RCTL_LPE (1u << 5)
+#define E1000_RCTL_LBM_NO (0u << 6)
+#define E1000_RCTL_RDMTS_HALF (0u << 8)
+#define E1000_RCTL_BAM (1u << 15)
+#define E1000_RCTL_BSIZE_2048 (0u << 16)
+#define E1000_RCTL_BSIZE_1024 (1u << 16)
+#define E1000_RCTL_BSIZE_512 (2u << 16)
+#define E1000_RCTL_BSIZE_256 (3u << 16)
+#define E1000_RCTL_BSEX (1u << 25)
+#define E1000_RCTL_SECRC (1u << 26)
+
+#define E1000_TCTL_EN (1u << 1)
+#define E1000_TCTL_PSP (1u << 3)
+#define E1000_TCTL_CT_SHIFT 4
+#define E1000_TCTL_COLD_SHIFT 12
+#define E1000_TCTL_SWXOFF (1u << 22)
+#define E1000_TCTL_RTLC (1u << 24)
+
+#define E1000_RXD_STAT_DD (1u << 0)
+#define E1000_RXD_STAT_EOP (1u << 1)
+#define E1000_RXD_STAT_IXSM (1u << 2)
+#define E1000_RXD_STAT_VP (1u << 3)
+#define E1000_RXD_STAT_UDPCS (1u << 4)
+#define E1000_RXD_STAT_TCPCS (1u << 5)
+#define E1000_RXD_STAT_IPCS (1u << 6)
+#define E1000_RXD_STAT_PIF (1u << 7)
+
+#define E1000_RXD_ERR_CE (1u << 0)
+#define E1000_RXD_ERR_SE (1u << 1)
+#define E1000_RXD_ERR_SEQ (1u << 2)
+#define E1000_RXD_ERR_CXE (1u << 4)
+#define E1000_RXD_ERR_TCPE (1u << 5)
+#define E1000_RXD_ERR_IPE (1u << 6)
+#define E1000_RXD_ERR_RXE (1u << 7)
+
+#define E1000_TXD_CMD_EOP (1u << 0)
+#define E1000_TXD_CMD_IFCS (1u << 1)
+#define E1000_TXD_CMD_IC (1u << 2)
+#define E1000_TXD_CMD_RS (1u << 3)
+#define E1000_TXD_CMD_RPS (1u << 4)
+#define E1000_TXD_CMD_DEXT (1u << 5)
+#define E1000_TXD_CMD_VLE (1u << 6)
+#define E1000_TXD_CMD_IDE (1u << 7)
+
+#define E1000_TXD_STAT_DD (1u << 0)
+#define E1000_TXD_STAT_EC (1u << 1)
+#define E1000_TXD_STAT_LC (1u << 2)
+#define E1000_TXD_STAT_TU (1u << 3)
+
+#define E1000_RAH_AV (1u << 31)
+
+#define E1000_NUM_RX_DESC 128
+#define E1000_NUM_TX_DESC 128
+#define E1000_RX_BUFFER_SIZE 2048
+#define E1000_TX_BUFFER_SIZE 2048
+
+typedef struct {
+    uint64_t buffer_addr;
+    uint16_t length;
+    uint16_t csum;
+    uint8_t status;
+    uint8_t errors;
+    uint16_t special;
+} __attribute__((packed)) e1000_rx_desc_t;
+
+typedef struct {
+    uint64_t buffer_addr;
+    uint16_t length;
+    uint8_t cso;
+    uint8_t cmd;
+    uint8_t status;
+    uint8_t css;
+    uint16_t special;
+} __attribute__((packed)) e1000_tx_desc_t;
