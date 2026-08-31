@@ -230,7 +230,6 @@ void syscall_dispatch(syscall_frame_t *f) {
         break;
     case 24: {
         ret = 0;
-        sched_yield();
         break;
     }
     case 53:

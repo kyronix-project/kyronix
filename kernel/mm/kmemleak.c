@@ -34,6 +34,44 @@ static kmemleak_entry_t g_entries[KMEMLEAK_MAX];
 static page_entry_t g_pages[KMEMLEAK_PAGE_MAX];
 static uint64_t g_max_phys;
 
+/* open-addressing index of live entry pointers -> entry slot (+1, 0 = empty),
+   rebuilt once per scan. Turns the per-word reachability lookup from a
+   O(KMEMLEAK_MAX) linear scan into an O(1) probe. */
+#define KMEMLEAK_HASH_SIZE 16384
+static int32_t g_hash[KMEMLEAK_HASH_SIZE];
+
+static uint32_t kmemleak_hash_of(uint64_t v) {
+    v ^= v >> 33;
+    v *= 0xff51afd7ed558ccdULL;
+    v ^= v >> 33;
+    v *= 0xc4ceb9fe1a85ec53ULL;
+    v ^= v >> 33;
+    return (uint32_t) v;
+}
+
+static void kmemleak_hash_build(void) {
+    for (int i = 0; i < KMEMLEAK_HASH_SIZE; i++) g_hash[i] = 0;
+    for (int i = 0; i < KMEMLEAK_MAX; i++) {
+        if (!g_entries[i].used) continue;
+        uint32_t h = kmemleak_hash_of((uint64_t) g_entries[i].ptr) &
+                     (KMEMLEAK_HASH_SIZE - 1);
+        while (g_hash[h]) h = (h + 1) & (KMEMLEAK_HASH_SIZE - 1);
+        g_hash[h] = i + 1;
+    }
+}
+
+/* returns the entry index whose ptr == v, or -1. */
+static int kmemleak_hash_find(uint64_t v) {
+    uint32_t h = kmemleak_hash_of(v) & (KMEMLEAK_HASH_SIZE - 1);
+    while (g_hash[h]) {
+        int idx = g_hash[h] - 1;
+        if ((uint64_t) g_entries[idx].ptr == v && g_entries[idx].used)
+            return idx;
+        h = (h + 1) & (KMEMLEAK_HASH_SIZE - 1);
+    }
+    return -1;
+}
+
 extern uint8_t __data_start[], __data_end[];
 extern uint8_t __bss_start[], __bss_end[];
 
@@ -160,12 +198,8 @@ static void scan_region(const uint8_t *start, const uint8_t *end) {
         }
         uint64_t val = *p;
         if (val != 0 && !in_entries_range(p)) {
-            for (int i = 0; i < KMEMLEAK_MAX; i++) {
-                if (g_entries[i].used && !g_entries[i].reachable &&
-                    (uint64_t) g_entries[i].ptr == val) {
-                    g_entries[i].reachable = 1;
-                }
-            }
+            int idx = kmemleak_hash_find(val);
+            if (idx >= 0 && !g_entries[idx].reachable) g_entries[idx].reachable = 1;
             if (val < g_max_phys) {
                 try_mark_page(val);
             } else if (val >= g_hhdm_offset) {
@@ -226,6 +260,8 @@ static int do_scan(void) {
 
     for (int i = 0; i < KMEMLEAK_MAX; i++) g_entries[i].reachable = 0;
     for (int i = 0; i < KMEMLEAK_PAGE_MAX; i++) g_pages[i].reachable = g_pages[i].perm;
+
+    kmemleak_hash_build();
 
     scan_region(__data_start, __data_end);
     scan_region(__bss_start, __bss_end);
