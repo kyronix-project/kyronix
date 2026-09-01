@@ -2,6 +2,7 @@ VERSION  := $(shell sed -n 's/ *#define *KERNEL_VERSION *"\(.*\)"/\1/p' kernel/v
 ARCH     := amd64
 BUILD    := build
 DIST     := dist
+RELEASE  ?= 0
 
 KERNEL   := $(BUILD)/kernel.elf
 ISO      := $(DIST)/kyronix.iso
