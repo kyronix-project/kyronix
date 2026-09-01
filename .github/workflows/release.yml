@@ -1,0 +1,59 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Derive version from tag (if any)
+        id: version
+        run: |
+          if [ -n "${{ github.event.release.tag_name }}" ]; then
+            v="${{ github.event.release.tag_name }}"
+          elif [ -n "${{ github.ref_name }}" ]; then
+            v="${{ github.ref_name }}"
+          fi
+          echo "tag=${v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build RELEASE image
+        run: make live CRUNTIME=podman RELEASE=1
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kyronix-release-isos
+          path: dist/*.iso
+          if-no-files-found: error
+
+      - name: Upload checksums artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kyronix-release-checksums
+          path: dist/*.sha256
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*-live.iso
+            dist/*-live.iso.sha256
+          generate_release_notes: true
