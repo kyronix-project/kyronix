@@ -44,6 +44,32 @@ static volatile sig_atomic_t reload_flag = 0;
 
 static void write_services(void);
 
+#define SERVICE_LOG_DIR "/var/log"
+#define SERVICE_LOG_SUFFIX ".log"
+#define QUIET_ARG "--quiet"
+
+static bool valid_service_name(const char *name);
+
+/* Services launched with --quiet are daemons whose output should be captured
+   into /var/log/<name>.log; interactive services (e.g. login) keep the tty. */
+static bool service_is_quiet(const struct service *svc) {
+    if (!svc) return false;
+    for (int i = 0; i < MAX_ARGS && svc->argv[i]; i++)
+        if (strcmp(svc->argv[i], QUIET_ARG) == 0) return true;
+    return false;
+}
+
+static void redirect_service_output(const struct service *svc) {
+    if (!svc || !valid_service_name(svc->name)) return;
+    char path[sizeof(SERVICE_LOG_DIR) + sizeof(svc->name) + sizeof(SERVICE_LOG_SUFFIX)];
+    snprintf(path, sizeof(path), "%s/%s%s", SERVICE_LOG_DIR, svc->name, SERVICE_LOG_SUFFIX);
+    int fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd < 0) return;
+    if (dup2(fd, STDOUT_FILENO) < 0) { close(fd); return; }
+    if (dup2(fd, STDERR_FILENO) < 0) { close(fd); return; }
+    close(fd);
+}
+
 static char *trim(char *s) {
     while (*s && isspace(*s)) s++;
     char *e = s + strlen(s);
@@ -111,6 +137,7 @@ static int spawn_held(struct service *svc) {
         signal(SIGCHLD, SIG_DFL);
         signal(SIGINT, SIG_DFL);
         setsid();
+        if (service_is_quiet(svc)) redirect_service_output(svc);
         execvp(svc->argv[0], svc->argv);
         status(svc->name, 0);
         _exit(127);
