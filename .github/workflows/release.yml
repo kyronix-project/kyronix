@@ -5,6 +5,15 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.2)"
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -12,6 +21,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,15 +32,25 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y podman
 
-      - name: Derive version from tag (if any)
-        id: version
+      - name: Resolve release tag
+        id: tag
         run: |
-          if [ -n "${{ github.event.release.tag_name }}" ]; then
-            v="${{ github.event.release.tag_name }}"
-          elif [ -n "${{ github.ref_name }}" ]; then
-            v="${{ github.ref_name }}"
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            tag="${{ github.event.inputs.tag }}"
+          else
+            tag="$GITHUB_REF_NAME"
           fi
-          echo "tag=${v}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify version matches tag
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          kv=$(sed -n 's/ *#define *KERNEL_VERSION *"\(.*\)"/\1/p' kernel/version.h)
+          if [ "${TAG#v}" != "$kv" ]; then
+            echo "error: tag '$TAG' does not match KERNEL_VERSION '$kv'" >&2
+            exit 1
+          fi
 
       - name: Build RELEASE image
         run: make live CRUNTIME=podman RELEASE=1
@@ -50,9 +70,9 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.tag.outputs.tag }}
           files: |
             dist/*-live.iso
             dist/*-live.iso.sha256
