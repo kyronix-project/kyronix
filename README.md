@@ -119,6 +119,7 @@ this file.
 | Target | Description |
 |---------|-------------|
 | `make` / `make iso` | Build `dist/kyronix.iso` |
+| `make live` | Build a RELEASE image `dist/kyronix-<ver>-RELEASE-amd64-live.iso` (+ `.sha256`) |
 | `make run` | Build and boot the ISO with the persistent disk |
 | `make boot` | Boot the installed disk without the ISO |
 | `make test` | Build and run all tests in QEMU |

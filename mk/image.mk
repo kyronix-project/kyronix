@@ -4,6 +4,21 @@ ISO_ROOT        := $(BUILD)/iso-root
 WESTON_INITRD   := $(BUILD)/initrd-weston.cpio
 CONSOLE_INITRD  := $(BUILD)/initrd-console.cpio
 
+RELEASE ?= 0
+STATUS  := $(if $(filter 1,$(RELEASE)),RELEASE,INDEV)
+OS_RELEASE := $(BUILD)/os-release-$(STATUS)
+
+$(OS_RELEASE):
+	@mkdir -p $(@D)
+	@printf 'NAME="Kyronix"\n' > $@
+	@printf 'ID="kyronix"\n' >> $@
+	@printf 'VERSION="$(VERSION)"\n' >> $@
+	@printf 'VERSION_ID="$(VERSION)"\n' >> $@
+	@printf 'PRETTY_NAME="Kyronix $(VERSION)-$(STATUS)"\n' >> $@
+	@printf 'HOME_URL="https://github.com/kyronix-project/kyronix"\n' >> $@
+	@printf 'BUG_REPORT_URL="https://github.com/kyronix-project/kyronix/issues"\n' >> $@
+	@echo "  Built: $@ ($(STATUS))"
+
 ROOTFS_SOURCES := $(shell find rootfs -type f \
 	-not -path 'rootfs/bin/*' \
 	-not -path 'rootfs/usr/libexec/*' \
@@ -42,12 +57,13 @@ $(BOOT_FAT): $(KERNEL) boot/limine-disk.conf boot/wallpaper.jpg $(LIMINE)/limine
 	@echo "  Built: $@"
 
 # --- shared initrd root filesystem ---
-$(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROOTFS_SOURCES)
+$(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROOTFS_SOURCES) $(OS_RELEASE)
 	rm -rf $(INITRD_ROOT)
 	mkdir -p $(INITRD_ROOT)/boot/limine
 	mkdir -p $(INITRD_ROOT)/lib/modules
 	mkdir -p $(INITRD_ROOT)/usr/share/kyronix
 	cp -a rootfs/. $(INITRD_ROOT)/
+	cp $(OS_RELEASE) $(INITRD_ROOT)/etc/os-release
 	cp $(KERNEL_MODULES) $(INITRD_ROOT)/lib/modules/
 	cp $(KERNEL) $(INITRD_ROOT)/boot/kernel.elf
 	cp boot/limine-disk.conf $(INITRD_ROOT)/boot/limine/limine.conf
@@ -57,7 +73,7 @@ $(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROO
 	    $(INITRD_ROOT)/usr/share/kyronix/boot.fat.
 
 # --- weston variant (desktop) ---
-$(WESTON_INITRD): $(INITRD_ROOT) rootfs/etc/rc.conf.weston
+$(WESTON_INITRD): $(INITRD_ROOT) $(OS_RELEASE) rootfs/etc/rc.conf.weston
 	cp rootfs/etc/rc.conf.weston $(INITRD_ROOT)/etc/rc.conf
 	@cd $(INITRD_ROOT) && find . -not -name '.gitignore' | sort | \
 	    cpio -o --format=newc --owner=0:0 --reproducible \
@@ -66,7 +82,7 @@ $(WESTON_INITRD): $(INITRD_ROOT) rootfs/etc/rc.conf.weston
 
 # --- console variant (login shell) ---
 # depends on WESTON_INITRD to serialize shared INITRD_ROOT usage
-$(CONSOLE_INITRD): $(INITRD_ROOT) $(WESTON_INITRD) rootfs/etc/rc.conf.console
+$(CONSOLE_INITRD): $(INITRD_ROOT) $(WESTON_INITRD) $(OS_RELEASE) rootfs/etc/rc.conf.console
 	cp rootfs/etc/rc.conf.console $(INITRD_ROOT)/etc/rc.conf
 	@cd $(INITRD_ROOT) && find . -not -name '.gitignore' | sort | \
 	    cpio -o --format=newc --owner=0:0 --reproducible \
