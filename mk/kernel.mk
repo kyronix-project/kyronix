@@ -1,7 +1,16 @@
-KERNEL_CONFIG := kernel/config.h
+# Select the kernel config by build mode. The chosen source is copied into
+# $(KERNEL_CONFIG) (a build artifact) which is put at the front of the include
+# path, so both the -include injection and direct #include "config.h" resolve
+# to the mode-correct (dev/release) config.
+KERNEL_CONFIG_SRC = $(if $(filter 1,$(RELEASE)),kernel/config.release.h,kernel/config.h)
+KERNEL_CONFIG := $(BUILD)/gen/config.h
 INSTRUMENT ?= 0
 KERNEL_INSTRUMENT_CFLAGS = \
 	$(if $(filter 1,$(INSTRUMENT)),-fno-omit-frame-pointer,-fomit-frame-pointer)
+
+$(KERNEL_CONFIG): $(KERNEL_CONFIG_SRC)
+	@mkdir -p $(@D)
+	cp -f $(KERNEL_CONFIG_SRC) $@
 
 CFLAGS := \
 	-std=c11 -O2 -DNDEBUG \
@@ -10,7 +19,7 @@ CFLAGS := \
 	-m64 -march=x86-64 -mno-80387 -mno-mmx -mno-sse -mno-sse2 \
 	-mno-red-zone -mcmodel=kernel -U_FORTIFY_SOURCE \
 	-include $(KERNEL_CONFIG) \
-	-Ikernel -Ikernel/boot -Ikernel/net -Ikernel/mm \
+	-I$(BUILD)/gen -Ikernel -Ikernel/boot -Ikernel/net -Ikernel/mm \
 	-I$(LWIP)/include -DNO_LOG
 
 LDFLAGS := -T linker.ld -nostdlib -static -z max-page-size=0x1000

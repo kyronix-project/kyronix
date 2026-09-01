@@ -3,6 +3,8 @@
 #include "../arch/x86_64/spinlock.h"
 #include "../lib/string.h"
 
+#ifdef CONFIG_SERIAL_CONSOLE
+
 static spinlock_t g_serial_lock = SPINLOCK_INIT;
 
 #define UART_DATA 0
@@ -65,3 +67,5 @@ uint8_t serial_getchar(uint16_t port) {
     while (!serial_data_ready(port)) cpu_relax();
     return inb(port + UART_DATA);
 }
+
+#endif /* CONFIG_SERIAL_CONSOLE */
