@@ -90,6 +90,8 @@ typedef struct proc {
     void *ptrace_frame;           // frame the tracee is stopped in, valid while stopped
     uint64_t ptrace_orig_rax;     // syscall nr as of entry; rax itself gets clobbered by the
                                   // return value before an exit-stop can report it
+    int64_t cur_syscall;          // syscall nr currently executing in the kernel (-1 = none)
+    int64_t cur_syscall_arg0;     // first arg of that syscall (e.g. fd/addr), for diagnostics
 
     uint8_t stop_sig;      // job-control (SIGTSTP/SIGSTOP) stop signal, valid while PROC_STOPPED
     uint8_t stop_reported; // this stop was already handed back via wait4(WUNTRACED)
@@ -117,6 +119,18 @@ extern volatile uint64_t g_used_mask;
 extern volatile uint64_t g_timer_mask;
 
 static inline int proc_slot(proc_t *p) { return (int) (p - g_proctable); }
+
+/* Lock-free lookup by pid for IRQ context: pid is always slot+1, so a live
+ * slot with a matching pid unambiguously identifies the process. Never takes
+ * g_proctable_lock, so it is safe to call from interrupt handlers. */
+static inline proc_t *proc_slot_of_pid(uint32_t pid) {
+    if (pid == 0 || pid > PROC_MAX) return NULL;
+    proc_t *p = &g_proctable[pid - 1];
+    if (__atomic_load_n(&p->pid, __ATOMIC_RELAXED) != pid) return NULL;
+    int st = __atomic_load_n(&p->state, __ATOMIC_RELAXED);
+    if (st == PROC_UNUSED || st == PROC_EMBRYO) return NULL;
+    return p;
+}
 
 static inline void proc_set_ready(proc_t *p) {
     int bit = proc_slot(p);

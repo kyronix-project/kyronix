@@ -11,6 +11,16 @@
 #define EPIPE 32
 #define EAGAIN 11
 #define EIO 5
+#define EINTR 4
+
+/* A pending unmasked signal (e.g. SIGKILL) must let a blocking pipe/socket
+ * syscall return early instead of re-sleeping. signal_check() only runs on
+ * syscall exit, so a loop that just re-blocks after each wake would never
+ * deliver pending kills to a reader/writer parked on an empty/full pipe. */
+static uint64_t pipe_pending_signals(proc_t *p) {
+    if (!p) return 0;
+    return __atomic_load_n(&p->pending_sigs, __ATOMIC_RELAXED) & ~p->sig_mask;
+}
 
 pipe_t *pipe_alloc(void) {
     pipe_t *p = (pipe_t *) kcalloc(1, sizeof(pipe_t));
@@ -159,6 +169,8 @@ int64_t pipe_read(pipe_t *p, void *buf, uint64_t len) {
                 spin_unlock(&p->lock);
                 if (_rp) sched_block_current();
                 pipe_cancel_wait(p, _rp);
+                if (pipe_pending_signals(_rp))
+                    return done ? (int64_t) done : -(int64_t) EINTR;
                 goto restart_read;
             }
             uint64_t take = len - done;
@@ -203,6 +215,8 @@ int64_t pipe_peek(pipe_t *p, void *buf, uint64_t len, uint64_t skip) {
                 spin_unlock(&p->lock);
                 if (_rp) sched_block_current();
                 pipe_cancel_wait(p, _rp);
+                if (pipe_pending_signals(_rp))
+                    return done ? (int64_t) done : -(int64_t) EINTR;
                 goto restart_peek;
             }
 
@@ -251,6 +265,8 @@ int64_t pipe_write(pipe_t *p, const void *buf, uint64_t len) {
                 pipe_wake(p, 1); /* let readers drain so space frees up */
                 if (_wp) sched_block_current();
                 pipe_cancel_wait(p, _wp);
+                if (pipe_pending_signals(_wp))
+                    return done ? (int64_t) done : -(int64_t) EINTR;
                 goto restart_write;
             }
             uint32_t wpos = (p->rpos + p->count) % PIPE_BUFSZ;

@@ -12,8 +12,12 @@
 
 #define EINVAL 22
 #define ENOSYS 38
+#define EINTR 4
 
 #define EVBUF 512
+#define EVBUF_HIWATER 64
+#define WD_GRACE_TICKS ((uint64_t) (3000 / PIT_TICK_MS))
+#define WD_REKILL_TICKS ((uint64_t) (3000 / PIT_TICK_MS))
 typedef struct {
     input_event_t buf[EVBUF];
     volatile int head, tail;
@@ -21,6 +25,15 @@ typedef struct {
     proc_t *waiter;
     spinlock_irqsave_t lock;
     uint32_t dropped;
+    uint64_t reads;
+    uint64_t syncs;
+    uint64_t last_read;
+    uint8_t stall_logged;
+    uint32_t rd_pid;
+    char rd_name[32];
+    uint32_t wd_pid;
+    uint8_t wd_logged;
+    uint64_t wd_last_kill_tick;
 } evdev_t;
 
 static evdev_t g_evdev[INPUT_NDEVS];
@@ -30,34 +43,133 @@ void input_push(int dev, uint16_t type, uint16_t code, int32_t value) {
     if ((unsigned) dev >= INPUT_NDEVS) return;
     evdev_t *e = &g_evdev[dev];
     spin_lock_irqsave(&e->lock);
-    int next = (e->head + 1) % EVBUF;
-    bool pushed = false;
-    if (next != e->tail) {
-        e->buf[e->head] = (input_event_t) { .sec = g_ticks / 1000,
-                                            .usec = (g_ticks % 1000) * 1000,
-                                            .type = type,
-                                            .code = code,
-                                            .value = value };
-        e->head = next;
-        if (e->count < EVBUF) e->count++;
-        pushed = true;
-    } else {
+    if (e->count >= EVBUF_HIWATER) {
+        if (!e->stall_logged && e->last_read && (int64_t) (g_ticks - e->last_read) > 200) {
+            e->stall_logged = 1;
+            log_warn("INPUT: evdev dev=%d reader stalled (%llu ms since last read, count=%u) "
+                     "last reader=%s(pid=%u)",
+                     dev, (unsigned long long) (g_ticks - e->last_read), e->count, e->rd_name,
+                     e->rd_pid);
+        }
+        e->tail = (e->tail + 1) % EVBUF;
+        e->count--;
         e->dropped++;
         if ((e->dropped & 0x3F) == 1)
-            log_warn("INPUT: evdev dev=%d overflow (%u dropped so far in burst)", dev,
+            log_warn("INPUT: evdev dev=%d dropping oldest (%u dropped so far in burst)", dev,
                      e->dropped);
     }
+    e->buf[e->head] = (input_event_t) { .sec = g_ticks / 1000,
+                                        .usec = (g_ticks % 1000) * 1000,
+                                        .type = type,
+                                        .code = code,
+                                        .value = value };
+    e->head = (e->head + 1) % EVBUF;
+    e->count++;
+    bool notify = e->count == 1;
     proc_t *w = e->waiter;
     if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
         proc_set_ready(w);
     e->waiter = NULL;
     spin_unlock_irqrestore(&e->lock);
-    if (pushed) poll_notify();
+    if (notify) poll_notify();
 }
 
 static void kbd_evdev_push(uint16_t key, int value) {
     input_push(INPUT_DEV_KBD, EV_KEY, key, value);
-    input_push(INPUT_DEV_KBD, EV_SYN, 0, 0);
+    input_push(INPUT_DEV_KBD, EV_SYN, SYN_REPORT, 0);
+}
+
+/* Timer-IRQ watchdog: if a device is at high-water with a reader that stopped
+ * consuming, log diagnostics once and SIGKILL the wedged reader after a grace
+ * period. Runs in IRQ context: only lock-free / IRQ-safe calls.
+ * Note: a pure userspace busy-loop with no syscalls will not see SIGKILL until
+ * it enters the kernel again; weston's epoll loop always syscalls, so the kill
+ * lands in practice. 
+ */
+static const char *walk_syscall_name(int64_t nr) {
+    switch (nr) {
+    case 0: return "read";
+    case 1: return "write";
+    case 2: return "open";
+    case 3: return "close";
+    case 16: return "ioctl";
+    case 23: return "nanosleep";
+    case 34: return "mkdir";
+    case 35: return "unlink";
+    case 39: return "getpid";
+    case 41: return "socket";
+    case 42: return "connect";
+    case 43: return "accept";
+    case 44: return "sendmsg";
+    case 45: return "recvfrom";
+    case 46: return "sendto";
+    case 47: return "recvmsg";
+    case 48: return "shutdown";
+    case 49: return "bind";
+    case 50: return "listen";
+    case 51: return "getsockname";
+    case 52: return "getpeername";
+    case 53: return "socketpair";
+    case 54: return "setsockopt";
+    case 55: return "getsockopt";
+    case 56: return "clone";
+    case 57: return "fork";
+    case 60: return "exit";
+    case 62: return "kill";
+    case 63: return "uname";
+    case 72: return "fcntl";
+    case 80: return "fstat";
+    case 90: return "mmap";
+    case 91: return "munmap";
+    case 93: return "futex";
+    case 191: return "getrlimit";
+    case 202: return "futex_time64";
+    case 213: return "mmap2";
+    case 218: return "mincore";
+    case 288: return "accept4";
+    default: return "?";
+    }
+}
+
+void input_watchdog(void) {
+    for (int dev = 0; dev < INPUT_NDEVS; dev++) {
+        evdev_t *e = &g_evdev[dev];
+        if (!e->stall_logged || !e->rd_pid) continue;
+
+        proc_t *p = proc_slot_of_pid(e->rd_pid);
+        if (!p) continue; /* reader already gone; chr_close will re-arm the tty */
+
+        int64_t unread = (int64_t) (g_ticks - e->last_read);
+        if (unread < 0) unread = 0;
+
+        if (e->wd_pid != e->rd_pid) {
+            e->wd_pid = e->rd_pid;
+            e->wd_logged = 0;
+        }
+        if (!e->wd_logged) {
+            e->wd_logged = 1;
+            int st = __atomic_load_n(&p->state, __ATOMIC_RELAXED);
+            int64_t cs = __atomic_load_n(&p->cur_syscall, __ATOMIC_RELAXED);
+            int64_t arg0 = __atomic_load_n(&p->cur_syscall_arg0, __ATOMIC_RELAXED);
+            log_warn("INPUT: wedged evdev dev=%d reader %s(pid=%u) state=%d cur_syscall=%ld(%s,arg0=%ld) "
+                     "reads=%llu dropped=%u count=%u unread=%llu ms",
+                     dev, e->rd_name, e->rd_pid, st, (long) cs, walk_syscall_name(cs), (long) arg0,
+                     (unsigned long long) e->reads, e->dropped, e->count,
+                     (unsigned long long) unread);
+        }
+        /* SIGKILL is idempotent: re-send it until the reader drains the buffer
+         * again. A single shot can be swallowed (e.g. the reader is parked in a
+         * blocking pipe_read/sock recvmsg that re-sleeps instead of exiting), so
+         * keep re-arming every WD_REKILL_TICKS while the stall persists. */
+        if ((uint64_t) unread > WD_GRACE_TICKS &&
+            (e->wd_last_kill_tick == 0 ||
+             (int64_t) (g_ticks - e->wd_last_kill_tick) >= (int64_t) WD_REKILL_TICKS)) {
+            e->wd_last_kill_tick = g_ticks;
+            log_warn("INPUT: watchdog SIGKILL pid=%u (%s) — evdev dev=%d unread %llu ms",
+                     e->rd_pid, e->rd_name, dev, (unsigned long long) unread);
+            proc_send_signal(p, SIGKILL);
+        }
+    }
 }
 
 static bool evdev_pollin(vfs_node_t *n) {
@@ -74,7 +186,6 @@ static int64_t evdev_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) 
     (void) off;
     int dev = (int) (uintptr_t) n->data;
     if ((unsigned) dev >= INPUT_NDEVS || len < sizeof(input_event_t)) return -EINVAL;
-    if (dev == INPUT_DEV_KBD) g_evdev_kbd_open = 1;
 
     evdev_t *e = &g_evdev[dev];
     uint8_t *out = (uint8_t *) buf;
@@ -82,7 +193,14 @@ static int64_t evdev_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) 
     for (;;) {
         spin_lock_irqsave(&e->lock);
         while (e->count > 0 && written + sizeof(input_event_t) <= len) {
-            __builtin_memcpy(out + written, &e->buf[e->tail], sizeof(input_event_t));
+            input_event_t ev;
+            __builtin_memcpy(&ev, &e->buf[e->tail], sizeof(input_event_t));
+            if (ev.type == EV_SYN && ev.code == SYN_DROPPED) {
+                e->syncs++;
+                log_warn("INPUT: evdev dev=%d reader consumed SYN_DROPPED (reads=%llu syncs=%llu)",
+                         dev, (unsigned long long) e->reads, (unsigned long long) e->syncs);
+            }
+            __builtin_memcpy(out + written, &ev, sizeof(input_event_t));
             e->tail = (e->tail + 1) % EVBUF;
             e->count--;
             written += sizeof(input_event_t);
@@ -92,6 +210,29 @@ static int64_t evdev_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) 
                 log_warn("INPUT: evdev dev=%d flushed %lu events after %u dropped", dev,
                          written, e->dropped);
                 e->dropped = 0;
+            }
+            if (written > 0) {
+                proc_t *rp = g_current_proc;
+                if (rp) {
+                    e->rd_pid = rp->pid;
+                    const char *s = rp->exe_path[0] ? rp->exe_path : "?";
+                    const char *base = s;
+                    for (const char *c = s; *c; c++)
+                        if (*c == '/') base = c + 1;
+                    size_t n = strlen(base);
+                    if (n >= sizeof(e->rd_name)) n = sizeof(e->rd_name) - 1;
+                    memcpy(e->rd_name, base, n);
+                    e->rd_name[n] = 0;
+                }
+                e->reads++;
+                e->last_read = g_ticks;
+                e->stall_logged = 0;
+                e->wd_pid = 0;
+                e->wd_logged = 0;
+                e->wd_last_kill_tick = 0;
+                if ((e->reads & 0x3FF) == 1)
+                    log_warn("INPUT: evdev dev=%d reader alive (reads=%llu) %s(pid=%u)", dev,
+                             (unsigned long long) e->reads, e->rd_name, e->rd_pid);
             }
             spin_unlock_irqrestore(&e->lock);
             break;
@@ -103,6 +244,14 @@ static int64_t evdev_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) 
         if (!p) break;
         sched_block_current();
         e->waiter = NULL;
+        /* Pending SIGKILL must escape the blocking read: check once we are
+         * woken, otherwise a kill delivered while the buffer is empty just
+         * re-sleeps forever and signal_check never runs (it only runs on
+         * syscall exit). */
+        if (p) {
+            uint64_t pending = __atomic_load_n(&p->pending_sigs, __ATOMIC_RELAXED);
+            if (pending & ~p->sig_mask) return -(int64_t) EINTR;
+        }
     }
     return (int64_t) written;
 }
@@ -190,8 +339,19 @@ static int64_t evdev_ioctl(vfs_node_t *n, uint64_t req64, uint64_t arg) {
 }
 
 static int evdev_open(vfs_node_t *n, int flags) {
-    (void) flags;
-    return fd_open_node(n, flags);
+    int dev = (int) (uintptr_t) n->data;
+    if ((unsigned) dev < INPUT_NDEVS && dev == INPUT_DEV_KBD)
+        __atomic_add_fetch(&g_evdev_kbd_open, 1, __ATOMIC_RELAXED);
+    int fd = fd_open_node(n, flags);
+    if (fd < 0 && (unsigned) dev < INPUT_NDEVS && dev == INPUT_DEV_KBD)
+        __atomic_sub_fetch(&g_evdev_kbd_open, 1, __ATOMIC_RELAXED);
+    return fd;
+}
+
+static void evdev_close(vfs_node_t *n) {
+    int dev = (int) (uintptr_t) n->data;
+    if ((unsigned) dev < INPUT_NDEVS && dev == INPUT_DEV_KBD)
+        __atomic_sub_fetch(&g_evdev_kbd_open, 1, __ATOMIC_RELAXED);
 }
 
 void input_init(void) {
@@ -205,6 +365,7 @@ void input_init(void) {
         kbd_node->chr_ioctl = evdev_ioctl;
         kbd_node->chr_pollin = evdev_pollin;
         kbd_node->chr_open = evdev_open;
+        kbd_node->chr_close = evdev_close;
         kbd_node->rdev = VFS_MKDEV(13, 64); // INPUT_MAJOR:event0
     }
     if (mouse_node) {
