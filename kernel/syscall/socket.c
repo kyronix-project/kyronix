@@ -27,6 +27,7 @@
 #define SCM_CREDENTIALS 2
 #define SCM_RIGHTS 1
 #define MSG_PEEK 0x0002
+#define MSG_DONTWAIT 0x0040
 #define MSG_CTRUNC 0x0008
 #define MSG_CMSG_CLOEXEC 0x40000000
 #define IOV_MAX 1024
@@ -129,7 +130,7 @@ int64_t sys_socket_accept(int fd, struct sockaddr_un *addr, int *addrlen, int fl
     if (f->inet) {
         struct sockaddr_in sin;
         memset(&sin, 0, sizeof(sin));
-        int r = (int) inet_accept(f->inet, addr ? &sin : NULL, flags);
+        int r = (int) inet_accept(f->inet, addr ? &sin : NULL, flags | f->flags);
         if (r >= 0 && addr) {
             size_t n = (uint64_t) capacity < sizeof(sin) ? (size_t) capacity : sizeof(sin);
             if (n) memcpy(addr, &sin, n);
@@ -299,9 +300,9 @@ int64_t sys_socket_getsockopt(int fd, int level, int opt, void *val, int *optlen
 }
 
 int64_t sys_socket_sendmsg(int fd, const void *mhdr, int flags) {
-    (void) flags;
     if (!mhdr) return -(int64_t) EFAULT;
     if (!uptr_ok(mhdr, 56)) return -(int64_t) EFAULT;
+    bool dontwait = (flags & MSG_DONTWAIT) != 0;
     const uint64_t *m = (const uint64_t *) mhdr;
     const struct iovec *iov = (const struct iovec *) m[2];
     int iovlen = (int) m[3];
@@ -313,7 +314,7 @@ int64_t sys_socket_sendmsg(int fd, const void *mhdr, int flags) {
     for (int i = 0; i < iovlen; i++) {
         if (iov[i].iov_len > (uint64_t) INT64_MAX - (uint64_t) total)
             return total ? total : -(int64_t) EINVAL;
-        int64_t r = fd_write(fd, (const void *) iov[i].iov_base, iov[i].iov_len);
+        int64_t r = fd_write_ex(fd, (const void *) iov[i].iov_base, iov[i].iov_len, dontwait);
         if (r < 0) return total ? total : r;
         total += r;
         if ((uint64_t) r < iov[i].iov_len) break;
@@ -357,6 +358,7 @@ int64_t sys_socket_sendmsg(int fd, const void *mhdr, int flags) {
 int64_t sys_socket_recvmsg(int fd, void *mhdr, int flags) {
     if (!mhdr) return -(int64_t) EFAULT;
     if (!uptr_ok_w(mhdr, 56)) return -(int64_t) EFAULT;
+    bool dontwait = (flags & MSG_DONTWAIT) != 0;
     uint64_t *m = (uint64_t *) mhdr;
     const struct iovec *iov = (const struct iovec *) m[2];
     int iovlen = (int) m[3];
@@ -371,7 +373,7 @@ int64_t sys_socket_recvmsg(int fd, void *mhdr, int flags) {
             struct sockaddr_in src;
             memset(&src, 0, sizeof(src));
             int64_t r = inet_recvfrom(isf->inet, (void *) iov[0].iov_base, iov[0].iov_len, &src,
-                                      isf->flags);
+                                      isf->flags | (dontwait ? O_NONBLOCK : 0));
             if (r < 0) return r;
             void *name = (void *) m[0];
             uint32_t namelen = ((uint32_t *) mhdr)[2]; // msg_namelen at offset 8
@@ -393,8 +395,9 @@ int64_t sys_socket_recvmsg(int fd, void *mhdr, int flags) {
         if (iov[i].iov_len > (uint64_t) INT64_MAX - (uint64_t) total)
             return total ? total : -(int64_t) EINVAL;
         int64_t r = (flags & MSG_PEEK) ?
-                        fd_peek(fd, (void *) iov[i].iov_base, iov[i].iov_len, peek_skip) :
-                        fd_read(fd, (void *) iov[i].iov_base, iov[i].iov_len);
+                        fd_peek_ex(fd, (void *) iov[i].iov_base, iov[i].iov_len, peek_skip,
+                                   dontwait) :
+                        fd_read_ex(fd, (void *) iov[i].iov_base, iov[i].iov_len, dontwait);
         if (r < 0) return total ? total : r;
         total += r;
         if (flags & MSG_PEEK) peek_skip += (uint64_t) r;

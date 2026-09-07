@@ -1294,8 +1294,8 @@ void syscall_dispatch(syscall_frame_t *f) {
         proc_ptrace_stop(tp, SIGTRAP | 0x80, 1, f, &f->r11);
     }
 
-    proc_t *tp2 = cur();
-    if (tp2) tp2->cur_syscall = -1;
+    proc_t *tp_now = cur();
+    if (tp_now) tp_now->cur_syscall = -1;
     signal_check(f);
     vmm_syscall_access_end();
     vfs_syscall_borrow_end();

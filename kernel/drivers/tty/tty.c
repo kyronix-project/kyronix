@@ -145,7 +145,7 @@ void tty_process_input(void) {
 
     if (kbd_data_ready()) {
         int c = kbd_getchar(); // always drain ps/2 buffer; evdev hook fires inside
-        if (c > 0 && g_evdev_kbd_open == 0 && !vt_kbd_muted()) tty_input_char((uint8_t) c);
+        if (c > 0 && !g_evdev_kbd_open && !vt_kbd_muted()) tty_input_char((uint8_t) c);
     }
     irq_restore(flags);
 }

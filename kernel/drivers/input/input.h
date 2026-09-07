@@ -29,5 +29,5 @@ typedef struct {
 
 void input_init(void);
 void input_push(int dev, uint16_t type, uint16_t code, int32_t value);
-void input_watchdog(void); /* timer tick: kill wedged evdev readers */
+void input_watchdog(void); /* timer tick: log wedged evdev readers (diagnostic only) */
 extern int g_evdev_kbd_open; /* open-count of /dev/input/event0 - mutes tty echo */

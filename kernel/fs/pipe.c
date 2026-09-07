@@ -13,10 +13,8 @@
 #define EIO 5
 #define EINTR 4
 
-/* A pending unmasked signal (e.g. SIGKILL) must let a blocking pipe/socket
- * syscall return early instead of re-sleeping. signal_check() only runs on
- * syscall exit, so a loop that just re-blocks after each wake would never
- * deliver pending kills to a reader/writer parked on an empty/full pipe. */
+/* A pending unmasked signal must escape a blocking pipe syscall: signal_check()
+ * only runs on syscall exit, so the wake/re-block loop would never deliver it. */
 static uint64_t pipe_pending_signals(proc_t *p) {
     if (!p) return 0;
     return __atomic_load_n(&p->pending_sigs, __ATOMIC_RELAXED) & ~p->sig_mask;

@@ -1508,7 +1508,7 @@ int fd_close(int fd) {
     return 0;
 }
 
-int64_t fd_read(int fd, void *buf, uint64_t len) {
+int64_t fd_read_ex(int fd, void *buf, uint64_t len, bool force_nonblock) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int64_t) EBADF;
     if (len == 0) return 0;
@@ -1521,8 +1521,10 @@ int64_t fd_read(int fd, void *buf, uint64_t len) {
 
     if (!f->pipe && !f->wpipe && (f->flags & O_ACCMODE) == O_WRONLY) return -(int64_t) EBADF;
 
+    uint32_t nonblock = (uint32_t) (f->flags | (force_nonblock ? O_NONBLOCK : 0));
+
     if (f->wpipe) { /* socket */
-        if ((f->flags & O_NONBLOCK) && f->pipe->count == 0 && f->pipe->write_refs > 0)
+        if ((nonblock & O_NONBLOCK) && f->pipe->count == 0 && f->pipe->write_refs > 0)
             return -(int64_t) EAGAIN;
         return pipe_read(f->pipe, buf, len);
     }
@@ -1530,7 +1532,7 @@ int64_t fd_read(int fd, void *buf, uint64_t len) {
     /* pipe */
     if (f->pipe) {
         if (f->pipe_end != PIPE_END_READ) return -(int64_t) EBADF;
-        if ((f->flags & O_NONBLOCK) && f->pipe->count == 0 && f->pipe->write_refs > 0)
+        if ((nonblock & O_NONBLOCK) && f->pipe->count == 0 && f->pipe->write_refs > 0)
             return -(int64_t) EAGAIN;
         return pipe_read(f->pipe, buf, len);
     }
@@ -1567,26 +1569,34 @@ int64_t fd_read(int fd, void *buf, uint64_t len) {
     return -(int64_t) EINVAL;
 }
 
-int64_t fd_peek(int fd, void *buf, uint64_t len, uint64_t skip) {
+int64_t fd_read(int fd, void *buf, uint64_t len) { return fd_read_ex(fd, buf, len, false); }
+
+int64_t fd_peek_ex(int fd, void *buf, uint64_t len, uint64_t skip, bool force_nonblock) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int64_t) EBADF;
     if (len == 0) return 0;
     if (!uptr_ok_w(buf, len)) return -(int64_t) EFAULT;
 
+    uint32_t nonblock = (uint32_t) (f->flags | (force_nonblock ? O_NONBLOCK : 0));
+
     if (f->wpipe) {
-        if ((f->flags & O_NONBLOCK) && f->pipe->count <= skip && f->pipe->write_refs > 0)
+        if ((nonblock & O_NONBLOCK) && f->pipe->count <= skip && f->pipe->write_refs > 0)
             return -(int64_t) EAGAIN;
         return pipe_peek(f->pipe, buf, len, skip);
     }
 
     if (f->pipe) {
         if (f->pipe_end != PIPE_END_READ) return -(int64_t) EBADF;
-        if ((f->flags & O_NONBLOCK) && f->pipe->count <= skip && f->pipe->write_refs > 0)
+        if ((nonblock & O_NONBLOCK) && f->pipe->count <= skip && f->pipe->write_refs > 0)
             return -(int64_t) EAGAIN;
         return pipe_peek(f->pipe, buf, len, skip);
     }
 
     return -(int64_t) EINVAL;
+}
+
+int64_t fd_peek(int fd, void *buf, uint64_t len, uint64_t skip) {
+    return fd_peek_ex(fd, buf, len, skip, false);
 }
 
 static int64_t fd_write_dispatch(vfs_file_t *f, const void *buf, uint64_t len) {
@@ -1652,7 +1662,7 @@ static int64_t fd_write_dispatch(vfs_file_t *f, const void *buf, uint64_t len) {
     return -(int64_t) EINVAL;
 }
 
-int64_t fd_write(int fd, const void *buf, uint64_t len) {
+int64_t fd_write_ex(int fd, const void *buf, uint64_t len, bool force_nonblock) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int64_t) EBADF;
     if (len == 0) return 0;
@@ -1660,12 +1670,13 @@ int64_t fd_write(int fd, const void *buf, uint64_t len) {
     if (f->efd) return eventfd_write(f, (const char *) buf, len);
     if (f->tfd) return -(int64_t) EINVAL; /* timerfd not writable via write() */
     if (f->sfd) return -(int64_t) EINVAL; /* signalfd is read-only */
-    if (f->wpipe && (f->flags & O_NONBLOCK) && f->wpipe->read_refs > 0) {
+    uint32_t nonblock = (uint32_t) (f->flags | (force_nonblock ? O_NONBLOCK : 0));
+    if (f->wpipe && (nonblock & O_NONBLOCK) && f->wpipe->read_refs > 0) {
         uint64_t space = PIPE_BUFSZ - f->wpipe->count;
         if (space == 0) return -(int64_t) EAGAIN;
         if (len > space) len = space;
     }
-    if (f->pipe && !f->wpipe && (f->flags & O_NONBLOCK) && f->pipe_end == PIPE_END_WRITE &&
+    if (f->pipe && !f->wpipe && (nonblock & O_NONBLOCK) && f->pipe_end == PIPE_END_WRITE &&
         f->pipe->read_refs > 0) {
         uint64_t space = PIPE_BUFSZ - f->pipe->count;
         if (space == 0) return -(int64_t) EAGAIN;
@@ -1673,6 +1684,8 @@ int64_t fd_write(int fd, const void *buf, uint64_t len) {
     }
     return fd_write_dispatch(f, buf, len);
 }
+
+int64_t fd_write(int fd, const void *buf, uint64_t len) { return fd_write_ex(fd, buf, len, false); }
 
 int64_t fd_write_kbuf(int fd, const void *buf, uint64_t len) {
     vfs_file_t *f = fd_get(fd);

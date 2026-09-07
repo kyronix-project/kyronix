@@ -14,10 +14,9 @@
 #define ENOSYS 38
 #define EINTR 4
 
-#define EVBUF 512
-#define EVBUF_HIWATER 64
+#define EVBUF 64
 #define WD_GRACE_TICKS ((uint64_t) (3000 / PIT_TICK_MS))
-#define WD_REKILL_TICKS ((uint64_t) (3000 / PIT_TICK_MS))
+#define WD_REMIND_TICKS ((uint64_t) (30000 / PIT_TICK_MS))
 typedef struct {
     input_event_t buf[EVBUF];
     volatile int head, tail;
@@ -25,6 +24,7 @@ typedef struct {
     proc_t *waiter;
     spinlock_irqsave_t lock;
     uint32_t dropped;
+    uint32_t syn_dropped;
     uint64_t reads;
     uint64_t syncs;
     uint64_t last_read;
@@ -33,17 +33,28 @@ typedef struct {
     char rd_name[32];
     uint32_t wd_pid;
     uint8_t wd_logged;
-    uint64_t wd_last_kill_tick;
+    uint64_t wd_last_remind;
+    uint64_t last_drop_log;
+    uint64_t last_flush_log;
+    uint64_t last_sync_log;
 } evdev_t;
 
 static evdev_t g_evdev[INPUT_NDEVS];
 int g_evdev_kbd_open = 0;
 
+/* Rate-limit noisy diagnostics to one message per `ms` (g_ticks is ms). */
+static inline bool evdev_log_gate(uint64_t *last, uint64_t ms) {
+    uint64_t now = g_ticks;
+    if (now - *last < ms) return false;
+    *last = now;
+    return true;
+}
+
 void input_push(int dev, uint16_t type, uint16_t code, int32_t value) {
     if ((unsigned) dev >= INPUT_NDEVS) return;
     evdev_t *e = &g_evdev[dev];
     spin_lock_irqsave(&e->lock);
-    if (e->count >= EVBUF_HIWATER) {
+    if (e->count >= EVBUF) {
         if (!e->stall_logged && e->last_read && (int64_t) (g_ticks - e->last_read) > 200) {
             e->stall_logged = 1;
             log_warn("INPUT: evdev dev=%d reader stalled (%llu ms since last read, count=%u) "
@@ -54,9 +65,15 @@ void input_push(int dev, uint16_t type, uint16_t code, int32_t value) {
         e->tail = (e->tail + 1) % EVBUF;
         e->count--;
         e->dropped++;
-        if ((e->dropped & 0x3F) == 1)
+        e->syn_dropped = 1;
+        if (evdev_log_gate(&e->last_drop_log, 1000))
             log_warn("INPUT: evdev dev=%d dropping oldest (%u dropped so far in burst)", dev,
                      e->dropped);
+    }
+    /* On overflow the next SYN carries SYN_DROPPED so libinput resyncs. */
+    if (type == EV_SYN && e->syn_dropped) {
+        code = SYN_DROPPED;
+        e->syn_dropped = 0;
     }
     e->buf[e->head] = (input_event_t) { .sec = g_ticks / 1000,
                                         .usec = (g_ticks % 1000) * 1000,
@@ -79,13 +96,8 @@ static void kbd_evdev_push(uint16_t key, int value) {
     input_push(INPUT_DEV_KBD, EV_SYN, SYN_REPORT, 0);
 }
 
-/* Timer-IRQ watchdog: if a device is at high-water with a reader that stopped
- * consuming, log diagnostics once and SIGKILL the wedged reader after a grace
- * period. Runs in IRQ context: only lock-free / IRQ-safe calls.
- * Note: a pure userspace busy-loop with no syscalls will not see SIGKILL until
- * it enters the kernel again; weston's epoll loop always syscalls, so the kill
- * lands in practice. 
- */
+/* Timer-IRQ watchdog: log when a reader stalls (once per episode, then every
+ * WD_REMIND_TICKS). IRQ context: lock-free/IRQ-safe only; never kills. */
 static const char *walk_syscall_name(int64_t nr) {
     switch (nr) {
     case 0: return "read";
@@ -145,6 +157,7 @@ void input_watchdog(void) {
         if (e->wd_pid != e->rd_pid) {
             e->wd_pid = e->rd_pid;
             e->wd_logged = 0;
+            e->wd_last_remind = 0;
         }
         if (!e->wd_logged) {
             e->wd_logged = 1;
@@ -157,17 +170,13 @@ void input_watchdog(void) {
                      (unsigned long long) e->reads, e->dropped, e->count,
                      (unsigned long long) unread);
         }
-        /* SIGKILL is idempotent: re-send it until the reader drains the buffer
-         * again. A single shot can be swallowed (e.g. the reader is parked in a
-         * blocking pipe_read/sock recvmsg that re-sleeps instead of exiting), so
-         * keep re-arming every WD_REKILL_TICKS while the stall persists. */
         if ((uint64_t) unread > WD_GRACE_TICKS &&
-            (e->wd_last_kill_tick == 0 ||
-             (int64_t) (g_ticks - e->wd_last_kill_tick) >= (int64_t) WD_REKILL_TICKS)) {
-            e->wd_last_kill_tick = g_ticks;
-            log_warn("INPUT: watchdog SIGKILL pid=%u (%s) — evdev dev=%d unread %llu ms",
-                     e->rd_pid, e->rd_name, dev, (unsigned long long) unread);
-            proc_send_signal(p, SIGKILL);
+            (e->wd_last_remind == 0 ||
+             (int64_t) (g_ticks - e->wd_last_remind) >= (int64_t) WD_REMIND_TICKS)) {
+            e->wd_last_remind = g_ticks;
+            log_warn("INPUT: evdev dev=%d still wedged, reader=%s(pid=%u) unread %llu ms "
+                     "(diagnostic only, no kill)",
+                     dev, e->rd_name, e->rd_pid, (unsigned long long) unread);
         }
     }
 }
@@ -197,8 +206,9 @@ static int64_t evdev_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) 
             __builtin_memcpy(&ev, &e->buf[e->tail], sizeof(input_event_t));
             if (ev.type == EV_SYN && ev.code == SYN_DROPPED) {
                 e->syncs++;
-                log_warn("INPUT: evdev dev=%d reader consumed SYN_DROPPED (reads=%llu syncs=%llu)",
-                         dev, (unsigned long long) e->reads, (unsigned long long) e->syncs);
+                if (evdev_log_gate(&e->last_sync_log, 1000))
+                    log_warn("INPUT: evdev dev=%d reader consumed SYN_DROPPED (reads=%llu syncs=%llu)",
+                             dev, (unsigned long long) e->reads, (unsigned long long) e->syncs);
             }
             __builtin_memcpy(out + written, &ev, sizeof(input_event_t));
             e->tail = (e->tail + 1) % EVBUF;
@@ -207,8 +217,9 @@ static int64_t evdev_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) 
         }
         if (written > 0 || e->count > 0 || len < sizeof(input_event_t)) {
             if (e->dropped && written > 0) {
-                log_warn("INPUT: evdev dev=%d flushed %lu events after %u dropped", dev,
-                         written, e->dropped);
+                if (evdev_log_gate(&e->last_flush_log, 1000))
+                    log_warn("INPUT: evdev dev=%d flushed %lu events after %u dropped", dev,
+                             written, e->dropped);
                 e->dropped = 0;
             }
             if (written > 0) {
@@ -229,10 +240,10 @@ static int64_t evdev_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) 
                 e->stall_logged = 0;
                 e->wd_pid = 0;
                 e->wd_logged = 0;
-                e->wd_last_kill_tick = 0;
+                e->wd_last_remind = 0;
                 if ((e->reads & 0x3FF) == 1)
-                    log_warn("INPUT: evdev dev=%d reader alive (reads=%llu) %s(pid=%u)", dev,
-                             (unsigned long long) e->reads, e->rd_name, e->rd_pid);
+                    log_debug("INPUT: evdev dev=%d reader alive (reads=%llu) %s(pid=%u)", dev,
+                              (unsigned long long) e->reads, e->rd_name, e->rd_pid);
             }
             spin_unlock_irqrestore(&e->lock);
             break;
@@ -244,10 +255,9 @@ static int64_t evdev_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) 
         if (!p) break;
         sched_block_current();
         e->waiter = NULL;
-        /* Pending SIGKILL must escape the blocking read: check once we are
-         * woken, otherwise a kill delivered while the buffer is empty just
-         * re-sleeps forever and signal_check never runs (it only runs on
-         * syscall exit). */
+        /* A pending unmasked signal must escape the blocking read: check once
+         * we are woken, otherwise signal_check never runs (it only runs on
+         * syscall exit) and the reader sleeps forever on an empty buffer. */
         if (p) {
             uint64_t pending = __atomic_load_n(&p->pending_sigs, __ATOMIC_RELAXED);
             if (pending & ~p->sig_mask) return -(int64_t) EINTR;
