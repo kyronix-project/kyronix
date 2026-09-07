@@ -12,6 +12,9 @@ typedef struct {
 #define EV_KEY 0x01
 #define EV_REL 0x02
 
+#define SYN_REPORT 0x00
+#define SYN_DROPPED 0x03
+
 #define REL_X 0
 #define REL_Y 1
 #define REL_WHEEL 8
@@ -26,4 +29,5 @@ typedef struct {
 
 void input_init(void);
 void input_push(int dev, uint16_t type, uint16_t code, int32_t value);
-extern int g_evdev_kbd_open; /* set when /dev/input/event0 is opened - mutes tty echo */
+void input_watchdog(void); /* timer tick: log wedged evdev readers (diagnostic only) */
+extern int g_evdev_kbd_open; /* open-count of /dev/input/event0 - mutes tty echo */

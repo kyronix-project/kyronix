@@ -244,7 +244,7 @@ int64_t sys_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int 
             }
         }
         if (n > 0 || timeout == 0 || (deadline != UINT64_MAX && g_ticks >= deadline)) return n;
-        if (p && (p->pending_sigs & ~p->sig_mask)) return -(int64_t) EINTR;
+        if (proc_blocking_sig_mask(p)) return -(int64_t) EINTR;
         void *objects[64];
         bool wildcard = false;
         uint32_t object_count = epoll_objects(ep, objects, 64, &wildcard);

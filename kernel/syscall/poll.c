@@ -59,7 +59,7 @@ bool poll_wait_once(uint64_t deadline, poll_ready_fn ready, void *ctx,
     uint64_t flags = irq_save();
     spin_lock(&g_poll_lock);
     if ((deadline != UINT64_MAX && g_ticks >= deadline) ||
-        (p->pending_sigs & ~p->sig_mask) || (ready && ready(ctx))) {
+        proc_blocking_sig_mask(p) || (ready && ready(ctx))) {
         spin_unlock(&g_poll_lock);
         irq_restore(flags);
         return false;
@@ -184,7 +184,7 @@ int64_t sys_poll(struct pollfd_s *fds, uint64_t nfds, int timeout) {
             object_count = add_fd_objects(fds[i].fd, objects, object_count, &wildcard);
     while (!ready) {
         if (deadline != UINT64_MAX && g_ticks >= deadline) break;
-        if (p && (p->pending_sigs & ~p->sig_mask)) return -(int64_t) EINTR;
+        if (proc_blocking_sig_mask(p)) return -(int64_t) EINTR;
         uint64_t wait_deadline = poll_fd_deadline(fds, nfds, deadline);
         poll_wait_once(wait_deadline, poll_wait_ready, &ctx, objects, object_count, wildcard);
         if (nfds) ready = poll_check(fds, nfds);
@@ -277,7 +277,7 @@ static int64_t sys_select_common(int nfds, void *rfds, void *wfds, void *efds, v
             if (efds) memset(efds, 0, set_bytes);
             return (int64_t) ready;
         }
-        if (p && (p->pending_sigs & ~p->sig_mask)) return -(int64_t) EINTR;
+        if (proc_blocking_sig_mask(p)) return -(int64_t) EINTR;
         uint64_t wait_deadline = deadline;
         for (int fd = 0; fd < nfds; fd++) {
             if (!fds_test((const uint8_t *) rfds, fd) &&

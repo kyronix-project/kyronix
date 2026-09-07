@@ -1,6 +1,7 @@
 #include "idt.h"
 #include "arch/x86_64/lapic.h"
 #include "arch/x86_64/syscall_setup.h"
+#include "drivers/input/input.h"
 #include "drivers/video/fb.h"
 #include "exec/process.h"
 #include "fs/vfs.h"
@@ -304,6 +305,7 @@ void isr_dispatch(cpu_state_t *state) {
             prof_tick(state->rip, g_current_proc ? g_current_proc->pid : 0);
 #endif
             fb_cursor_blink_tick(g_ticks);
+            input_watchdog();
             proc_reap_pending();
             net_poll();
             pic_send_eoi(0);

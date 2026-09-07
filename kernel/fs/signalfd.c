@@ -88,8 +88,8 @@ int64_t signalfd_read(vfs_file_t *f, char *buf, uint64_t len) {
             return SIGINFO_SIZE;
         }
         if (f->flags & O_NONBLOCK) return -(int64_t) EAGAIN;
-        // an unblocked signal must interrupt the read instead
-        if (p->pending_sigs & ~p->sig_mask) return -(int64_t) EINTR;
+        // an actionable unblocked signal must interrupt the read instead
+        if (proc_blocking_sig_mask(p)) return -(int64_t) EINTR;
         if (proc_next_ready(p))
             sched_yield_blocking();
         else {

@@ -684,8 +684,6 @@ static int64_t spidev_ioctl(vfs_node_t *node, uint64_t cmd, uint64_t arg) {
 
 static int stub_spi_transfer_one(struct spi_controller *ctlr, struct spi_device *spi, struct spi_transfer *t) {
     (void) ctlr;
-    uint32_t mode = spi ? spi->mode : 0;
-    bool lsb = (mode & SPI_LSB_FIRST) != 0;
     uint8_t bpw = t->bits_per_word ? t->bits_per_word : (spi ? spi->bits_per_word : 8);
 
     if (bpw == 16 && (t->len % 2 != 0)) return -EINVAL;
@@ -699,7 +697,6 @@ static int stub_spi_transfer_one(struct spi_controller *ctlr, struct spi_device 
             for (unsigned i = 0; i < words; i++) {
                 uint16_t val;
                 memcpy(&val, src8 + i * 2, 2);
-                if (lsb) val = reverse_bits16(val);
                 memcpy(dst8 + i * 2, &val, 2);
                 if (t->word_delay_usecs > 0) spi_delay_us(t->word_delay_usecs);
             }
@@ -710,7 +707,6 @@ static int stub_spi_transfer_one(struct spi_controller *ctlr, struct spi_device 
             for (unsigned i = 0; i < dwords; i++) {
                 uint32_t val;
                 memcpy(&val, src8 + i * 4, 4);
-                if (lsb) val = reverse_bits32(val);
                 memcpy(dst8 + i * 4, &val, 4);
                 if (t->word_delay_usecs > 0) spi_delay_us(t->word_delay_usecs);
             }
@@ -718,9 +714,7 @@ static int stub_spi_transfer_one(struct spi_controller *ctlr, struct spi_device 
             const uint8_t *src = (const uint8_t *) t->tx_buf;
             uint8_t *dst = (uint8_t *) t->rx_buf;
             for (unsigned i = 0; i < t->len; i++) {
-                uint8_t val = src[i];
-                if (lsb) val = reverse_bits8(val);
-                dst[i] = val;
+                dst[i] = src[i];
                 if (t->word_delay_usecs > 0) spi_delay_us(t->word_delay_usecs);
             }
         }

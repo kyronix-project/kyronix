@@ -89,7 +89,10 @@ static int run_sandbox(const char *test_name, int (*test_fn)(void)) {
     }
 
     char buf[256];
-    ssize_t n = read(p[0], buf, sizeof(buf) - 1);
+    ssize_t n;
+    do {
+        n = read(p[0], buf, sizeof(buf) - 1);
+    } while (n < 0 && errno == EINTR);
     close(p[0]);
     failure_pipe[0] = -1;
 
@@ -130,7 +133,12 @@ int test_pipe_dup2_exec(void) {
     close(p[1]);
     char buf[256];
     ssize_t tot = 0, n;
-    while ((n = read(p[0], buf + tot, sizeof(buf) - tot)) > 0) tot += n;
+    while (1) {
+        n = read(p[0], buf + tot, sizeof(buf) - tot);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) break;
+        tot += n;
+    }
     close(p[0]);
 
     int status;
@@ -193,7 +201,10 @@ int test_ls_grep_pipeline(void) {
     close(p2[1]);
 
     char buf[256];
-    ssize_t n = read(p2[0], buf, sizeof(buf) - 1);
+    ssize_t n;
+    do {
+        n = read(p2[0], buf, sizeof(buf) - 1);
+    } while (n < 0 && errno == EINTR);
     close(p2[0]);
     buf[n > 0 ? n : 0] = '\0';
 
@@ -240,7 +251,12 @@ int test_grep_o(void) {
 
     char buf[64];
     ssize_t tot = 0, n;
-    while ((n = read(p2[0], buf + tot, sizeof(buf) - 1 - tot)) > 0) tot += n;
+    while (1) {
+        n = read(p2[0], buf + tot, sizeof(buf) - 1 - tot);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) break;
+        tot += n;
+    }
     close(p2[0]);
     buf[tot > 0 ? tot : 0] = '\0';
 

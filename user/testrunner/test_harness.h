@@ -183,6 +183,7 @@ static inline int capture_cmd(char *const argv[], char *buf, size_t bufsz) {
     ssize_t total = 0;
     while (total < (ssize_t) bufsz) {
         ssize_t n = read(p[0], buf + total, bufsz - 1 - total);
+        if (n < 0 && errno == EINTR) continue;
         if (n <= 0) break;
         total += n;
     }

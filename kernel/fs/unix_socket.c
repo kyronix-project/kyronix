@@ -201,8 +201,10 @@ int fd_accept_unix(int fd, char *path_out, int path_max, int flags) {
     nf->pipe = srv_rx;
     nf->wpipe = cli_rx;
     nf->pipe_end = PIPE_END_READ;
-    nf->flags = O_RDWR | (flags & O_NONBLOCK);
-    nf->cloexec = (flags & O_CLOEXEC) ? 1 : 0;
+    /* Linux: plain accept() inherits O_NONBLOCK/O_CLOEXEC from the listener;
+     * accept4() supplies them via flags. */
+    nf->flags = O_RDWR | (flags & O_NONBLOCK) | (f->flags & O_NONBLOCK);
+    nf->cloexec = ((flags & O_CLOEXEC) || f->cloexec) ? 1 : 0;
     nf->peer_pid = peer_pid;
     nf->peer_uid = peer_uid;
     nf->peer_gid = peer_gid;

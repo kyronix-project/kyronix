@@ -130,7 +130,11 @@ void syscall_dispatch(syscall_frame_t *f) {
     uint64_t a4 = f->r10, a5 = f->r8, a6 = f->r9;
 
     proc_t *tp = cur();
-    if (tp) tp->ptrace_orig_rax = nr;
+    if (tp) {
+        tp->ptrace_orig_rax = nr;
+        tp->cur_syscall = (int64_t) nr;
+        tp->cur_syscall_arg0 = (int64_t) a1;
+    }
     if (tp && tp->ptrace_syscall_trace && nr != 101) {
         tp->ptrace_in_syscall = 1;
         proc_ptrace_stop(tp, SIGTRAP | 0x80, 1, f, &f->r11);
@@ -1290,6 +1294,8 @@ void syscall_dispatch(syscall_frame_t *f) {
         proc_ptrace_stop(tp, SIGTRAP | 0x80, 1, f, &f->r11);
     }
 
+    proc_t *tp_now = cur();
+    if (tp_now) tp_now->cur_syscall = -1;
     signal_check(f);
     vmm_syscall_access_end();
     vfs_syscall_borrow_end();

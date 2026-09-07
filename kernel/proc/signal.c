@@ -28,6 +28,22 @@ static int sig_default_fatal(int sig) {
     }
 }
 
+uint64_t proc_blocking_sig_mask(proc_t *p) {
+    if (!p) return 0;
+    uint64_t blocked = p->sig_mask & ~SIG_UNBLOCKABLE;
+    uint64_t pending = __atomic_load_n(&p->pending_sigs, __ATOMIC_RELAXED) & ~blocked;
+    uint64_t actionable = pending;
+    while (pending) {
+        int idx = __builtin_ctzll(pending);
+        int sig = idx + 1;
+        uint64_t handler = p->sig_actions[sig - 1].sa_handler;
+        if (handler == SIG_IGN || (handler == SIG_DFL && !sig_default_fatal(sig)))
+            actionable &= ~(1ULL << idx);
+        pending &= pending - 1;
+    }
+    return actionable;
+}
+
 static int sig_default_stop(int sig) {
     return (SIG_BIT(sig) & SIG_STOP_MASK) != 0;
 }
