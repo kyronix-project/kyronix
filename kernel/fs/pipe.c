@@ -13,11 +13,8 @@
 #define EIO 5
 #define EINTR 4
 
-/* A pending unmasked signal must escape a blocking pipe syscall: signal_check()
- * only runs on syscall exit, so the wake/re-block loop would never deliver it. */
 static uint64_t pipe_pending_signals(proc_t *p) {
-    if (!p) return 0;
-    return __atomic_load_n(&p->pending_sigs, __ATOMIC_RELAXED) & ~p->sig_mask;
+    return proc_blocking_sig_mask(p);
 }
 
 pipe_t *pipe_alloc(void) {

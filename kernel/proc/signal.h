@@ -84,3 +84,4 @@ typedef struct {
 
 struct proc;
 void proc_send_signal(struct proc *p, int sig);
+uint64_t proc_blocking_sig_mask(struct proc *p);

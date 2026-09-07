@@ -1,7 +1,7 @@
 BLOBS   := blobs
 OUT     := ../../build/bin
 ROOTFS  := ../../rootfs
-TMPDIR  := /tmp/kyronix-extras
+TMPDIR  := ../../build/kyronix-extras
 
 APK_VERSIONS := \
 	gzip-1.13-r0 \

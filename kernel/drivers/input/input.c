@@ -255,13 +255,10 @@ static int64_t evdev_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) 
         if (!p) break;
         sched_block_current();
         e->waiter = NULL;
-        /* A pending unmasked signal must escape the blocking read: check once
+        /* A pending actionable signal must escape the blocking read: check once
          * we are woken, otherwise signal_check never runs (it only runs on
          * syscall exit) and the reader sleeps forever on an empty buffer. */
-        if (p) {
-            uint64_t pending = __atomic_load_n(&p->pending_sigs, __ATOMIC_RELAXED);
-            if (pending & ~p->sig_mask) return -(int64_t) EINTR;
-        }
+        if (proc_blocking_sig_mask(p)) return -(int64_t) EINTR;
     }
     return (int64_t) written;
 }
