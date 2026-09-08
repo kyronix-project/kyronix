@@ -43,6 +43,8 @@ all:
 	$(MAKE) -C extras install
 ifneq ($(WAYLAND),0)
 	$(MAKE) -C extras/blobs/wayland install
+	$(MAKE) -C extras/blobs/gtk
+	$(MAKE) -C panel install
 endif
 
 clean:
@@ -58,6 +60,7 @@ clean:
 	$(MAKE) -C installer clean
 	$(MAKE) -C extras clean
 	$(MAKE) -C libudev clean
+	$(MAKE) -C panel clean
 	$(MAKE) -C extras/blobs/wayland clean
 	rm -f $(ROOTFS)/bin/*
 	rm -f $(ROOTFS)/usr/libexec/limine-install

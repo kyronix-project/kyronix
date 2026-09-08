@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=System Info
+Comment=Show kernel, memory and disk info
+Icon=system-run
+Exec=ksh -c 'uname -a; echo; free; echo; df -h; echo; read p'
+Categories=System;

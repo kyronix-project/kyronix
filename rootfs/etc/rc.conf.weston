@@ -9,3 +9,5 @@ ntpd:/bin/ntpd --quiet
 
 # desktop workspace
 weston:/usr/bin/startw
+
+panel:/usr/bin/kyronix-panel

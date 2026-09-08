@@ -1,0 +1,4 @@
+
+Name: default-icon-theme
+Description: The default fallback theme used by XDG icon-theme implementations.
+Version: 0.18
