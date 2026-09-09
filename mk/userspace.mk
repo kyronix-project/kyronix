@@ -5,6 +5,8 @@ USERSPACE_SOURCES := $(shell find user -type f \
 	-not -path '*/autom4te.cache/*' | sort)
 
 $(USERSPACE_STAMP): $(USERSPACE_SOURCES) $(BUILD)/libatomic_asneeded.a
-	$(MAKE) -C user
+	@$(call phase,Userspace)
+	@$(MAKE) --no-print-directory -C user
 	@mkdir -p $(@D)
 	@touch $@
+	@$(call ok,userspace)

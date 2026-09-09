@@ -13,12 +13,17 @@ $(BUILD)/bin/testrunner: $(TESTRUNNER_SOURCES) $(BUILD)/libatomic_asneeded.a
 	$(MAKE) -C user/testrunner
 
 $(TEST_MODULE): user/testrunner/fixtures/modules/hello.c kernel/module.h kernel/version.h
-	$(CC) $(CFLAGS) -fno-asynchronous-unwind-tables -c $< -o $@
+	@mkdir -p $(@D)
+	@$(call step,CC $<)
+	@$(CC) $(CFLAGS) -fno-asynchronous-unwind-tables -c $< -o $@
 
 $(TEST_DEP_MODULE): user/testrunner/fixtures/modules/dependent.c kernel/module.h kernel/version.h
-	$(CC) $(CFLAGS) -fno-asynchronous-unwind-tables -c $< -o $@
+	@mkdir -p $(@D)
+	@$(call step,CC $<)
+	@$(CC) $(CFLAGS) -fno-asynchronous-unwind-tables -c $< -o $@
 
 $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE)
+	@$(call phase,Test initrd)
 	rm -rf $(TEST_ROOTFS)
 	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt $(TEST_ROOTFS)/lib/modules
 	cp $(BUILD)/bin/testrunner $(TEST_ROOTFS)/init
@@ -40,7 +45,7 @@ $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/test
 	@cd $(TEST_ROOTFS) && find . | sort | \
 	    cpio -o --format=newc --owner=0:0 --reproducible \
 	    > "$(abspath $(TEST_INITRD))" 2>/dev/null
-	@echo "  Built: $(TEST_INITRD)"
+	@$(call ok,$(TEST_INITRD))
 
 $(TEST_ISO): $(KERNEL) $(TEST_INITRD) boot/limine-test.conf \
 		$(LIMINE_FILES) $(LIMINE)/limine
@@ -50,9 +55,10 @@ $(TEST_ISO): $(KERNEL) $(TEST_INITRD) boot/limine-test.conf \
 .PHONY: test
 test: INSTRUMENT=1
 test: $(TEST_ISO)
+	@$(call phase,Test suite)
 	@mkdir -p $(BUILD)
-	truncate -s 16M $(TEST_DISK)
-	mkfs.ext2 -F -b 4096 -L kyronix-test $(TEST_DISK) >/dev/null 2>&1
+	@truncate -s 16M $(TEST_DISK)
+	@mkfs.ext2 -F -b 4096 -L kyronix-test $(TEST_DISK) >/dev/null 2>&1
 	@set +e; \
 	timeout $(TEST_TIMEOUT) $(QEMU) \
 	    -M q35 -cpu max -m 512M -smp 4 \
@@ -68,10 +74,10 @@ test: $(TEST_ISO)
 	set -e; \
 	grep -E "(TEST|RESULT|ALL|SOME|FAIL|KMEMLEAK)" $(TEST_LOG) 2>/dev/null || true; \
 	if ! grep -q "ALL TESTS PASSED" $(TEST_LOG) 2>/dev/null; then \
-	    echo; echo "FAIL (QEMU status $$qemu_status)"; exit 1; \
+	    echo; $(call fail,QEMU status $$qemu_status); exit 1; \
 	fi; \
 	leaks=$$(sed -n 's/.*KMEMLEAK: \\([0-9][0-9]*\\).*/\\1/p' $(TEST_LOG) | tail -n 1); \
 	if [ -n "$$leaks" ] && [ "$$leaks" -gt 0 ]; then \
-	    echo; echo "FAIL: KMEMLEAK found $$leaks leak(s)"; exit 1; \
+	    echo; $(call fail,KMEMLEAK found $$leaks leak(s)); exit 1; \
 	fi; \
-	echo; echo "PASS"
+	echo; $(call ok,All tests passed)

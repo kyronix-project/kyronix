@@ -49,6 +49,7 @@ void smp_init(void) {
         cpu->extra_argument = 0;
         if (cpu->lapic_id == bsp_lapic) {
             g_cpu_local[0].lapic_id = cpu->lapic_id;
+            g_cpu_local[0].online = 1;
             cpu->extra_argument = (uint64_t) &g_cpu_local[0];
             log_info("SMP:   CPU%u lapic=%u (BSP)", 0, cpu->lapic_id);
         } else {

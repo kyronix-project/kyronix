@@ -653,3 +653,106 @@ int test_iopl_ioperm(void) {
     return 1;
 }
 REGISTER_TEST(iopl_ioperm, "Phase 3: Process & Scheduling");
+
+struct kx_dirent64 {
+    uint64_t d_ino;
+    int64_t d_off;
+    uint16_t d_reclen;
+    uint8_t d_type;
+    char d_name[];
+} __attribute__((packed));
+
+#define KX_DIRENT_LEN(rec) ((int) (rec)->d_reclen)
+
+static int kx_numstr(const char *s) {
+    if (!*s) return 0;
+    for (; *s; s++)
+        if (*s < '0' || *s > '9') return 0;
+    return 1;
+}
+
+static size_t kx_collect_pids(int fd, char *raw, size_t bufsz, int open_during_walk,
+                              size_t out[static 512], size_t *open_fails) {
+    size_t n = 0;
+    for (;;) {
+        ssize_t r = syscall(SYS_getdents64, fd, raw, bufsz);
+        if (r <= 0) break;
+        ssize_t off = 0;
+        while (off < r) {
+            struct kx_dirent64 *d = (struct kx_dirent64 *) (raw + off);
+            if (d->d_reclen == 0) break;
+            if (kx_numstr(d->d_name)) {
+                if (n < 512) out[n++] = (size_t) atoi(d->d_name);
+                if (open_during_walk) {
+                    int pfd = openat(fd, d->d_name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+                    if (pfd < 0) (*open_fails)++;
+                    else close(pfd);
+                }
+            }
+            off += (int) d->d_reclen;
+        }
+    }
+    return n;
+}
+
+int test_proc_getdents_stability(void) {
+    const int nchild = 8;
+    pid_t kids[16];
+    ASSERT_LE(nchild, (int) (sizeof(kids) / sizeof(kids[0])));
+
+    for (int i = 0; i < nchild; i++) {
+        kids[i] = fork();
+        ASSERT_GE(kids[i], 0);
+        if (kids[i] == 0) { sleep(30); _exit(0); }
+    }
+
+    /* primary walk: tiny buffer (many resumed getdents64 calls) + openat per pid,
+     * which lazily materialises /proc/<pid> dirs mid-walk */
+    int fd = open("/proc", O_RDONLY | O_DIRECTORY);
+    ASSERT_GE(fd, 0);
+    char small[64];
+    size_t walk1[512];
+    size_t open_fails = 0;
+    size_t n1 = kx_collect_pids(fd, small, sizeof(small), 1, walk1, &open_fails);
+    close(fd);
+    ASSERT_EQ((size_t) 0, open_fails);
+    ASSERT_GT(n1, (size_t) 0);
+
+    /* no zero/empty pid entries, no duplicates */
+    for (size_t i = 0; i < n1; i++) {
+        ASSERT_GT(walk1[i], (size_t) 0);
+        for (size_t j = i + 1; j < n1; j++)
+            ASSERT_NE(walk1[i], walk1[j]);
+    }
+
+    /* every forked child must be visible */
+    for (int i = 0; i < nchild; i++) {
+        int found = 0;
+        for (size_t j = 0; j < n1; j++)
+            if (walk1[j] == (size_t) kids[i]) found = 1;
+        ASSERT_EQ(1, found);
+    }
+
+    /* secondary walk: big buffer, no mutation; same pid set as primary */
+    fd = open("/proc", O_RDONLY | O_DIRECTORY);
+    ASSERT_GE(fd, 0);
+    char big[4096];
+    size_t walk2[512];
+    size_t n2 = kx_collect_pids(fd, big, sizeof(big), 0, walk2, &open_fails);
+    close(fd);
+    ASSERT_EQ(n1, n2);
+    for (size_t i = 0; i < n1; i++) {
+        int found = 0;
+        for (size_t j = 0; j < n2; j++)
+            if (walk2[j] == walk1[i]) found = 1;
+        ASSERT_EQ(1, found);
+    }
+
+    for (int i = 0; i < nchild; i++) {
+        kill(kids[i], SIGKILL);
+        int status;
+        waitpid(kids[i], &status, 0);
+    }
+    return 1;
+}
+REGISTER_TEST(proc_getdents_stability, "Phase 3: Process & Scheduling");

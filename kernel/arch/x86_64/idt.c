@@ -16,6 +16,7 @@
 #include "proc/proc.h"
 #include "security/phantom.h"
 #include "proc/signal.h"
+#include "proc/loadavg.h"
 #include "proc/smp.h"
 #include "syscall/syscall.h"
 #ifdef CONFIG_PROFILER
@@ -308,6 +309,7 @@ void isr_dispatch(cpu_state_t *state) {
             input_watchdog();
             proc_reap_pending();
             net_poll();
+            if (this_cpu_id() == 0) calc_load_tick();
             pic_send_eoi(0);
             uint64_t timer_mask = __atomic_load_n(&g_timer_mask, __ATOMIC_RELAXED);
             uint64_t tm = timer_mask;

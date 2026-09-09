@@ -11,25 +11,28 @@ DISK     := $(DIST)/kyronix-disk.img
 TEST_ISO := $(DIST)/kyronix-test.iso
 
 include mk/common.mk
+include mk/output.mk
 include mk/kernel.mk
 include mk/userspace.mk
 include mk/image.mk
 include mk/qemu.mk
 include mk/test.mk
 
-.PHONY: iso live help clean
+.PHONY: iso live help clean _summary
 
-iso: $(ISO)
+iso: $(ISO) _summary
+
+_summary: $(ISO)
 
 live:
+	@$(call phase,Release build)
 	$(MAKE) $(ISO) RELEASE=1
 	@mkdir -p $(DIST)
 	@rm -f $(LIVE_ISO)
 	mv $(ISO) $(LIVE_ISO)
 	sha256sum $(LIVE_ISO) > $(LIVE_ISO).sha256
-	@echo "  Built:  $(LIVE_ISO)"
-	@echo "  Checksum: $(LIVE_ISO).sha256"
-	@echo "  Variants: Weston+Console"
+	@$(call ok,$(LIVE_ISO))
+	@$(call ok,Checksum: $(LIVE_ISO).sha256)
 
 help:
 	@echo "Kyronix build commands"
@@ -62,4 +65,18 @@ clean:
 	$(MAKE) -C user clean
 	$(MAKE) -C limine clean 2>/dev/null || true
 	@rmdir $(DIST) 2>/dev/null || true
-	@echo "  Kept: $(DISK)"
+	@$(call ok,Kept: $(DISK))
+
+_summary:
+	@if [ -t 1 ] && [ -z "$$NO_COLOR" ]; then \
+	    B='\033[1m'; R='\033[0m'; D='\033[2m'; \
+	else \
+	    B=''; R=''; D=''; \
+	fi; \
+	printf '%b' "$${D}========================================$${R}\n"; \
+	printf '%b' "$${B}  Build $(VERSION)$${R}-$(STATUS) $${D}$(ARCH)$${R}\n"; \
+	printf '%b' "  ISO:      $(ISO)"; \
+	if [ -f '$(ISO)' ]; then printf '%b' " $${D}($$(du -h '$(ISO)' | cut -f1))$${R}\n"; else printf '%b' "\n"; fi; \
+	printf '%b' "  Kernel:   $${D}$(words $(KERNEL_C_SRCS)) C + $(words $(KERNEL_ASM_SRCS)) ASM files$${R}\n"; \
+	printf '%b' "  Userspace: $${D}$$(ls '$(BUILD)/bin/' 2>/dev/null | wc -l | tr -d ' ') binaries$${R}\n"; \
+	printf '%b' "$${D}========================================$${R}\n"

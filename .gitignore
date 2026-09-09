@@ -23,7 +23,7 @@ limine/limine
 
 # unnecessary blobs
 rootfs/usr/lib/libLLVM.so.19.1
-rootfs/usr/bin/pipes
+rootfs/usr/bin/kyronix-panel
 
 # vendored GNU make tree (configured & built; artifacts only)
 user/kyrobox/make/

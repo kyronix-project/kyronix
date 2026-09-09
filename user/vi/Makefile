@@ -7,14 +7,17 @@ STAGE := ../../build/bin
 FNO_LINK_LIBATOMIC := $(shell echo 'int main(void){return 0;}' | $(CC) -x c - -fno-link-libatomic -o /dev/null 2>/dev/null && echo '-fno-link-libatomic')
 CFLAGS += $(FNO_LINK_LIBATOMIC)
 
+include ../../mk/output.mk
+
 .PHONY: all clean
 
 all: vi
-	mkdir -p $(STAGE)
-	cp vi $(STAGE)/vi
+	@mkdir -p $(STAGE)
+	@cp vi $(STAGE)/vi
 
 vi: vi.c stubs.c libbb.h
-	$(CC) $(CFLAGS) $(WARN) vi.c stubs.c -o vi $(LDFLAGS)
+	@$(call step,LD $@)
+	@$(CC) $(CFLAGS) $(WARN) vi.c stubs.c -o vi $(LDFLAGS)
 
 clean:
 	rm -f vi $(STAGE)/vi

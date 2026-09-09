@@ -6,6 +6,8 @@
 #include "lib/printf.h"
 #include "lib/string.h"
 #include "mm/heap.h"
+#include "proc/loadavg.h"
+#include "proc/smp.h"
 #include "version.h"
 #ifdef CONFIG_KMEMLEAK
 #include "mm/kmemleak.h"
@@ -64,18 +66,10 @@ static char proc_state_char(proc_t *p) {
     }
 }
 
-static int proc_count(int state) {
+static int proc_count_system(int state) {
     int n = 0;
     for (int i = 0; i < PROC_MAX; i++)
-        if (g_proctable[i].state == state && jail_can_see(g_current_proc, &g_proctable[i])) n++;
-    return n;
-}
-
-static int proc_alive_count(void) {
-    int n = 0;
-    for (int i = 0; i < PROC_MAX; i++)
-        if (g_proctable[i].state != PROC_UNUSED && jail_can_see(g_current_proc, &g_proctable[i]))
-            n++;
+        if (g_proctable[i].state == state) n++;
     return n;
 }
 
@@ -133,7 +127,6 @@ static int64_t proc_cpuinfo_read(vfs_node_t *n, char *buf, uint64_t len, uint64_
     uint32_t family = (eax >> 8) & 0xf;
     uint32_t ext_model = (eax >> 16) & 0xf;
     uint32_t ext_family = (eax >> 20) & 0xff;
-    uint32_t apicid = (ebx >> 24) & 0xff;
     uint32_t feat_ecx = ecx;
     uint32_t feat_edx = edx;
 
@@ -210,25 +203,33 @@ static int64_t proc_cpuinfo_read(vfs_node_t *n, char *buf, uint64_t len, uint64_
 
     flags[fpos] = '\0';
 
-    char tmp[2048];
-    int sz = snprintf(tmp, sizeof(tmp),
-                      "processor\t: 0\n"
-                      "vendor_id\t: %s\n"
-                      "cpu family\t: %u\n"
-                      "model\t\t: %u\n"
-                      "model name\t: %s\n"
-                      "stepping\t: %u\n"
-                      "cpu MHz\t\t: 1000.000\n"
-                      "cache size\t: 0 KB\n"
-                      "physical id\t: 0\n"
-                      "siblings\t: 1\n"
-                      "core id\t\t: 0\n"
-                      "cpu cores\t: 1\n"
-                      "apicid\t\t: %u\n"
-                      "initial apicid\t: %u\n"
-                      "flags\t\t: %s\n"
-                      "\n",
-                      vendor, family, model, brand, stepping, apicid, apicid, flags);
+    char tmp[4096];
+    int sz = 0;
+    uint32_t ncpus = g_cpu_count;
+    if (ncpus > MAX_CPUS) ncpus = MAX_CPUS;
+    for (uint32_t i = 0; i < ncpus; i++) {
+        if (!g_cpu_local[i].online) continue;
+        sz += snprintf(tmp + sz, sizeof(tmp) - (uint64_t) sz,
+                       "processor\t: %u\n"
+                       "vendor_id\t: %s\n"
+                       "cpu family\t: %u\n"
+                       "model\t\t: %u\n"
+                       "model name\t: %s\n"
+                       "stepping\t: %u\n"
+                       "cpu MHz\t\t: 1000.000\n"
+                       "cache size\t: 0 KB\n"
+                       "physical id\t: 0\n"
+                       "siblings\t: %u\n"
+                       "core id\t\t: %u\n"
+                       "cpu cores\t: %u\n"
+                       "apicid\t\t: %u\n"
+                       "initial apicid\t: %u\n"
+                       "flags\t\t: %s\n"
+                       "\n",
+                       i, vendor, family, model, brand, stepping, ncpus, i, ncpus,
+                       g_cpu_local[i].lapic_id, g_cpu_local[i].lapic_id, flags);
+        if (sz >= (int) sizeof(tmp) - 512) break;
+    }
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
@@ -296,29 +297,46 @@ static int64_t proc_uptime_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t
 static int64_t proc_loadavg_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     (void) n;
     char tmp[96];
-    int runnable = proc_count(PROC_READY) + proc_count(PROC_RUNNING);
-    int alive = proc_alive_count();
+    int runnable = proc_count_system(PROC_READY) + proc_count_system(PROC_RUNNING);
+    int alive = 0;
+    for (int i = 0; i < PROC_MAX; i++)
+        if (g_proctable[i].state != PROC_UNUSED && g_proctable[i].state != PROC_EMBRYO) alive++;
+    uint64_t l1 = avenrun[0] >> LOAD_SHIFT;
+    uint64_t l1f = ((avenrun[0] & (LOAD_FIXED - 1)) * 100) >> LOAD_SHIFT;
+    uint64_t l5 = avenrun[1] >> LOAD_SHIFT;
+    uint64_t l5f = ((avenrun[1] & (LOAD_FIXED - 1)) * 100) >> LOAD_SHIFT;
+    uint64_t l15 = avenrun[2] >> LOAD_SHIFT;
+    uint64_t l15f = ((avenrun[2] & (LOAD_FIXED - 1)) * 100) >> LOAD_SHIFT;
     int sz =
-        snprintf(tmp, sizeof(tmp), "0.00 0.00 0.00 %d/%d %d\n", runnable, alive, proc_last_pid());
+        snprintf(tmp, sizeof(tmp), "%lu.%02lu %lu.%02lu %lu.%02lu %d/%d %d\n",
+                 l1, l1f, l5, l5f, l15, l15f, runnable, alive, proc_last_pid());
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
 static int64_t proc_stat_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     (void) n;
     uint64_t ticks = g_ticks / 10;
-    char tmp[512];
-    int sz =
-        snprintf(tmp, sizeof(tmp),
-                 "cpu  %lu 0 %lu %lu 0 0 0 0 0 0\n"
-                 "cpu0 %lu 0 %lu %lu 0 0 0 0 0 0\n"
-                 "intr 0\n"
-                 "ctxt 0\n"
-                 "btime %lu\n"
-                 "processes %d\n"
-                 "procs_running %d\n"
-                 "procs_blocked %d\n",
-                 ticks, ticks / 4, ticks, ticks, ticks / 4, ticks, g_epoch_base, proc_last_pid(),
-                 proc_count(PROC_READY) + proc_count(PROC_RUNNING), proc_count(PROC_WAITING));
+    char tmp[2048];
+    int sz = 0;
+    uint32_t ncpus = g_cpu_count;
+    if (ncpus > MAX_CPUS) ncpus = MAX_CPUS;
+
+    sz += snprintf(tmp + sz, sizeof(tmp) - (uint64_t) sz,
+                   "cpu  %lu 0 %lu %lu 0 0 0 0 0 0\n", ticks, ticks / 4, ticks);
+    for (uint32_t i = 0; i < ncpus; i++) {
+        sz += snprintf(tmp + sz, sizeof(tmp) - (uint64_t) sz,
+                       "cpu%u %lu 0 %lu %lu 0 0 0 0 0 0\n", i, ticks, ticks / 4, ticks);
+    }
+    sz += snprintf(tmp + sz, sizeof(tmp) - (uint64_t) sz,
+                   "intr 0\n"
+                   "ctxt 0\n"
+                   "btime %lu\n"
+                   "processes %d\n"
+                   "procs_running %d\n"
+                   "procs_blocked %d\n",
+                   g_epoch_base, proc_last_pid(),
+                   proc_count_system(PROC_READY) + proc_count_system(PROC_RUNNING),
+                   proc_count_system(PROC_WAITING));
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
@@ -487,9 +505,20 @@ static int64_t proc_self_stat_read(vfs_node_t *n, char *buf, uint64_t len, uint6
     if (!p) return 0;
     char tmp[512];
     int sz = snprintf(tmp, sizeof(tmp),
-                      "%u (%s) %c %u %d 0 0 0 0 0 0 0 0 0 0 0 20 0 1 0 %lu 0 0 0 0 0 0 0 0 0 0 0 0 "
+                      "%u (%s) %c %u %d 0 0 0 0 0 0 0 0 0 0 0 0 20 0 1 0 %lu 0 0 0 0 0 0 0 0 0 0 0 0 "
                       "0 0 0 0 0 0 0\n",
                       p->pid, proc_name(p), proc_state_char(p), p->ppid, p->pgid, g_ticks / 10);
+    if (n->fs_private) proc_unref(p);
+    return read_buf(buf, len, off, tmp, (uint64_t) sz);
+}
+
+static int64_t proc_self_statm_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
+    proc_t *p = node_to_proc(n);
+    if (!p) return 0;
+    char tmp[64];
+    uint64_t pages = p->pages_alloc > p->pages_freed ? p->pages_alloc - p->pages_freed : 0;
+    int sz = snprintf(tmp, sizeof(tmp), "%lu %lu 0 0 0 0 0\n",
+                      (unsigned long) pages, (unsigned long) pages);
     if (n->fs_private) proc_unref(p);
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
@@ -549,6 +578,54 @@ static bool emit_dirent(uint8_t *out, uint64_t count, uint64_t *done, uint64_t i
 bool procfs_getdents64(vfs_node_t *dir, uint64_t *pos, void *buf, uint64_t count, int *out) {
     char path[512];
     vfs_node_abspath(dir, path, sizeof(path));
+
+    if (strcmp(path, "/proc") == 0) {
+        uint8_t *dst = (uint8_t *) buf;
+        uint64_t done = 0;
+        uint64_t emitted = 0;
+        uint64_t idx = 0;
+        uint64_t skip = *pos;
+
+        if (idx++ >= skip && emit_dirent(dst, count, &done, dir->ino, (int64_t) idx, DT_DIR, "."))
+            emitted++;
+        if (idx++ >= skip && emit_dirent(dst, count, &done, dir->parent ? dir->parent->ino : dir->ino,
+                                         (int64_t) idx, DT_DIR, ".."))
+            emitted++;
+
+        for (vfs_node_t *c = dir->children; c; c = c->next) {
+            const char *n = c->name;
+            bool is_numeric = *n != 0;
+            for (; *n; n++)
+                if (*n < '0' || *n > '9') { is_numeric = false; break; }
+
+            if (is_numeric) continue;
+            if (idx++ < skip) continue;
+            uint8_t t = (c->type == VFS_TYPE_DIR) ? DT_DIR :
+                        (c->type == VFS_TYPE_CHR) ? DT_CHR :
+                        (c->type == VFS_TYPE_SYM) ? DT_LNK : DT_REG;
+            if (!emit_dirent(dst, count, &done, c->ino, (int64_t) idx, t, c->name)) break;
+            emitted++;
+        }
+
+        for (int i = 0; i < PROC_MAX; i++) {
+            proc_t *p = &g_proctable[i];
+            int st = __atomic_load_n(&p->state, __ATOMIC_RELAXED);
+            if (st == PROC_UNUSED || st == PROC_EMBRYO) continue;
+            if (p->pid == 0) continue; /* idle CPUs are not /proc processes */
+            if (!jail_can_see(g_current_proc, p)) continue;
+            char name[16];
+            snprintf(name, sizeof(name), "%u", p->pid);
+            if (idx++ < skip) continue;
+            if (!emit_dirent(dst, count, &done, 1000000u + p->pid, (int64_t) idx, DT_DIR, name))
+                break;
+            emitted++;
+        }
+
+        *pos += emitted;
+        *out = (int) done;
+        return true;
+    }
+
     if (strcmp(path, "/proc/self/fd") != 0 && strcmp(path, "/dev/fd") != 0) return false;
 
     uint8_t *dst = (uint8_t *) buf;
@@ -694,6 +771,11 @@ bool procfs_try_pid_dir(vfs_node_t *parent, const char *name) {
     vfs_node_t *stat = vfs_create_chr(stat_path, proc_self_stat_read, NULL);
     if (stat) stat->fs_private = pid_tag;
 
+    char statm_path[160];
+    snprintf(statm_path, sizeof(statm_path), "%s/statm", dir_path);
+    vfs_node_t *statm = vfs_create_chr(statm_path, proc_self_statm_read, NULL);
+    if (statm) statm->fs_private = pid_tag;
+
     char status_path[160];
     snprintf(status_path, sizeof(status_path), "%s/status", dir_path);
     vfs_node_t *status = vfs_create_chr(status_path, proc_self_status_read, NULL);
@@ -834,6 +916,25 @@ static int64_t proc_loglevel_write(vfs_node_t *n, const char *buf, uint64_t len,
     return -(int64_t) EINVAL;
 }
 
+static int64_t sysfs_cpu_range_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
+    (void) n;
+    char tmp[64];
+    uint32_t ncpus = g_cpu_count;
+    if (ncpus > MAX_CPUS) ncpus = MAX_CPUS;
+    int sz;
+    if (ncpus <= 1)
+        sz = snprintf(tmp, sizeof(tmp), "0\n");
+    else
+        sz = snprintf(tmp, sizeof(tmp), "0-%u\n", ncpus - 1);
+    return read_buf(buf, len, off, tmp, (uint64_t) sz);
+}
+
+static int64_t sysfs_cpu_online_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
+    (void) n;
+    static const char on[] = "1\n";
+    return read_buf(buf, len, off, on, sizeof(on) - 1);
+}
+
 void procfs_init(void) {
     vfs_mkdir_p("/proc", 0555);
     vfs_mkdir_p("/proc/self", 0555);
@@ -877,6 +978,22 @@ void procfs_init(void) {
 
     vfs_node_t *ll = vfs_create_chr("/proc/loglevel", proc_loglevel_read, proc_loglevel_write);
     if (ll) ll->mode = S_IFCHR | 0644;
+
+    vfs_mkdir_p("/sys/devices/system/cpu", 0555);
+    vfs_create_chr("/sys/devices/system/cpu/possible", sysfs_cpu_range_read, NULL);
+    vfs_create_chr("/sys/devices/system/cpu/present", sysfs_cpu_range_read, NULL);
+    vfs_create_chr("/sys/devices/system/cpu/online", sysfs_cpu_range_read, NULL);
+
+    uint32_t ncpus = g_cpu_count;
+    if (ncpus > MAX_CPUS) ncpus = MAX_CPUS;
+    for (uint32_t i = 0; i < ncpus; i++) {
+        char cpudir[64];
+        snprintf(cpudir, sizeof(cpudir), "/sys/devices/system/cpu/cpu%u", i);
+        vfs_mkdir_p(cpudir, 0555);
+        char cpuonline[80];
+        snprintf(cpuonline, sizeof(cpuonline), "%s/online", cpudir);
+        vfs_create_chr(cpuonline, sysfs_cpu_online_read, NULL);
+    }
 
 #ifdef CONFIG_KMEMLEAK
     vfs_node_t *kml = vfs_create_chr("/proc/kmemleak", proc_kmemleak_read, NULL);

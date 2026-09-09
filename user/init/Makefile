@@ -6,13 +6,16 @@ OUT := ../../build/bin/kyronix-init
 FNO_LINK_LIBATOMIC := $(shell echo 'int main(void){return 0;}' | $(CC) -x c - -fno-link-libatomic -o /dev/null 2>/dev/null && echo '-fno-link-libatomic')
 CFLAGS += $(FNO_LINK_LIBATOMIC)
 
+include ../../mk/output.mk
+
 .PHONY: all clean
 
 all: $(OUT)
 
 $(OUT): init.c
-	mkdir -p ../../build/bin
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ init.c
+	@$(call step,CC $<)
+	@mkdir -p ../../build/bin
+	@$(CC) $(CFLAGS) $(LDFLAGS) -o $@ init.c
 
 clean:
 	rm -f $(OUT)
