@@ -6,6 +6,3 @@ ntpd:/bin/ntpd --quiet
 
 # authenticates and starts shell from /etc/passwd
 login:/bin/login
-
-# # desktop workspace
-# weston:/usr/bin/startw

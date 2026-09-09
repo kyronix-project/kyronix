@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal
+Comment=Weston terminal emulator
+Icon=utilities-terminal
+Exec=weston-terminal
+Categories=System;TerminalEmulator;

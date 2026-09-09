@@ -74,19 +74,22 @@ $(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROO
 
 # --- weston variant (desktop) ---
 $(WESTON_INITRD): $(INITRD_ROOT) $(OS_RELEASE) rootfs/etc/rc.conf.weston
-	cp rootfs/etc/rc.conf.weston $(INITRD_ROOT)/etc/rc.conf
-	@cd $(INITRD_ROOT) && find . -not -name '.gitignore' | sort | \
+	@cp -a $(INITRD_ROOT) $(BUILD)/initrd-root-weston
+	@cp rootfs/etc/rc.conf.weston $(BUILD)/initrd-root-weston/etc/rc.conf
+	@cd $(BUILD)/initrd-root-weston && find . -not -name '.gitignore' | sort | \
 	    cpio -o --format=newc --owner=0:0 --reproducible \
 	    > "$(abspath $(WESTON_INITRD))" 2>/dev/null
+	@rm -rf $(BUILD)/initrd-root-weston
 	@echo "  Built: $(WESTON_INITRD)"
 
 # --- console variant (login shell) ---
-# depends on WESTON_INITRD to serialize shared INITRD_ROOT usage
-$(CONSOLE_INITRD): $(INITRD_ROOT) $(WESTON_INITRD) $(OS_RELEASE) rootfs/etc/rc.conf.console
-	cp rootfs/etc/rc.conf.console $(INITRD_ROOT)/etc/rc.conf
-	@cd $(INITRD_ROOT) && find . -not -name '.gitignore' | sort | \
+$(CONSOLE_INITRD): $(INITRD_ROOT) $(OS_RELEASE) rootfs/etc/rc.conf.console
+	@cp -a $(INITRD_ROOT) $(BUILD)/initrd-root-console
+	@cp rootfs/etc/rc.conf.console $(BUILD)/initrd-root-console/etc/rc.conf
+	@cd $(BUILD)/initrd-root-console && find . -not -name '.gitignore' | sort | \
 	    cpio -o --format=newc --owner=0:0 --reproducible \
 	    > "$(abspath $(CONSOLE_INITRD))" 2>/dev/null
+	@rm -rf $(BUILD)/initrd-root-console
 	@echo "  Built: $(CONSOLE_INITRD)"
 
 define build_iso

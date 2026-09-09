@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Shell
+Comment=Kyronix ksh
+Icon=shell
+Exec=ksh
+Categories=System;TerminalEmulator;

@@ -52,6 +52,7 @@ clean:
 	rm -f test.log
 	rm -f $(ISO) $(TEST_ISO)
 	rm -f $(BUILD)/initrd-weston.cpio $(BUILD)/initrd-console.cpio
+	rm -rf $(BUILD)/initrd-root-weston $(BUILD)/initrd-root-console
 	rm -f $(DIST)/kernel.elf $(DIST)/kyronix-boot.fat
 	rm -f $(DIST)/test-initrd.cpio $(DIST)/test-disk.img $(DIST)/disk.img
 	rm -f $(DIST)/kyronix-*-$(ARCH).iso
