@@ -12,4 +12,5 @@ LWIP   := kernel/net/lwip/src
 
 $(BUILD)/libatomic_asneeded.a:
 	@mkdir -p $(@D)
-	ar rcs $@
+	@$(call step,AR $@)
+	@ar rcs $@

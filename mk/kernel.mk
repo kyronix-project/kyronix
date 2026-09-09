@@ -10,7 +10,8 @@ KERNEL_INSTRUMENT_CFLAGS = \
 
 $(KERNEL_CONFIG): $(KERNEL_CONFIG_SRC)
 	@mkdir -p $(@D)
-	cp -f $(KERNEL_CONFIG_SRC) $@
+	@$(call step,CP  $@)
+	@cp -f $(KERNEL_CONFIG_SRC) $@
 
 CFLAGS := \
 	-std=c11 -O2 -DNDEBUG \
@@ -157,33 +158,49 @@ KALLSYMS_OBJ := $(BUILD)/kernel/kallsyms_data.o
 KALLSYMS_SEED_OBJ := $(BUILD)/kernel/lib/kallsyms_seed.o
 KERNEL_PRE := $(BUILD)/kernel.pre.elf
 
+# Prints the ">>> Kernel" phase banner exactly once per build tree via an
+# atomic mkdir guard (safe under -j parallel compilation).
+KERNEL_PHASE_GUARD := \
+	@mkdir -p $(BUILD); if mkdir $(BUILD)/.kernel-phase 2>/dev/null; then $(call phase,Kernel); fi
+
 $(KERNEL): $(KERNEL_OBJS) $(KALLSYMS_OBJ) linker.ld $(KERNEL_CONFIG)
 	@mkdir -p $(@D)
-	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS) $(KALLSYMS_OBJ)
+	@$(call step,LD $@)
+	@$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS) $(KALLSYMS_OBJ)
+	@$(call ok,$(KERNEL))
 
 $(KERNEL_PRE): $(KERNEL_OBJS) $(KALLSYMS_SEED_OBJ) linker.ld $(KERNEL_CONFIG)
 	@mkdir -p $(@D)
-	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS) $(KALLSYMS_SEED_OBJ)
+	@$(call step,LD $@)
+	@$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS) $(KALLSYMS_SEED_OBJ)
 
 $(BUILD)/%.o: %.c $(KERNEL_CONFIG)
+	$(KERNEL_PHASE_GUARD)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) $(KERNEL_INSTRUMENT_CFLAGS) -MMD -MP -c $< -o $@
+	@$(call step,CC $<)
+	@$(CC) $(CFLAGS) $(KERNEL_INSTRUMENT_CFLAGS) -MMD -MP -c $< -o $@
 
 $(BUILD)/%.o: %.S
+	$(KERNEL_PHASE_GUARD)
 	@mkdir -p $(@D)
-	$(CC) -m64 -march=x86-64 -c $< -o $@
+	@$(call step,AS $<)
+	@$(CC) -m64 -march=x86-64 -c $< -o $@
 
 $(VIRTIO_NET_MODULE): kernel/drivers/net/virtio_net.c kernel/module.h $(KERNEL_CONFIG)
+	$(KERNEL_PHASE_GUARD)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) $(KERNEL_INSTRUMENT_CFLAGS) -fno-asynchronous-unwind-tables -MMD -MP -c $< -o $@
+	@$(call step,CC $<)
+	@$(CC) $(CFLAGS) $(KERNEL_INSTRUMENT_CFLAGS) -fno-asynchronous-unwind-tables -MMD -MP -c $< -o $@
 
 $(E1000_MODULE): kernel/drivers/net/e1000.c kernel/drivers/net/e1000.h kernel/module.h $(KERNEL_CONFIG)
+	$(KERNEL_PHASE_GUARD)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) $(KERNEL_INSTRUMENT_CFLAGS) -fno-asynchronous-unwind-tables -MMD -MP -c $< -o $@
+	@$(call step,CC $<)
+	@$(CC) $(CFLAGS) $(KERNEL_INSTRUMENT_CFLAGS) -fno-asynchronous-unwind-tables -MMD -MP -c $< -o $@
 
 $(KALLSYMS_SRC): $(KERNEL_PRE) mk/kernel.mk
-	@echo "  GEN     $@"
 	@mkdir -p $(@D)
+	@$(call step,GEN $@)
 	@nm -n -g --defined-only $(KERNEL_PRE) | \
 	awk 'BEGIN { n = 0; \
 	             print "#include <stdint.h>"; \
@@ -195,11 +212,12 @@ $(KALLSYMS_SRC): $(KERNEL_PRE) mk/kernel.mk
 	           for (i = 0; i < n; i++) \
 	               printf "    { (uint64_t)(uintptr_t)&%s[0], \"%s\" },\n", names[i], names[i]; \
 	           print "};"; print "const int kallsyms_num = " n ";" }' > $@.tmp
-	mv $@.tmp $@
+	@mv $@.tmp $@
 
 $(KALLSYMS_OBJ): $(KALLSYMS_SRC) $(KERNEL_CONFIG)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) $(KERNEL_INSTRUMENT_CFLAGS) -MMD -MP -c $(KALLSYMS_SRC) -o $@
+	@$(call step,CC $<)
+	@$(CC) $(CFLAGS) $(KERNEL_INSTRUMENT_CFLAGS) -MMD -MP -c $(KALLSYMS_SRC) -o $@
 
 .PHONY: _kallsyms
 _kallsyms: $(KALLSYMS_SRC)

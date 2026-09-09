@@ -6,6 +6,8 @@ OUT := ../../build/bin
 FNO_LINK_LIBATOMIC := $(shell echo 'int main(void){return 0;}' | $(CC) -x c - -fno-link-libatomic -o /dev/null 2>/dev/null && echo '-fno-link-libatomic')
 CFLAGS += $(FNO_LINK_LIBATOMIC)
 
+include ../../mk/output.mk
+
 SRCS := testrunner.c tests_fs.c tests_proc.c tests_signal.c tests_ipc.c tests_time.c tests_io.c tests_misc.c tests_modules.c tests_utils.c tests_jail.c tests_disk.c tests_smp.c tests_tmp117.c tests_spi.c
 
 .PHONY: all clean
@@ -13,8 +15,9 @@ SRCS := testrunner.c tests_fs.c tests_proc.c tests_signal.c tests_ipc.c tests_ti
 all: $(OUT)/testrunner
 
 $(OUT)/testrunner: $(SRCS) test_harness.h Makefile
-	mkdir -p $(OUT)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(SRCS)
+	@$(call step,LD $@)
+	@mkdir -p $(OUT)
+	@$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(SRCS)
 
 clean:
 	rm -f $(OUT)/testrunner

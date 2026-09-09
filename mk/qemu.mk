@@ -16,6 +16,7 @@ QEMU_DISK_ARGS = \
 .PHONY: run boot
 
 run: $(ISO) $(DISK)
+	@$(call phase,Launching QEMU (live ISO))
 	$(QEMU) \
 	    -M q35 $(QEMU_ACCEL_ARGS) -smp 4 -m 2G \
 	    -cdrom $(ISO) -boot d \
@@ -25,6 +26,7 @@ run: $(ISO) $(DISK)
 	    $(QEMU_DISK_ARGS)
 
 boot: $(DISK)
+	@$(call phase,Launching QEMU (installed disk))
 	$(QEMU) \
 	    -M q35 $(QEMU_ACCEL_ARGS) -smp 4 -m 2G \
 	    -boot c -serial stdio \

@@ -10,16 +10,20 @@ OBJS := $(SRCS:.c=.o)
 FNO_LINK_LIBATOMIC := $(shell echo 'int main(void){return 0;}' | $(CC) -x c - -fno-link-libatomic -o /dev/null 2>/dev/null && echo '-fno-link-libatomic')
 CFLAGS += $(FNO_LINK_LIBATOMIC)
 
+include ../../../mk/output.mk
+
 .PHONY: all clean
 
 all: $(OUT)/pkg
 
 $(OUT)/pkg: $(OBJS)
-	mkdir -p $(OUT)
-	$(CC) $(LDFLAGS) -o $@ $^
+	@$(call step,LD $@)
+	@mkdir -p $(OUT)
+	@$(CC) $(LDFLAGS) -o $@ $^
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+	@$(call step,CC $<)
+	@$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
 	rm -f $(OBJS) $(OUT)/pkg

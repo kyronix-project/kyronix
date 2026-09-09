@@ -4,14 +4,17 @@ LDFLAGS ?= -shared -Wl,-soname,libudev.so.1 -Wl,--version-script=libudev.map
 OUT := ../../build/lib/libudev.so.1
 ROOTFS := ../../rootfs
 
+include ../../mk/output.mk
+
 .PHONY: all clean install
 
 all: $(OUT)
 
 $(OUT): libudev.c libudev.map Makefile
-	mkdir -p ../../build/lib
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ libudev.c
-	@echo "  libudev: $(OUT)"
+	@$(call step,CC $<)
+	@mkdir -p ../../build/lib
+	@$(CC) $(CFLAGS) $(LDFLAGS) -o $@ libudev.c
+	@$(call ok,$(OUT))
 
 install: all
 	mkdir -p $(ROOTFS)/usr/lib

@@ -17,15 +17,20 @@ CONTAINER_TAG     ?= latest
 ifneq ($(strip $(CRUNTIME)),)
 ifeq ($(strip $(INSIDE_CONTAINER)),)
 
+include mk/output.mk
+
 REQUESTED_GOALS := $(if $(MAKECMDGOALS),$(MAKECMDGOALS),iso)
 
 .PHONY: container-build container-run $(REQUESTED_GOALS)
 
 container-build:
+	@$(call phase,Building container image)
 	$(CONTAINER_RUNTIME) build --layers \
 	    -t $(CONTAINER_IMAGE):$(CONTAINER_TAG) -f Containerfile .
+	@$(call ok,container image ready)
 
 container-run: container-build
+	@$(call phase,Running build inside container)
 	$(CONTAINER_RUNTIME) run --rm \
 	    -v $(CURDIR):/src:Z -w /src \
 	    $(CONTAINER_IMAGE):$(CONTAINER_TAG) \

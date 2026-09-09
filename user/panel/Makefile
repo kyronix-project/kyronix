@@ -23,6 +23,8 @@ ROOTFS  := ../../rootfs
 SRCS := main.c panel.c clock.c menu.c style.c de.c taskbar.c icons.c
 OBJS := $(SRCS:.c=.o)
 
+include ../../mk/output.mk
+
 .PHONY: all install clean check-musl check-pkgconf
 
 all: check-musl check-pkgconf $(OUT)
@@ -38,10 +40,12 @@ check-pkgconf:
 
 $(OUT): $(OBJS)
 	@mkdir -p $(dir $(OUT))
-	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDLIBS)
+	@$(call step,LD $@)
+	@$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDLIBS)
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+	@$(call step,CC $<)
+	@$(CC) $(CFLAGS) -c -o $@ $<
 
 install: all
 	@mkdir -p $(ROOTFS)/usr/bin
