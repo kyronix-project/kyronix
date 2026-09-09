@@ -10,6 +10,7 @@
 #include "arch/x86_64/syscall_setup.h"
 #include "boot/limine.h"
 #include "drivers/video/fb.h"
+#include "proc/loadavg.h"
 #include "proc/smp.h"
 #include "version.h"
 
@@ -323,6 +324,8 @@ void kmain(void) {
     kstatus("Initialising syscalls", true);
     proc_init();
     kstatus("Initialising scheduler", true);
+    loadavg_init();
+    kstatus("Initialising load average", true);
     jail_init();
     kstatus("Initialising jails", true);
     phantom_init();

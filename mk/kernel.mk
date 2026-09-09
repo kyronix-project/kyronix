@@ -64,6 +64,7 @@ KERNEL_C_SRCS := \
 	kernel/proc/jail.c \
 	kernel/proc/signal.c \
 	kernel/proc/smp.c \
+	kernel/proc/loadavg.c \
 	kernel/fs/ext2.c \
 	kernel/fs/vfs.c \
 	kernel/fs/devfs.c \
