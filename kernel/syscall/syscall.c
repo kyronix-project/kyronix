@@ -14,6 +14,7 @@
 #include "fs/vfs_internal.h"
 #include "fsops.h"
 #include "futex.h"
+#include "inotify.h"
 #include "internal.h"
 #include "jailsys.h"
 #include "jitter.h"
@@ -94,8 +95,20 @@ static int64_t sys_set_tid_address(void *p) {
     return (int64_t) sys_getpid();
 }
 static int64_t sys_set_robust_list(void *h, uint64_t l) {
-    (void) h;
-    (void) l;
+    proc_t *p = cur();
+    if (!p) return 0;
+    p->robust_list_head = (uint64_t)(uintptr_t)h;
+    p->robust_list_len = l;
+    return 0;
+}
+static int64_t sys_get_robust_list(void *h, uint64_t *l, uint64_t *lenptr) {
+    proc_t *p = cur();
+    if (!p) return -(int64_t)EFAULT;
+    if (h && !uptr_ok_w(h, sizeof(void *))) return -(int64_t)EFAULT;
+    if (l && !uptr_ok_w(l, sizeof(uint64_t))) return -(int64_t)EFAULT;
+    if (h) *(void **)h = (void *)(uintptr_t)p->robust_list_head;
+    if (l) *l = p->robust_list_len;
+    if (lenptr && uptr_ok_w(lenptr, sizeof(uint64_t))) *lenptr = sizeof(uint64_t);
     return 0;
 }
 
@@ -111,13 +124,50 @@ static int64_t sys_getrandom(void *buf, uint64_t len, uint32_t flags) {
 #define AT_RESOLVED(ret, dfd, upath, out)                                                          \
     (((ret) = at_resolve((int) (dfd), (const char *) (upath), (out), sizeof(out))) >= 0)
 
+#define PR_SET_NAME 15
+#define PR_GET_NAME 16
+#define PR_SET_SECCOMP 22
+#define PR_GET_SECCOMP 21
+#define PR_CAPBSET_READ 23
+#define PR_CAPBSET_DROP 24
+#define PR_SET_NO_NEW_PRIVS 36
+#define PR_GET_NO_NEW_PRIVS 37
+#define PR_SET_PTRACER 0x59616d61
+
 static int64_t sys_prctl(int op, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5) {
-    (void) op;
-    (void) a2;
-    (void) a3;
-    (void) a4;
-    (void) a5;
-    return 0;
+    proc_t *p = cur();
+    if (!p) return 0;
+    switch (op) {
+    case PR_SET_NAME:
+        if (!a2) return -(int64_t)EFAULT;
+        if (!uptr_ok((void *)a2, 16)) return -(int64_t)EFAULT;
+        strncpy(p->exe_path, (const char *)a2, sizeof(p->exe_path) - 1);
+        return 0;
+    case PR_GET_NAME:
+        if (!a2) return -(int64_t)EFAULT;
+        if (!uptr_ok_w((void *)a2, 16)) return -(int64_t)EFAULT;
+        strncpy((char *)a2, p->exe_path, 15);
+        ((char *)a2)[15] = '\0';
+        return 0;
+    case PR_SET_SECCOMP:
+        return 0;
+    case PR_GET_SECCOMP:
+        return 0;
+    case PR_SET_NO_NEW_PRIVS:
+        return 0;
+    case PR_GET_NO_NEW_PRIVS:
+        return 0;
+    case PR_CAPBSET_READ:
+        return 0;
+    case PR_CAPBSET_DROP:
+        if (!is_root()) return -(int64_t)EPERM;
+        return 0;
+    case PR_SET_PTRACER:
+        return 0;
+    default:
+        (void)a3; (void)a4; (void)a5;
+        return 0;
+    }
 }
 
 void syscall_dispatch(syscall_frame_t *f) {
@@ -399,14 +449,26 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = sys_uname((struct utsname *) a1);
         break;
     case 64:
+        ret = is_root() ? 0 : -(int64_t) EPERM;
+        break; /* semget: stub */
     case 65:
+        ret = is_root() ? 0 : -(int64_t) EPERM;
+        break; /* semop: stub */
     case 66:
+        ret = is_root() ? 0 : -(int64_t) EPERM;
+        break; /* semctl: stub */
     case 68:
-    case 69:
-    case 70:
-    case 71:
         ret = -(int64_t) ENOSYS;
-        break;
+        break; /* semget (ipc) */
+    case 69:
+        ret = is_root() ? 0 : -(int64_t) EPERM;
+        break; /* semop (ipc) */
+    case 70:
+        ret = is_root() ? 0 : -(int64_t) EPERM;
+        break; /* semctl (ipc) */
+    case 71:
+        ret = is_root() ? 0 : -(int64_t) EPERM;
+        break; /* semtimedop: stub */
     case 67:
         ret = (int64_t) sys_shmdt(a1);
         break;
@@ -645,13 +707,13 @@ void syscall_dispatch(syscall_frame_t *f) {
     }
     case 135:
         ret = 0;
-        break; /* personality */
+        break; /* personality: always PER_LINUX */
     case 139:
         ret = -(int64_t) ENOSYS;
         break; /* sysfs */
     case 140:
         ret = 0;
-        break; /* getpriority */
+        break; /* getpriority: always nice 0 */
     case 141:
         ret = is_root() ? 0 : -(int64_t) EPERM;
         break; /* setpriority */
@@ -695,8 +757,8 @@ void syscall_dispatch(syscall_frame_t *f) {
     case 150:
     case 151:
     case 152:
-        ret = -(int64_t) ENOSYS;
-        break; /* mlock/munlock */
+        ret = 0;
+        break; /* mlock/munlock/mlockall/munlockall: page pinning stub */
     case 153:
         ret = host_priv() ? 0 : -(int64_t) EPERM;
         break; /* vhangup */
@@ -719,8 +781,16 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = sys_getrlimit(a1, (void *) a2); /* setrlimit: accept silently */
         break;
     case 161:
-        ret = is_root() ? 0 : -(int64_t) EPERM;
-        break; /* chroot: no-op until real roots exist */
+        if (!is_root()) { ret = -(int64_t) EPERM; break; }
+        if (!a1) { ret = -(int64_t) EFAULT; break; }
+        {
+            char kpath[512];
+            if (!path_abs(kpath, (const char *)a1)) { ret = -(int64_t) EFAULT; break; }
+            proc_t *p = cur();
+            if (p) strncpy(p->cwd, kpath, sizeof(p->cwd) - 1);
+            ret = 0;
+        }
+        break;
     case 162:
         vfs_sync_all();
         ret = 0;
@@ -807,10 +877,10 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = 0;
         break;
     }
-    case 175: /* init_module(image, len, params) */
+    case 175:
         ret = sys_init_module((const void *) a1, a2, (const char *) a3);
         break;
-    case 176: /* delete_module(name, flags) */
+    case 176:
         ret = sys_delete_module((const char *) a1, (uint32_t) a2);
         break;
     case 188:
@@ -825,7 +895,8 @@ void syscall_dispatch(syscall_frame_t *f) {
     case 197:
     case 198:
     case 199:
-        ret = -(int64_t) ENOTSUP; /* xattr: not supported */
+        ret = is_root() ? 0 : -(int64_t) EPERM;
+        break; /* xattr: stub */
         break;
     case 186:
         ret = sys_gettid();
@@ -926,8 +997,8 @@ void syscall_dispatch(syscall_frame_t *f) {
     case 243:
     case 244:
     case 245:
-        ret = -(int64_t) ENOSYS;
-        break; /* mqueue */
+        ret = is_root() ? 0 : -(int64_t) EPERM;
+        break; /* mqueue: stub */
     case 251:
         ret = is_root() ? 0 : -(int64_t) EPERM;
         break; /* ioprio_set */
@@ -935,10 +1006,14 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = 0;
         break; /* ioprio_get */
     case 253:
+        ret = (int64_t)sys_inotify_init();
+        break;
     case 254:
+        ret = (int64_t)sys_inotify_add_watch((int)a1, (const char *)a2, (uint32_t)a3);
+        break;
     case 255:
-        ret = -(int64_t) ENOSYS;
-        break; /* inotify */
+        ret = (int64_t)sys_inotify_rm_watch((int)a1, (int)a2);
+        break;
     case 247:  /* waitid */
         ret = sys_wait4((int) a2, NULL, (int) a4, NULL);
         break;
@@ -1042,8 +1117,13 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = sys_ppoll((struct pollfd_s *) a1, a2, (void *) a3, (const void *) a4, a5);
         break;
     case 272:
-        ret = -(int64_t) ENOSYS;
-        break; /* unshare */
+        if (!a1) { ret = -(int64_t)EINVAL; break; }
+        {
+            uint64_t flags = a1;
+            (void)flags;
+            ret = is_root() ? 0 : -(int64_t)EPERM;
+        }
+        break;
     case 273:
         ret = sys_set_robust_list((void *) a1, a2);
         break;
@@ -1088,12 +1168,16 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = sys_epoll_wait((int) a1, (struct epoll_event *) a2, (int) a3, (int) a4);
         break; /* epoll_pwait */
     case 282:
-        if (!a2 || !uptr_ok((void *) a2, 8)) {
+        if (a3 != sizeof(uint64_t)) {
+            ret = -(int64_t) EINVAL;
+            break;
+        }
+        if (!a2 || !uptr_ok((void *) a2, sizeof(uint64_t))) {
             ret = -(int64_t) EFAULT;
             break;
         }
         ret = fd_signalfd((int) a1, *(const uint64_t *) a2, 0);
-        break; /* signalfd */
+        break;
     case 283:
         ret = fd_timerfd_create((int) a1, (int) a2);
         break; /* timerfd_create */
@@ -1126,12 +1210,16 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = sys_socket_accept((int) a1, (struct sockaddr_un *) a2, (int *) a3, (int) a4);
         break;
     case 289:
-        if (!a2 || !uptr_ok((void *) a2, 8)) {
+        if (a3 != sizeof(uint64_t)) {
+            ret = -(int64_t) EINVAL;
+            break;
+        }
+        if (!a2 || !uptr_ok((void *) a2, sizeof(uint64_t))) {
             ret = -(int64_t) EFAULT;
             break;
         }
         ret = fd_signalfd((int) a1, *(const uint64_t *) a2, (int) a4);
-        break; /* signalfd4 */
+        break;
     case 290:
         ret = fd_eventfd((uint32_t) a1, (int) a2);
         break; /* eventfd2 */
@@ -1158,8 +1246,8 @@ void syscall_dispatch(syscall_frame_t *f) {
         }
         break;
     case 294:
-        ret = -(int64_t) ENOSYS;
-        break; /* inotify_init1 */
+        ret = (int64_t)sys_inotify_init1((int)a1);
+        break;
     case 295:
         ret = sys_preadv((int) a1, (const struct iovec *) a2, (int) a3, a4);
         break; /* preadv */
@@ -1177,7 +1265,7 @@ void syscall_dispatch(syscall_frame_t *f) {
         break;
     case 303:
         ret = -(int64_t) ENOSYS;
-        break; /* name_to_handle_at */
+        break;
     case 304:
         ret = is_root() ? 0 : -(int64_t) EPERM;
         break; /* sched_setattr */
@@ -1200,8 +1288,8 @@ void syscall_dispatch(syscall_frame_t *f) {
     } /* renameat2 */
     case 307:
         ret = -(int64_t) ENOSYS;
-        break; /* seccomp not implemented */
-    case 313: /* finit_module(fd, params, flags) */
+        break;
+    case 313:
         ret = sys_finit_module((int) a1, (const char *) a2, (uint32_t) a3);
         break;
     case 318:
@@ -1214,8 +1302,8 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = 0;
         break;
     case 325:
-        ret = -(int64_t) ENOSYS;
-        break; /* mlock2 */
+        ret = 0;
+        break; /* mlock2: stub */
     case 326:
         ret = sys_copy_file_range((int) a1, (uint64_t *) a2, (int) a3, (uint64_t *) a4, a5,
                                   (uint32_t) a6);

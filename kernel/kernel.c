@@ -15,6 +15,11 @@
 #include "version.h"
 
 #include "crypto/chacha20.h"
+#include "auth/auth.h"
+#include "drivers/netdev.h"
+#include "drivers/server.h"
+#include "drivers/usb/usb.h"
+#include "net/net.h"
 #include "drivers/acpi/acpi.h"
 #include "drivers/ata/ahci.h"
 #include "drivers/block/block.h"
@@ -346,17 +351,17 @@ void kmain(void) {
         kstatus("Mounting /dev/pts", _n != NULL);
         vfs_node_unref_internal(_n);
     }
-    pci_enumerate();
-    kstatus("Enumerating PCI", true);
     acpi_init(rsdp_req.response ? (uint64_t) rsdp_req.response->address : 0);
     kstatus("Initialising ACPI", acpi_available());
+    int n_ecam = server_tables_init();
+    pci_use_ecam(n_ecam > 0);
+    if (n_ecam > 0) kstatus("Server platform (ECAM/NUMA/IOAPIC)", true);
+    pci_enumerate();
+    kstatus("Enumerating PCI", true);
     block_init();
     ahci_init();
     kstatus("Initialising AHCI", ahci_ready());
-    blockdev_init();
-    partition_scan_all();
-    blockdev_create_all();
-    kstatus("Initialising block devices", true);
+    netdev_init();
     uio_init();
     kstatus("Initialising UIO", true);
     fbdev_init();
@@ -419,6 +424,17 @@ void kmain(void) {
     }
 
     sti();
+    usbhid_init();
+    usbms_init();
+    usb_init();
+    kstatus("Initialising USB stack", usb_ready());
+    blockdev_init();
+    partition_scan_all();
+    blockdev_create_all();
+    kstatus("Initialising block devices", true);
+    rtl8139_init();
+    rtl8169_init();
+    ath5k_init();
     ps2mouse_init();
     kstatus("Initialising PS/2 mouse", true);
     kprintf("\n");
@@ -573,6 +589,9 @@ void kmain(void) {
         kstatus("Mounting fstab entries", fstab_ok);
     }
 
+    auth_init();
+    kstatus("Loading user database", auth_passwd_count() > 0);
+
     {
         int result = module_load_path("/lib/modules/virtio_net.ko");
         if (result == 0) {
@@ -585,6 +604,7 @@ void kmain(void) {
             kstatus("Loading e1000 module", true);
         }
     }
+    net_init();
 
     {
         vfs_node_t *init_node = vfs_lookup("/init");

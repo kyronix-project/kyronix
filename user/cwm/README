@@ -1,0 +1,167 @@
+This is a port of OpenBSD's excellent cwm[0] to Linux and other Unices.
+
+    cwm is a window manager for X11 which contains many features that
+    concentrate on the efficiency and transparency of window
+    management.  cwm also aims to maintain the simplest and most
+    pleasant aesthetic.
+
+This port requires pkg-config, Xft, Xinerama and Xrandr.  The included Makefile
+should work with both GNU make and BSD make.  It has been built successfully on
+OpenBSD, FreeBSD, NetBSD, OS X 10.9 and Linux.
+
+This version actively tracks changes in the OpenBSD CVS repository.
+Releases are roughly coordinated.
+
+The revision controlled version is at https://github.com/leahneukirchen/cwm
+Releases can be found at http://leahneukirchen.org/releases
+
+You are welcome to join the IRC channel ##cwm on irc.libera.chat
+to talk about cwm.
+
+
+ChangeLog:
+
+2012-05-02: First public release 5.1 of portable cwm.
+
+2014-04-13: Second public release 5.5 of portable cwm.
+
+User visible changes (for a full list including smaller bug fixes, see
+http://www.openbsd.org/plus.html ff.)
+
+Changes made between OpenBSD 5.1 and 5.2
+* Fixed cwm(1) atom (WM_PROTOCOLS) style handing; closing a window will no
+  longer close entire application if the client supports CLIENT_PROTO_DELETE.
+* Re-implement atom handing for more consistent separation of cwm(1) and
+  Extended Window Manager Hints.
+* cwm(1) better integrated into the freedesktop.org Window Manager
+  Specification Project.
+
+Changes made between OpenBSD 5.2 and 5.3
+* Set the initial cwm(1) group to "1".
+* Added cwm(1) per-group vert/horiz tiling support with new bind commands
+  "vtile" and "htile."
+* Made cwm(1) screen font an Xft(3) font.
+* Specific last match for autogroup in cwmrc(5).
+* Tab completion support for cwm(1) menus.
+* Allow cwm(1) clients to be resized from a max state.
+* Multibyte input to cwm(1) menu code now possible.
+
+Changes made between OpenBSD 5.3 and 5.4
+* Added support for mouse based group {,r}cycle to cwmrc(5).
+* Allow mouse button4 and button5 in cwmrc(5).
+* Made cwm(1) check for, and honour, CWStackMode and CWSibling change requests
+  during a ConfigureRequest event.
+* Honour PATH search order for cwm(1)'s exec.
+
+Changes made between OpenBSD 5.5 and 5.4
+* Only set the cwm(1) urgency flag if the client is not active.
+* Allow the cwm(1) config parser continue parsing even after encountering an
+  error.
+* cwm(1) now follows the EWMH spec: if the cardinal returned is 0xFFFFFFFF (-1)
+  then the window should appear on all desktops.
+* Made cwm(1) supply a more useful title for windows launched via the ssh(1)
+  command menu ("[ssh] ").
+* Allowed cwm(1) to accept _NET_WM_DESKTOP and _NET_CURRENT_DESKTOP
+  ClientMessage.
+* Implemented cwm(1) support for _NET_WM_STATE_FULLSCREEN hint, with keybinding
+  changes: CM-f "fullscreen", CM-m "maximize".
+* Instead of using the work area, use the Xinerama area for cwm(1) snap
+  calculations.
+* Save-set when cwm(1) is re-exec'ing so as to not lose State on our hidden
+  clients.
+* Added cwmrc(5) support for XUrgency and matching
+  _NET_WM_STATE_DEMANDS_ATTENTION ewmh hint, with configurable urgencyborder.
+* Prepend the group shortcut in the cwm(1) client search menu;
+  prepend shortcut in unhide menu.
+* If not hidden during an UnmapNotify event, cwm(1) will now un-manage the
+  client.
+* Like "gap", made cwm(1) "snapdist" per-screen.
+* Removed cwmrc(5) option to bind a key by keycode with brackets, which never
+  worked. Users should be using keysym names not keycodes.
+* Re-added cwm(1) support for WM_TAKE_FOCUS. Solves keyboard input focus loss
+  for java apps.
+* For cwm(1) clients that support WM_TAKE_FOCUS in their WM_PROTOCOLS property,
+  send a ClientMessage event.
+
+2015-01-24: Third public release 5.6 of portable cwm.
+
+* Support building on FreeBSD and OS X.
+* Support for sticky windows (_NET_WM_STATE_STICKY).
+* Internal cleanups and bug fixes.
+
+Changes made between OpenBSD 5.6 and 5.7
+* Implemented _NET_WM_STATE_STICKY in cwm(1). Allows client to "stick"
+  to all desktops or groups.
+* Ensure cwm(1) client that wants to be in nogroup stays in nogroup
+  (thus stays in view), even when (re)reading NET_WM_DESKTOP. 
+
+Changes made between OpenBSD 5.7 and 5.8
+* In cwm(1), introduce "groupsearch" for group menu search. 
+* In cwm(1), show an empty "ssh to" menu if the known_hosts file is missing. 
+* In cwm(1), replace screen region info gathering with XRandR
+  equivalent of Xinerama queries. 
+
+Changes made between OpenBSD 5.8 and 5.9
+* Don't allow freeze operations on fullscreen.
+* Implement _NET_CLIENT_LIST_STACKING. 
+
+2017-10-17: Fourth public release 6.2 of portable cwm.
+
+Changes made between OpenBSD 6.2 and 6.3
+* Fix blocking bug during moving or resizing.
+* window-snap-* commands to move windows to edges and corners.
+* Add support for _NET_WM_STATE_SKIP_PAGER and _NET_WM_STATE_SKIP_TASKBAR.
+* Add support for re-exec'ing with SIGHUP.
+
+2018-05-14: Fifth public release 6.3 of portable cwm.
+
+2020-01-04: Sixth public release 6.6 of portable cwm.
+
+Changes made between OpenBSD 6.4 and 6.5
+* Added a configtest flag (-n) to cwm(1).
+* Introduced 'group-close-[n]' action to cwm(1) to close all windows
+  within a specified group.
+
+2020-05-22: Seventh public release 6.7 of portable cwm.
+
+Changes made between OpenBSD 6.6 and 6.7
+* Allowed cwm(1) configuration of window size based on percentage of
+  the master window during horizontal and vertical tiling actions.
+* Allowed use of window-htile and window-vtile with the "empty" group
+  clients in cwm(1).
+
+2022-04-30: Eighth public release 7.1 of portable cwm.
+
+Changes made between OpenBSD 6.9 and 7.0
+* Changed cwm(1) maximization and full-screen mode toggling to keep
+  the cursor within the window, preventing focus loss.
+
+Changes made between OpenBSD 7.0 and 7.1
+* Added a cwm(1) "group-last" command that shows only the previously
+  active group.
+* Allowed bare numbers for key and mouse bindings in cwm(1).
+
+2023-10-20: Ninth public release 7.4 of portable cwm.
+
+Changes made between OpenBSD 7.3 and 7.4:
+* Allow cwm(1) to cycle through windows of the same window class as
+  the active window, default key binding to M-grave, respectively
+  Alt-Tilde, like with other window managers.
+
+2026-05-19: Tenth public release 7.9 of portable cwm.
+
+Changes made between OpenBSD 7.6 and 7.7:
+* Grab the pointer against the root window instead of the client we're
+  attempting to move and/or resize; prevents XNextEvent() from
+  blocking on a client that might have been moved to a Withdrawn
+  state.
+
+Changes made between OpenBSD 7.7 and 7.8:
+* Add cwmrc(5) window-snap-center function.
+
+Changes made between OpenBSD 7.8 and 7.9:
+* Have cwm(1) handle Meta release as a separate mod key.
+
+--Leah Neukirchen <leah@vuxu.org>
+
+[0]: http://cvsweb.openbsd.org/cgi-bin/cvsweb/xenocara/app/cwm/

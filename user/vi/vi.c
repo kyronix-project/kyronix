@@ -647,13 +647,34 @@ int vi_main(int argc, char **argv) {
 
     // autoindent is not default in vim 7.3
     vi_setops = /*VI_AUTOINDENT |*/ VI_SHOWMATCH | VI_IGNORECASE;
-    //  1-  process $HOME/.exrc file (not inplemented yet)
+    //  1-  process $HOME/.exrc and $HOME/.vimrc
     //  2-  process EXINIT variable from environment
     //  3-  process command line args
 #if ENABLE_FEATURE_VI_COLON
     {
-        char *p = getenv("EXINIT");
-        if (p && *p) initial_cmds[0] = xstrndup(p, MAX_INPUT_LEN);
+        const char *home = getenv("HOME");
+        if (home) {
+            char rc_path[PATH_MAX];
+            snprintf(rc_path, sizeof(rc_path), "%s/.vimrc", home);
+            int fd = open(rc_path, O_RDONLY);
+            if (fd < 0) {
+                snprintf(rc_path, sizeof(rc_path), "%s/.exrc", home);
+                fd = open(rc_path, O_RDONLY);
+            }
+            if (fd >= 0) {
+                char rcb[MAX_INPUT_LEN];
+                ssize_t n = read(fd, rcb, sizeof(rcb) - 1);
+                close(fd);
+                if (n > 0) {
+                    rcb[n] = '\0';
+                    initial_cmds[0] = xstrndup(rcb, MAX_INPUT_LEN);
+                }
+            }
+        }
+        if (!initial_cmds[0]) {
+            char *p = getenv("EXINIT");
+            if (p && *p) initial_cmds[0] = xstrndup(p, MAX_INPUT_LEN);
+        }
     }
 #endif
     while ((c = getopt(argc, argv, "hCRH" IF_FEATURE_VI_COLON("c:"))) != -1) {

@@ -1,6 +1,8 @@
 #include "procfs.h"
 #include "arch/x86_64/cpu.h"
+#include "arch/x86_64/percpu.h"
 #include "arch/x86_64/pit.h"
+#include "arch/x86_64/spinlock.h"
 #include "drivers/bus/pci/pci.h"
 #include "lib/log.h"
 #include "lib/printf.h"
@@ -17,6 +19,7 @@
 #endif
 #include "mm/pmm.h"
 #include "mm/vmm.h"
+#include "mm/vma.h"
 #include "module/loader.h"
 #include "proc/jail.h"
 #include "proc/proc.h"
@@ -29,6 +32,7 @@
 #define EPERM 1
 #define EFAULT 14
 #define ENOMEM 12
+#define EAGAIN 11
 
 static int64_t read_buf(char *out, uint64_t len, uint64_t off, const char *src, uint64_t sz) {
     if (off >= sz) return 0;
@@ -314,7 +318,7 @@ static int64_t proc_loadavg_read(vfs_node_t *n, char *buf, uint64_t len, uint64_
 }
 
 static int64_t proc_stat_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
-    (void) n;
+    (void)n;
     uint64_t ticks = g_ticks / 10;
     char tmp[2048];
     int sz = 0;
@@ -337,7 +341,7 @@ static int64_t proc_stat_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t o
                    g_epoch_base, proc_last_pid(),
                    proc_count_system(PROC_READY) + proc_count_system(PROC_RUNNING),
                    proc_count_system(PROC_WAITING));
-    return read_buf(buf, len, off, tmp, (uint64_t) sz);
+   return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
 static int64_t proc_mounts_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
@@ -399,12 +403,32 @@ static int64_t proc_pids_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t o
     return read_buf(buf, len, off, tmp, (uint64_t) pos);
 }
 
+static char g_kmsg_ring[4096];
+static uint32_t g_kmsg_wp;
+static spinlock_t g_kmsg_lock = SPINLOCK_INIT;
+
 static int64_t proc_kmsg_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
-    (void) n;
-    (void) buf;
-    (void) len;
-    (void) off;
-    return 0;
+    (void)n; (void)off;
+    spin_lock(&g_kmsg_lock);
+    uint32_t avail = g_kmsg_wp;
+    if (avail == 0) { spin_unlock(&g_kmsg_lock); return 0; }
+    if (avail > len) avail = (uint32_t)len;
+    memcpy(buf, g_kmsg_ring, avail);
+    g_kmsg_wp = 0;
+    spin_unlock(&g_kmsg_lock);
+    return (int64_t)avail;
+}
+
+void proc_kmsg_write(const char *msg, int len) {
+    if (!msg || len <= 0) return;
+    spin_lock(&g_kmsg_lock);
+    int space = (int)(sizeof(g_kmsg_ring) - g_kmsg_wp);
+    if (len > space) len = space;
+    if (len > 0) {
+        memcpy(g_kmsg_ring + g_kmsg_wp, msg, (uint64_t)len);
+        g_kmsg_wp += (uint32_t)len;
+    }
+    spin_unlock(&g_kmsg_lock);
 }
 
 static int64_t proc_ostype_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
@@ -459,11 +483,20 @@ static int64_t proc_self_cmdline_read(vfs_node_t *n, char *buf, uint64_t len, ui
 }
 
 static int64_t proc_self_environ_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
-    (void) n;
-    (void) buf;
-    (void) len;
-    (void) off;
-    return 0;
+    (void)n;
+    proc_t *p = g_current_proc;
+    if (!p) return 0;
+    const char *env = (const char *)(uintptr_t)p->environ_ptr;
+    if (!env || !uptr_ok(env, 1)) return 0;
+    uint64_t total = 0;
+    const char *s = env;
+    while (*s) {
+        uint64_t slen = strlen(s) + 1;
+        total += slen;
+        s += slen;
+    }
+    total++;
+    return read_buf(buf, len, off, env, total);
 }
 
 static int64_t proc_self_status_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
@@ -524,18 +557,97 @@ static int64_t proc_self_statm_read(vfs_node_t *n, char *buf, uint64_t len, uint
 }
 
 static int64_t proc_self_maps_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
-    proc_t *p = node_to_proc(n);
-    if (!p) return 0;
-    char tmp[768];
-    const char *exe = p->exe_path[0] ? p->exe_path : "";
-    // randomized addresses: don't leak actual VA to non-root
-    int sz = snprintf(tmp, sizeof(tmp),
-                      "00400000-00800000 r-xp 00000000 00:00 0 %s\n"
-                      "xxxxxxxx-xxxxxxxx rw-p 00000000 00:00 0 [heap]\n"
-                      "yyyyyyyy-yyyyyyyy rw-p 00000000 00:00 0 [stack]\n",
-                      exe);
-    if (n->fs_private) proc_unref(p);
-    return read_buf(buf, len, off, tmp, (uint64_t) sz);
+    if (!len) return 0;
+    proc_t *self = g_current_proc;
+    if (!self) return -(int64_t) EPERM;
+    vmm_vma_t *maps = kmalloc(sizeof(vmm_vma_t) * VMM_VMA_MAX);
+    if (!maps) return -(int64_t) ENOMEM;
+
+    uint64_t flags = irq_save();
+    spin_lock(&g_proctable_lock);
+    proc_t *p = self;
+    if (n->fs_private) {
+        p = NULL;
+        uint32_t pid = (uint32_t) (uintptr_t) n->fs_private;
+        for (int i = 0; i < PROC_MAX; i++) {
+            proc_t *candidate = &g_proctable[i];
+            if (candidate->pid == pid && candidate->state != PROC_UNUSED &&
+                candidate->state != PROC_EMBRYO && candidate->state != PROC_DYING) {
+                p = candidate;
+                break;
+            }
+        }
+    }
+    int64_t error = 0;
+    vmm_space_t *space = NULL;
+    if (!p || !jail_can_see(self, p)) {
+        error = -(int64_t) ENOENT;
+    } else if (p != self && !jail_host_priv(self) &&
+               (self->fsuid != p->uid || self->fsuid != p->euid ||
+                self->fsuid != p->suid || self->fsgid != p->gid ||
+                self->fsgid != p->egid || self->fsgid != p->sgid)) {
+        error = -(int64_t) EPERM;
+    } else if (p->space && p->space != &g_kernel_space) {
+        space = p->space;
+        vmm_space_retain(space);
+    }
+    spin_unlock(&g_proctable_lock);
+    irq_restore(flags);
+    if (!space) {
+        kfree(maps);
+        return error;
+    }
+    if (!vmm_space_mutation_begin(space)) {
+        vmm_space_free(space);
+        kfree(maps);
+        return -(int64_t) EAGAIN;
+    }
+    memcpy(maps, space->vmas, sizeof(space->vmas));
+    vmm_space_mutation_end(space);
+    vmm_space_free(space);
+
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < VMM_VMA_MAX; i++) {
+        if (!maps[i].used || maps[i].end <= maps[i].start) continue;
+        vmm_vma_t entry = maps[i];
+        uint32_t j = count;
+        while (j && maps[j - 1].start > entry.start) {
+            maps[j] = maps[j - 1];
+            j--;
+        }
+        maps[j] = entry;
+        count++;
+    }
+
+    char tmp[4096];
+    uint64_t used = 0;
+    uint64_t capacity = len < sizeof(tmp) ? len : sizeof(tmp);
+    for (uint32_t i = 0; i < count && used < capacity; i++) {
+        vmm_vma_t *vma = &maps[i];
+        char line[96];
+        int size = snprintf(line, sizeof(line),
+                            "%016lx-%016lx %c%c%c%c 00000000 00:00 0\n",
+                            (unsigned long) vma->start, (unsigned long) vma->end,
+                            (vma->prot & PROT_READ) ? 'r' : '-',
+                            (vma->prot & PROT_WRITE) ? 'w' : '-',
+                            (vma->prot & PROT_EXEC) ? 'x' : '-',
+                            (vma->map_flags & VMA_MAP_SHARED) ? 's' : 'p');
+        if (size < 0 || (uint64_t) size >= sizeof(line)) {
+            kfree(maps);
+            return -(int64_t) EINVAL;
+        }
+        if (off >= (uint64_t) size) {
+            off -= (uint64_t) size;
+            continue;
+        }
+        uint64_t take = (uint64_t) size - off;
+        if (take > capacity - used) take = capacity - used;
+        memcpy(tmp + used, line + off, take);
+        used += take;
+        off = 0;
+    }
+    kfree(maps);
+    return read_buf(buf, len, 0, tmp, used);
 }
 
 static int64_t proc_self_pagemap_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {

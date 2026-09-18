@@ -1,4 +1,5 @@
 #pragma once
+#include <stdbool.h>
 #include <stdint.h>
 
 #define PCI_CFG_ADDR 0xCF8
@@ -15,11 +16,12 @@ typedef struct {
     uint8_t header_type;
 } pci_dev_t;
 
-#define PCI_MAX_DEVS 64
+#define PCI_MAX_DEVS 256
 extern pci_dev_t g_pci_devs[];
 extern int g_pci_ndevs;
 
 void pci_enumerate(void);
+void pci_use_ecam(bool enable);
 uint32_t pci_read32(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg);
 void pci_write32(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg, uint32_t val);
 uint16_t pci_read16(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg);

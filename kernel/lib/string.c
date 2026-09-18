@@ -108,6 +108,20 @@ char *strchr(const char *s, int c) {
     return (c == '\0') ? (char *) s : NULL;
 }
 
+char *strstr(const char *haystack, const char *needle) {
+    if (!*needle) return (char *) haystack;
+    for (; *haystack; haystack++) {
+        const char *h = haystack;
+        const char *n = needle;
+        while (*h && *n && *h == *n) {
+            h++;
+            n++;
+        }
+        if (!*n) return (char *) haystack;
+    }
+    return NULL;
+}
+
 int atoi(const char *s) {
     int n = 0, neg = 0;
     while (*s == ' ' || *s == '\t') s++;

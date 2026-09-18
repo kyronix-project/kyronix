@@ -13,6 +13,9 @@ typedef struct {
     const uint8_t *(*mac)(void);
 } net_driver_ops_t;
 
+struct netdev;
+void net_init(void);
+void net_receive_device(struct netdev *nd, const uint8_t *eth_frame, uint16_t len);
 bool net_driver_register(const net_driver_ops_t *ops);
 void net_driver_unregister(const net_driver_ops_t *ops);
 bool net_driver_send(const uint8_t *data, uint16_t len);

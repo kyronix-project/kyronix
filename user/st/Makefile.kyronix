@@ -1,0 +1,43 @@
+CC := musl-gcc
+CFLAGS := -std=c99 -O2 -fno-pie -fno-link-libatomic -idirafter /usr/include
+CFLAGS += $(shell pkg-config --cflags fontconfig freetype2 x11 xft)
+CFLAGS += -DVERSION=\"0.9.3\" -D_XOPEN_SOURCE=600
+
+ROOTLIB := ../../rootfs/usr/lib
+LIBS := $(ROOTLIB)/libX11.so.6 \
+        $(ROOTLIB)/libXft.so.2 \
+        $(ROOTLIB)/libfontconfig.so.1 \
+        $(ROOTLIB)/libfreetype.so.6 \
+        $(ROOTLIB)/libexpat.so.1 \
+        $(ROOTLIB)/libpng16.so.16 \
+        $(ROOTLIB)/libbz2.so.1 \
+        $(ROOTLIB)/libz.so.1 \
+        $(ROOTLIB)/libbrotlidec.so.1 \
+        $(ROOTLIB)/libbrotlicommon.so.1 \
+        $(ROOTLIB)/libxcb.so.1 \
+        $(ROOTLIB)/libXau.so.6 \
+        $(ROOTLIB)/libXdmcp.so.6 \
+        $(ROOTLIB)/libmd.so.0 \
+        $(ROOTLIB)/libbsd.so.0 \
+        -lutil
+
+LDFLAGS := -no-pie -fno-link-libatomic -Wl,--allow-shlib-undefined -Wl,--export-dynamic
+
+.PHONY: all clean
+
+all: st
+
+st: st.o x.o
+	$(CC) -o $@ $^ $(LIBS) $(LDFLAGS)
+
+st.o: st.c config.h st.h
+	$(CC) -c $(CFLAGS) -o $@ $<
+
+x.o: x.c config.h st.h win.h arg.h
+	$(CC) -c $(CFLAGS) -o $@ $<
+
+config.h: config.def.h
+	cp $< $@
+
+clean:
+	rm -f st *.o

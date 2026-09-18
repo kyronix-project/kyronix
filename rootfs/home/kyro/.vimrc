@@ -1,0 +1,2 @@
+set showmatch
+set ignorecase

@@ -106,6 +106,7 @@ static void setup_sigframe(proc_t *p, int sig, syscall_frame_t *f) {
     mc->rcx = f->rcx;
     mc->rsp = user_rsp;
     mc->rip = f->rcx;
+    if (p->sig_actions[sig - 1].sa_flags & SA_RESTART) mc->rip -= 2;
     mc->eflags = f->r11;
     mc->cs = GDT_USER_CODE_SEL;
     mc->fpstate = 0;

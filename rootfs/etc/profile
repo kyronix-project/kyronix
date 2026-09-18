@@ -1,7 +1,30 @@
-export PATH=/usr/bin:/bin:/sbin
-export TERMINFO=/etc/terminfo
+export DISPLAY=:0
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export LIBGL_ALWAYS_SOFTWARE=1
+export EDITOR=vi
+export VISUAL=vi
+export PAGER=less
+export LANG=C.UTF-8
+export TERM=xterm-256color
 
-# Wayland session (see startw)
+if [ "$USER" = "root" ]; then
+    export PS1='\u@\h:\w# '
+else
+    export PS1='\u@\h:\w$ '
+fi
+
+alias ll='ls -la'
+alias la='ls -A'
+alias l='ls -CF'
+alias rm='rm -i'
+alias cp='cp -i'
+alias mv='mv -i'
+alias grep='grep --color=auto'
+alias fgrep='fgrep --color=auto'
+alias egrep='egrep --color=auto'
+
+umask 022
+
+export TERMINFO=/etc/terminfo
 export XDG_RUNTIME_DIR=/run/user/0
 export XDG_CONFIG_HOME=/etc

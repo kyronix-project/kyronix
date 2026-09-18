@@ -1,0 +1,16 @@
+fontname DejaVu Sans Mono:size=11
+borderwidth 2
+stickygroups yes
+
+color activeborder   "#43858C"
+color inactiveborder "#151A1B"
+color urgencyborder  "#D01C1B"
+color groupborder    "#6A9E69"
+color ungroupborder  "#D01C1B"
+color menubg         "#151A1B"
+color menufg         "#A99B86"
+color font           "#A99B86"
+color selfont        "#DD9A1C"
+
+command term st
+bind-key CM-Return term

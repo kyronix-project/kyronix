@@ -14,6 +14,8 @@ all:
 	@$(MAKE) --no-print-directory -C vi
 	@$(MAKE) --no-print-directory -C kyrobox
 	@$(MAKE) --no-print-directory -C pkg/client
+	@$(MAKE) --no-print-directory -C su
+	@$(MAKE) --no-print-directory -C sudo
 	@$(MAKE) --no-print-directory -C installer
 	@$(MAKE) --no-print-directory -C libudev
 	@mkdir -p $(ROOTFS)/bin
@@ -24,13 +26,17 @@ all:
 	@cp ../build/bin/ksh $(ROOTFS)/bin/
 	@cp ../build/bin/login $(ROOTFS)/bin/
 	@cp ../build/bin/vi $(ROOTFS)/bin/
+	@ln -sf vi $(ROOTFS)/bin/vim
 	@cp ../build/bin/pkg $(ROOTFS)/bin/
+	@cp ../build/bin/su $(ROOTFS)/bin/
+	@cp ../build/bin/sudo $(ROOTFS)/bin/
+	@chmod 0755 $(ROOTFS)/bin/su $(ROOTFS)/bin/sudo
 	@cp ../build/bin/installer $(ROOTFS)/bin/
 	@cp ../build/bin/mkfs.ext2 $(ROOTFS)/bin/
 	@mkdir -p $(ROOTFS)/usr/libexec
 	@cp ../build/bin/limine-install $(ROOTFS)/usr/libexec/
 	@ln -sf ksh $(ROOTFS)/bin/sh
-	@for app in awk basename cat chgrp chmod chown cksum clear cmp cp cut date dd diff dirname du echo env false \
+	@set -e; for app in awk basename cat chgrp chmod chown cksum clear cmp cp cut date dd diff dirname du echo env false \
 	    fdisk find file grep head hostname id insmod jailctl kill killall less link ln ls lsblk lspci lsmod mkdir mktemp mount mv nc nslookup ntpd patch ping printenv printf ps pwd readlink realpath \
 	    passwd reboot rm rmdir rmmod sed seq sleep sort stat stress sync tail tee test top touch tr true tty tree umount uname uniq unlink useradd userdel wc wget which whoami xargs yes; do \
 	    cp ../build/bin/$$app $(ROOTFS)/bin/; \
@@ -59,10 +65,14 @@ clean:
 	@$(MAKE) --no-print-directory -C vi clean
 	@$(MAKE) --no-print-directory -C kyrobox clean
 	@$(MAKE) --no-print-directory -C pkg/client clean
+	@$(MAKE) --no-print-directory -C su clean
+	@$(MAKE) --no-print-directory -C sudo clean
 	@$(MAKE) --no-print-directory -C installer clean
 	@$(MAKE) --no-print-directory -C extras clean
 	@$(MAKE) --no-print-directory -C libudev clean
 	@$(MAKE) --no-print-directory -C panel clean
 	@$(MAKE) --no-print-directory -C extras/blobs/wayland clean
-	@rm -f $(ROOTFS)/bin/*
+	@set -e; for f in $(ROOTFS)/bin/*; do \
+	    case "$$(basename "$$f")" in st|cwm) ;; *) rm -f "$$f";; esac; \
+	done
 	@rm -f $(ROOTFS)/usr/libexec/limine-install

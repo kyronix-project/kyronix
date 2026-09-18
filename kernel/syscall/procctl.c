@@ -606,6 +606,8 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
     }
 
     proc_t *p = cur();
+    uint64_t space_flags = irq_save();
+    spin_lock(&g_proctable_lock);
     vmm_space_t *old = p->space;
 
     p->space = res.space;
@@ -632,6 +634,8 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
     if (exec_mode & S_ISGID) {
         p->sgid = p->egid = p->fsgid = exec_gid;
     }
+    spin_unlock(&g_proctable_lock);
+    irq_restore(space_flags);
 
     vmm_syscall_access_end();
     vmm_switch(p->space);
@@ -726,9 +730,14 @@ __attribute__((noreturn)) void proc_do_exit(int code) {
             *p->cleartid_addr = 0;
             cleartid_wake(p->cleartid_addr);
         }
-        vmm_space_free(p->space);
+        uint64_t space_flags = irq_save();
+        spin_lock(&g_proctable_lock);
+        vmm_space_t *old = p->space;
         p->space = NULL;
         p->state = PROC_DYING;
+        spin_unlock(&g_proctable_lock);
+        irq_restore(space_flags);
+        vmm_space_free(old);
         proc_clear_ready(p);
         proc_defer_thread_reap(p);
         proc_t *nt = sched_claim_next(p);

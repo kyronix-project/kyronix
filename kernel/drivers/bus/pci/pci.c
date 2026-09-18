@@ -1,9 +1,14 @@
 #include "pci.h"
-#include "../arch/x86_64/cpu.h"
-#include "../lib/log.h"
+#include "arch/x86_64/cpu.h"
+#include "lib/log.h"
+#include "drivers/server.h"
 
 pci_dev_t g_pci_devs[PCI_MAX_DEVS];
 int g_pci_ndevs = 0;
+
+static bool g_use_ecam;
+
+void pci_use_ecam(bool enable) { g_use_ecam = enable; }
 
 static inline uint32_t cfg_addr(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg) {
     return 0x80000000U | ((uint32_t) bus << 16) | ((uint32_t) dev << 11) | ((uint32_t) fn << 8) |
@@ -11,11 +16,16 @@ static inline uint32_t cfg_addr(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t re
 }
 
 uint32_t pci_read32(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg) {
+    if (g_use_ecam) return pci_ecam_read32(bus, dev, fn, reg);
     outl(PCI_CFG_ADDR, cfg_addr(bus, dev, fn, reg));
     return inl(PCI_CFG_DATA);
 }
 
 void pci_write32(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg, uint32_t val) {
+    if (g_use_ecam) {
+        pci_ecam_write32(bus, dev, fn, reg, val);
+        return;
+    }
     outl(PCI_CFG_ADDR, cfg_addr(bus, dev, fn, reg));
     outl(PCI_CFG_DATA, val);
 }

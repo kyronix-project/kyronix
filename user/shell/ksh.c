@@ -1175,7 +1175,36 @@ static int run_command(int argc, char **argv) {
 
     if (strcmp(argv[0], "exit") == 0) exit(argc > 1 ? atoi(argv[1]) : 0);
 
-    if (strcmp(argv[0], "set") == 0) return 0;
+    if (strcmp(argv[0], "set") == 0) {
+        if (argc == 1) {
+            extern char **environ;
+            for (char **e = environ; *e; e++) puts(*e);
+            return 0;
+        }
+        return 0;
+    }
+
+    if (strcmp(argv[0], "umask") == 0) {
+        if (argc == 1) {
+            mode_t m = umask(0);
+            umask(m);
+            printf("%04o\n", m);
+        } else {
+            umask((mode_t) strtol(argv[1], NULL, 8));
+        }
+        return 0;
+    }
+
+    if (strcmp(argv[0], "unset") == 0) {
+        for (int i = 1; i < argc; i++) unsetenv(argv[i]);
+        return 0;
+    }
+
+    if (strcmp(argv[0], "pwd") == 0) {
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd))) puts(cwd);
+        return 0;
+    }
 
     if (strcmp(argv[0], "help") == 0) {
         print_help();

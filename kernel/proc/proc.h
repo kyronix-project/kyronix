@@ -108,6 +108,11 @@ typedef struct proc {
     vmm_space_t *user_access_spaces[4];
     uint8_t user_access_count;
     uint8_t user_access_tracking;
+    uint64_t robust_list_head;
+    uint64_t robust_list_len;
+    uint8_t seccomp_strict;
+    uint64_t environ_ptr;
+    uint32_t ptrace_options;
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX] __attribute__((aligned(16)));

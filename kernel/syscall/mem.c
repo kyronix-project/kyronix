@@ -312,10 +312,6 @@ int64_t sys_mmap(uint64_t addr, uint64_t length, uint64_t prot, uint64_t flags, 
     if (!vmm_space_mutation_begin(p->space)) return -(int64_t) EAGAIN;
     int64_t rc = sys_mmap_impl(addr, length, prot, flags, fd, off);
     vmm_space_mutation_end(p->space);
-    if (rc < 0)
-        // log_warn("DBG mmap fail pid=%u rc=%ld len=%lx prot=%lx flags=%lx vmas=%d bump=%lx", p->pid,
-        //          (long) rc, (unsigned long) length, (unsigned long) prot, (unsigned long) flags,
-        //          vma_used_count(p->space), (unsigned long) p->mmap_bump);
     return rc;
 }
 

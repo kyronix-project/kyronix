@@ -110,6 +110,7 @@ struct acpi_fadt {
 #define SLP_TYP_SHIFT 10
 
 static bool g_acpi_ok = false;
+static uint64_t g_rsdp_phys = 0;
 
 static uint32_t g_pm1a_cnt = 0; // I/O port of PM1a control block
 static uint32_t g_pm1b_cnt = 0; // I/O port of PM1b control block (0 = none)
@@ -308,6 +309,7 @@ void acpi_init(uint64_t rsdp_phys) {
         log_warn("ACPI: no RSDP from bootloader");
         return;
     }
+    g_rsdp_phys = rsdp_phys;
 
     const struct acpi_rsdp *rsdp = acpi_map_range(rsdp_phys, sizeof(struct acpi_rsdp));
     if (memcmp(rsdp->signature, "RSD PTR ", 8) != 0) {
@@ -332,6 +334,8 @@ void acpi_init(uint64_t rsdp_phys) {
 }
 
 bool acpi_available(void) { return g_acpi_ok; }
+
+uint64_t acpi_rsdp_phys(void) { return g_rsdp_phys; }
 
 __attribute__((noreturn)) void acpi_poweroff(void) {
     if (g_pm1a_cnt) {

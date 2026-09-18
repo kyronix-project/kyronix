@@ -1,0 +1,4 @@
+# Dillo config for Kyronix
+http_proxy_host=""
+http_proxy_port=0
+http_user_agent="Dillo/3.2.0"

@@ -44,6 +44,7 @@ KERNEL_C_SRCS := \
 	kernel/syscall/mem.c \
 	kernel/syscall/ptrace.c \
 	kernel/syscall/futex.c \
+	kernel/syscall/inotify.c \
 	kernel/syscall/jailsys.c \
 	kernel/syscall/cred.c \
 	kernel/syscall/fsops.c \
@@ -93,6 +94,27 @@ KERNEL_C_SRCS := \
 	kernel/drivers/bus/i2c/i2c.c \
 	kernel/drivers/bus/spi/spi.c \
 	kernel/drivers/hwmon/tmp117.c \
+	kernel/drivers/server.c \
+	kernel/drivers/netdev.c \
+	kernel/drivers/rtl8139.c \
+	kernel/drivers/rtl8169.c \
+	kernel/drivers/usb/usb.c \
+	kernel/drivers/usb/uhci.c \
+	kernel/drivers/usb/ohci.c \
+	kernel/drivers/usb/ehci.c \
+	kernel/drivers/usb/xhci.c \
+	kernel/drivers/usb/usbhid.c \
+	kernel/drivers/usb/usbms.c \
+	kernel/drivers/usb/usbnet.c \
+	kernel/drivers/usb/usbcdcacm.c \
+	kernel/drivers/usb/usbcdcecm.c \
+	kernel/drivers/usb/usbrndis.c \
+	kernel/drivers/wifi/ieee80211.c \
+	kernel/drivers/wifi/wpa.c \
+	kernel/drivers/wifi/ath5k.c \
+	kernel/drivers/wifi/rtl8188eu.c \
+	kernel/auth/auth.c \
+	kernel/auth/sha512.c \
 	kernel/net/net.c \
 	kernel/net/lwip_glue.c \
 	kernel/net/netif/kyronix_netif.c \
@@ -113,6 +135,8 @@ KERNEL_C_SRCS := \
 	$(LWIP)/core/tcp_out.c \
 	$(LWIP)/core/timeouts.c \
 	$(LWIP)/core/udp.c \
+	$(LWIP)/core/ipv4/acd.c \
+	$(LWIP)/core/ipv4/dhcp.c \
 	$(LWIP)/core/ipv4/etharp.c \
 	$(LWIP)/core/ipv4/icmp.c \
 	$(LWIP)/core/ipv4/ip4.c \
