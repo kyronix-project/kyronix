@@ -27,7 +27,7 @@
 #define LWIP_TCP 1
 #define LWIP_UDP 1
 #define LWIP_RAW 1 // fuck ts
-#define LWIP_DHCP 0
+#define LWIP_DHCP 1
 
 #define LWIP_AUTOIP 0
 #define LWIP_IGMP 0

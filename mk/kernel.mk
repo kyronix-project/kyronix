@@ -136,6 +136,8 @@ KERNEL_C_SRCS := \
 	$(LWIP)/core/ipv4/ip4.c \
 	$(LWIP)/core/ipv4/ip4_addr.c \
 	$(LWIP)/core/ipv4/ip4_frag.c \
+	$(LWIP)/core/ipv4/acd.c \
+	$(LWIP)/core/ipv4/dhcp.c \
 	$(LWIP)/netif/ethernet.c \
 	kernel/drivers/char/uio.c \
 	kernel/drivers/video/fbdev.c \
@@ -169,7 +171,8 @@ KERNEL_OBJS := \
 KERNEL_DEPS := $(KERNEL_OBJS:.o=.d)
 VIRTIO_NET_MODULE := $(BUILD)/modules/virtio_net.ko
 E1000_MODULE := $(BUILD)/modules/e1000.ko
-KERNEL_MODULES := $(VIRTIO_NET_MODULE) $(E1000_MODULE)
+RTL8168_MODULE := $(BUILD)/modules/rtl8168.ko
+KERNEL_MODULES := $(VIRTIO_NET_MODULE) $(E1000_MODULE) $(RTL8168_MODULE)
 MODULE_DEPS := $(KERNEL_MODULES:.ko=.d)
 KALLSYMS_SRC := $(BUILD)/kallsyms_data.c
 KALLSYMS_OBJ := $(BUILD)/kernel/kallsyms_data.o
@@ -211,6 +214,12 @@ $(VIRTIO_NET_MODULE): kernel/drivers/net/virtio_net.c kernel/module.h $(KERNEL_C
 	@$(CC) $(CFLAGS) $(KERNEL_INSTRUMENT_CFLAGS) -fno-asynchronous-unwind-tables -MMD -MP -c $< -o $@
 
 $(E1000_MODULE): kernel/drivers/net/e1000.c kernel/drivers/net/e1000.h kernel/module.h $(KERNEL_CONFIG)
+	$(KERNEL_PHASE_GUARD)
+	@mkdir -p $(@D)
+	@$(call step,CC $<)
+	@$(CC) $(CFLAGS) $(KERNEL_INSTRUMENT_CFLAGS) -fno-asynchronous-unwind-tables -MMD -MP -c $< -o $@
+
+$(RTL8168_MODULE): kernel/drivers/net/rtl8168.c kernel/module.h $(KERNEL_CONFIG)
 	$(KERNEL_PHASE_GUARD)
 	@mkdir -p $(@D)
 	@$(call step,CC $<)

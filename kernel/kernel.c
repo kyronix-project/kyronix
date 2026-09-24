@@ -588,6 +588,12 @@ void kmain(void) {
             kstatus("Loading e1000 module", true);
         }
     }
+    {
+        int result = module_load_path("/lib/modules/rtl8168.ko");
+        if (result == 0) {
+            kstatus("Loading RTL8168 module", true);
+        }
+    }
 
     {
         vfs_node_t *init_node = vfs_lookup("/init");

@@ -25,7 +25,6 @@ run: $(ISO) $(DISK)
 	    -cdrom $(ISO) -boot d \
 	    -serial stdio \
 	    -vga qxl -global qxl-vga.vgamem_mb=1024 \
-	    -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
 	    $(QEMU_DISK_ARGS)
 
 boot: $(DISK)
