@@ -7,6 +7,7 @@
 #include "../proc/proc.h"
 
 #include "lwip/dns.h"
+#include "lwip/dhcp.h"
 #include "lwip/etharp.h"
 #include "lwip/init.h"
 #include "lwip/ip4_addr.h"
@@ -30,10 +31,11 @@ static const net_driver_ops_t *driver_acquire(bool require_netif);
 static void driver_release(void);
 
 static void net_worker_main(void) {
-    uint8_t timeout_ctr = 0;
     for (;;) {
         uint64_t flags = irq_save();
         if (!__atomic_exchange_n(&g_poll_pending, 0, __ATOMIC_ACQ_REL)) {
+            g_current_proc->wakeup_tick = g_ticks + PIT_TICK_MS;
+            proc_set_timer(g_current_proc);
             g_current_proc->state = PROC_WAITING;
             /* Close the RUNNING->WAITING lost-wakeup window against an IRQ or
              * another CPU publishing work. */
@@ -45,6 +47,7 @@ static void net_worker_main(void) {
             }
             irq_restore(flags);
             sched_block_current();
+            sys_check_timeouts();
             continue;
         }
         irq_restore(flags);
@@ -54,7 +57,7 @@ static void net_worker_main(void) {
             ops->poll();
             driver_release();
         }
-        if (g_lwip_initialized && ++timeout_ctr == 0) sys_check_timeouts();
+        if (g_lwip_initialized) sys_check_timeouts();
     }
 }
 
@@ -90,10 +93,9 @@ bool net_driver_register(const net_driver_ops_t *ops) {
         dns_init();
         g_lwip_initialized = true;
     }
-    ip4_addr_t ip, mask, gw;
-    IP4_ADDR(&ip, 10, 0, 2, 15);
-    IP4_ADDR(&mask, 255, 255, 255, 0);
-    IP4_ADDR(&gw, 10, 0, 2, 2);
+    ip4_addr_t ip = {0};
+    ip4_addr_t mask = {0};
+    ip4_addr_t gw = {0};
 
     if (!netif_add(&g_netif, &ip, &mask, &gw, NULL, kyronix_netif_init, ethernet_input)) {
         spin_lock_irqsave(&g_driver_lock);
@@ -104,16 +106,20 @@ bool net_driver_register(const net_driver_ops_t *ops) {
     netif_set_default(&g_netif);
     netif_set_up(&g_netif);
 
-    ip4_addr_t dns1;
-    IP4_ADDR(&dns1, 10, 0, 2, 3);
-    dns_setserver(0, &dns1);
-
     spin_lock_irqsave(&g_driver_lock);
     g_netif_active = true;
     spin_unlock_irqrestore(&g_driver_lock);
+
+    err_t dhcp_err = dhcp_start(&g_netif);
+    if (dhcp_err != ERR_OK) {
+        log_warn("net: DHCP start failed (%d)", dhcp_err);
+    } else {
+        log_info("net: DHCP started");
+    }
+
     if (!g_net_worker) g_net_worker = proc_create_kernel("[net-rx]", net_worker_main);
     net_schedule_poll();
-    log_info("net: lwIP initialized, IP 10.0.2.15/24 gw 10.0.2.2 dns 10.0.2.3");
+    log_info("net: lwIP initialized, waiting for DHCP lease");
     return true;
 }
 

@@ -27,6 +27,7 @@
 #include "drivers/char/serial.h"
 #include "drivers/bus/spi/spi.h"
 #include "drivers/hwmon/tmp117.h"
+#include "drivers/usb/usb.h"
 #include "drivers/tty/tty.h"
 #include "drivers/char/uio.h"
 #include "drivers/tty/vt.h"
@@ -421,6 +422,8 @@ void kmain(void) {
     sti();
     ps2mouse_init();
     kstatus("Initialising PS/2 mouse", true);
+    usb_init();
+    kstatus("Initialising USB", true);
     kprintf("\n");
 
     {
@@ -583,6 +586,12 @@ void kmain(void) {
         int result = module_load_path("/lib/modules/e1000.ko");
         if (result == 0) {
             kstatus("Loading e1000 module", true);
+        }
+    }
+    {
+        int result = module_load_path("/lib/modules/rtl8168.ko");
+        if (result == 0) {
+            kstatus("Loading RTL8168 module", true);
         }
     }
 

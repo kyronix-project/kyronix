@@ -76,14 +76,15 @@ static void probe(uint8_t bus, uint8_t dev, uint8_t fn) {
                 d->bar_sizes[i] = 0;
             } else {
                 int is64 = ((bar >> 1) & 3) == 2;
+                int base_idx = i;
                 uint64_t base = bar & ~0xFULL;
                 if (is64 && i < 5) {
                     uint32_t hi = pci_read32(bus, dev, fn, (uint8_t) (0x14 + i * 4));
                     base |= (uint64_t) hi << 32;
                     i++; // 64-bit BAR occupies two slots
                 }
-                d->bars[i] = base;
-                d->bar_sizes[i] = bar_size(bus, dev, fn, (uint8_t) (i));
+                d->bars[base_idx] = base;
+                d->bar_sizes[base_idx] = base ? bar_size(bus, dev, fn, (uint8_t) base_idx) : 0;
             }
         }
     }

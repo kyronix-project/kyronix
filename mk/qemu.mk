@@ -19,16 +19,21 @@ run: $(ISO) $(DISK)
 	@$(call phase,Launching QEMU (live ISO))
 	$(QEMU) \
 	    -M q35 $(QEMU_ACCEL_ARGS) -smp 4 -m 2G \
+	    -device qemu-xhci,id=xhci \
+	    -device usb-kbd,bus=xhci.0 \
+	    -device usb-mouse,bus=xhci.0 \
 	    -cdrom $(ISO) -boot d \
 	    -serial stdio \
 	    -vga qxl -global qxl-vga.vgamem_mb=1024 \
-	    -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
 	    $(QEMU_DISK_ARGS)
 
 boot: $(DISK)
 	@$(call phase,Launching QEMU (installed disk))
 	$(QEMU) \
 	    -M q35 $(QEMU_ACCEL_ARGS) -smp 4 -m 2G \
+	    -device qemu-xhci,id=xhci \
+	    -device usb-kbd,bus=xhci.0 \
+	    -device usb-mouse,bus=xhci.0 \
 	    -boot c -serial stdio \
 	    -vga qxl -global qxl-vga.vgamem_mb=1024 \
 	    -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \

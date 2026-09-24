@@ -419,9 +419,12 @@ static int e1000_init_hw(const pci_dev_t *dev) {
                                  (0x40 << E1000_TCTL_COLD_SHIFT) |
                                  E1000_TCTL_RTLC);
 
-    net_driver_register(&g_e1000_net_ops);
-    g_net_registered = true;
     __atomic_store_n(&g_ready, true, __ATOMIC_RELEASE);
+    if (!net_driver_register(&g_e1000_net_ops)) {
+        __atomic_store_n(&g_ready, false, __ATOMIC_RELEASE);
+        return -EBUSY;
+    }
+    g_net_registered = true;
 
     g_irq_line = dev->irq_line;
     request_irq(g_irq_line, e1000_irq, NULL);

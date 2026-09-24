@@ -119,3 +119,16 @@ int atoi(const char *s) {
     while (*s >= '0' && *s <= '9') n = n * 10 + (*s++ - '0');
     return neg ? -n : n;
 }
+
+char *strstr(const char *haystack, const char *needle) {
+    if (!*needle) return (char *) haystack;
+    for (; *haystack; haystack++) {
+        const char *h = haystack, *n = needle;
+        while (*h && *n && *h == *n) {
+            h++;
+            n++;
+        }
+        if (!*n) return (char *) haystack;
+    }
+    return NULL;
+}

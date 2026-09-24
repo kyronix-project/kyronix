@@ -76,7 +76,7 @@ $(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROO
 	@$(call ok,initrd root)
 
 # --- weston variant (desktop) ---
-$(WESTON_INITRD): $(INITRD_ROOT) $(OS_RELEASE) rootfs/etc/rc.conf.weston
+$(WESTON_INITRD): $(INITRD_ROOT) $(KERNEL) $(KERNEL_MODULES) $(OS_RELEASE) rootfs/etc/rc.conf.weston
 	@$(call phase,Initrd)
 	@cp -a $(INITRD_ROOT) $(BUILD)/initrd-root-weston
 	@cp rootfs/etc/rc.conf.weston $(BUILD)/initrd-root-weston/etc/rc.conf
@@ -87,7 +87,7 @@ $(WESTON_INITRD): $(INITRD_ROOT) $(OS_RELEASE) rootfs/etc/rc.conf.weston
 	@$(call ok,$(WESTON_INITRD))
 
 # --- console variant (login shell) ---
-$(CONSOLE_INITRD): $(INITRD_ROOT) $(OS_RELEASE) rootfs/etc/rc.conf.console
+$(CONSOLE_INITRD): $(INITRD_ROOT) $(KERNEL) $(KERNEL_MODULES) $(OS_RELEASE) rootfs/etc/rc.conf.console
 	@cp -a $(INITRD_ROOT) $(BUILD)/initrd-root-console
 	@cp rootfs/etc/rc.conf.console $(BUILD)/initrd-root-console/etc/rc.conf
 	@cd $(BUILD)/initrd-root-console && find . -not -name '.gitignore' | sort | \

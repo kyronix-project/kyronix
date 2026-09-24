@@ -19,8 +19,27 @@ static spinlock_t g_serial_lock = SPINLOCK_INIT;
 #define LSR_DR (1 << 0)
 #define LSR_THRE (1 << 5)
 #define LCR_DLAB (1 << 7)
+#define UART_POLL_LIMIT 100000u
+
+static bool g_ready[2];
+
+static int port_index(uint16_t port) { return port == COM1 ? 0 : port == COM2 ? 1 : -1; }
+
+static bool tx_ready(uint16_t port, int index) {
+    for (unsigned i = 0; i < UART_POLL_LIMIT; i++) {
+        uint8_t status = inb(port + UART_LSR);
+        if (status == 0xff) break;
+        if (status & LSR_THRE) return true;
+        cpu_relax();
+    }
+    g_ready[index] = false;
+    return false;
+}
 
 bool serial_init(uint16_t port) {
+    int index = port_index(port);
+    if (index < 0) return false;
+    g_ready[index] = false;
     outb(port + UART_IER, 0x00);
     outb(port + UART_LCR, LCR_DLAB);
     outb(port + UART_DLL, 0x03);
@@ -31,17 +50,14 @@ bool serial_init(uint16_t port) {
 
     outb(port + UART_MCR, 0x1E);
     outb(port + UART_DATA, 0xAE);
-    if (inb(port + UART_DATA) != 0xAE) return false;
-
+    bool ok = inb(port + UART_DATA) == 0xAE;
     outb(port + UART_MCR, 0x0F);
-    return true;
+    g_ready[index] = ok;
+    return ok;
 }
 
 void serial_putchar(uint16_t port, char c) {
-    spin_lock(&g_serial_lock);
-    while (!(inb(port + UART_LSR) & LSR_THRE)) cpu_relax();
-    outb(port + UART_DATA, (uint8_t) c);
-    spin_unlock(&g_serial_lock);
+    serial_write_n(port, &c, 1);
 }
 
 void serial_write(uint16_t port, const char *s) {
@@ -49,23 +65,31 @@ void serial_write(uint16_t port, const char *s) {
 }
 
 void serial_write_n(uint16_t port, const char *s, uint64_t len) {
+    int index = port_index(port);
+    if (index < 0) return;
+    uint64_t flags = irq_save();
     spin_lock(&g_serial_lock);
-    while (len) {
-        /* The 16550 FIFO accepts sixteen bytes once THRE reports empty. */
-        while (!(inb(port + UART_LSR) & LSR_THRE)) cpu_relax();
-        uint64_t chunk = len < 16u ? len : 16u;
-        for (uint64_t i = 0; i < chunk; i++) outb(port + UART_DATA, (uint8_t) s[i]);
-        s += chunk;
-        len -= chunk;
+    while (g_ready[index] && len && tx_ready(port, index)) {
+        outb(port + UART_DATA, (uint8_t) *s++);
+        len--;
     }
     spin_unlock(&g_serial_lock);
+    irq_restore(flags);
 }
 
-bool serial_data_ready(uint16_t port) { return (inb(port + UART_LSR) & LSR_DR) != 0; }
+bool serial_data_ready(uint16_t port) {
+    int index = port_index(port);
+    if (index < 0 || !g_ready[index]) return false;
+    uint8_t status = inb(port + UART_LSR);
+    return status != 0xff && (status & LSR_DR) != 0;
+}
 
 uint8_t serial_getchar(uint16_t port) {
-    while (!serial_data_ready(port)) cpu_relax();
-    return inb(port + UART_DATA);
+    for (unsigned i = 0; i < UART_POLL_LIMIT; i++) {
+        if (serial_data_ready(port)) return inb(port + UART_DATA);
+        cpu_relax();
+    }
+    return 0;
 }
 
 #endif /* CONFIG_SERIAL_CONSOLE */

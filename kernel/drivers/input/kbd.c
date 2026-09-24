@@ -36,6 +36,11 @@ static const uint16_t sc_ext_linuxkey[128] = {
 
 void (*g_kbd_evdev_hook)(uint16_t linuxkey, int value);
 
+uint16_t kbd_set1_to_linuxkey(uint8_t sc, bool ext) {
+    if (sc >= 128) return 0;
+    return ext ? sc_ext_linuxkey[sc] : sc_linuxkey[sc];
+}
+
 static bool g_shift, g_ctrl, g_alt, g_caps;
 static bool g_ext; /* got 0xE0 prefix, next byte completes the scan code */
 
