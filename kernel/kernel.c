@@ -27,6 +27,7 @@
 #include "drivers/char/serial.h"
 #include "drivers/bus/spi/spi.h"
 #include "drivers/hwmon/tmp117.h"
+#include "drivers/usb/usb.h"
 #include "drivers/tty/tty.h"
 #include "drivers/char/uio.h"
 #include "drivers/tty/vt.h"
@@ -421,6 +422,8 @@ void kmain(void) {
     sti();
     ps2mouse_init();
     kstatus("Initialising PS/2 mouse", true);
+    usb_init();
+    kstatus("Initialising USB", true);
     kprintf("\n");
 
     {

@@ -82,3 +82,4 @@ void tty_get_termios(struct termios_s *t);
 void tty_set_termios(const struct termios_s *t);
 void tty_process_input(void);
 void tty_check_signals(void);
+void tty_usb_input_char(uint8_t c);

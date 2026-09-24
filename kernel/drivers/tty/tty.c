@@ -134,6 +134,13 @@ static void tty_input_char(uint8_t c) {
     }
 }
 
+void tty_usb_input_char(uint8_t c) {
+    if (g_evdev_kbd_open || vt_kbd_muted()) return;
+    uint64_t flags = irq_save();
+    tty_input_char(c);
+    irq_restore(flags);
+}
+
 void tty_process_input(void) {
     uint64_t flags = irq_save();
 #ifdef CONFIG_SERIAL_CONSOLE

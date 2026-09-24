@@ -1,6 +1,7 @@
 #include "pmm.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/percpu.h"
+#include "arch/x86_64/spinlock.h"
 #include "lib/log.h"
 #include "lib/string.h"
 #include "llfree.h"
@@ -29,10 +30,50 @@ static uint64_t g_alloc_total;
 static uint64_t g_free_total;
 static uint64_t g_first_frame;
 
-/* Kyronix currently boots with a bounded physical address space. Keep the
- * accounting out of the allocator metadata so COW can be introduced without
- * changing llfree's layout. */
-#define PMM_REF_MAX_FRAMES (1u << 20) /* 4 GiB at 4 KiB pages */
+#define DMA32_RESERVE_BYTES (3ULL * 1024 * 1024)
+static uint64_t g_dma32_base, g_dma32_bytes, g_dma32_used;
+static spinlock_t g_dma32_lock = SPINLOCK_INIT;
+
+static void reserve_dma32(struct limine_memmap_response *mmap) {
+    uint64_t best_start = 0, best_end = 0;
+    for (uint64_t i = 0; i < mmap->entry_count; i++) {
+        struct limine_memmap_entry *e = mmap->entries[i];
+        if (e->type != LIMINE_MEMMAP_USABLE || e->base >= 0x100000000ULL ||
+            e->length > UINT64_MAX - e->base) continue;
+        uint64_t start = PAGE_ALIGN_UP(e->base);
+        if (start < 0x100000) start = 0x100000;
+        uint64_t end = e->base + e->length;
+        if (end > 0x100000000ULL) end = 0x100000000ULL;
+        end = PAGE_ALIGN_DOWN(end);
+        if (end > start && end - start > best_end - best_start) {
+            best_start = start;
+            best_end = end;
+        }
+    }
+    uint64_t bytes = PAGE_ALIGN_DOWN((best_end - best_start) / 2);
+    if (bytes > DMA32_RESERVE_BYTES) bytes = DMA32_RESERVE_BYTES;
+    if (bytes < 16 * PAGE_SIZE) return;
+    g_dma32_base = best_end - bytes;
+    g_dma32_bytes = bytes;
+    g_dma32_used = 0;
+}
+
+void *pmm_dma32_reserve_alloc(uint64_t pages) {
+    if (!pages || pages > DMA32_RESERVE_BYTES / PAGE_SIZE) return NULL;
+    uint64_t bytes = pages * PAGE_SIZE;
+    uint64_t flags = irq_save();
+    spin_lock(&g_dma32_lock);
+    void *phys = NULL;
+    if (bytes <= g_dma32_bytes - g_dma32_used) {
+        phys = (void *) (g_dma32_base + g_dma32_used);
+        g_dma32_used += bytes;
+    }
+    spin_unlock(&g_dma32_lock);
+    irq_restore(flags);
+    return phys;
+}
+
+#define PMM_REF_MAX_FRAMES (1u << 22)
 static uint16_t g_frame_refs[PMM_REF_MAX_FRAMES];
 
 static inline uint32_t pmm_ref_index(void *phys) {
@@ -89,14 +130,25 @@ void pmm_init(struct limine_memmap_response *mmap, uint64_t hhdm_offset, uint64_
 
     uint64_t meta_total = ms.local + ms.trees + ms.lower;
 
+    reserve_dma32(mmap);
     uint64_t region_base = 0;
     uint64_t region_len = 0;
     for (uint64_t i = 0; i < mmap->entry_count; i++) {
         struct limine_memmap_entry *e = mmap->entries[i];
         if (e->type != LIMINE_MEMMAP_USABLE) continue;
-        if (e->length > region_len) {
-            region_base = e->base;
-            region_len = e->length;
+        if (e->length > UINT64_MAX - e->base || e->base > UINT64_MAX - PAGE_SIZE) continue;
+        uint64_t start = PAGE_ALIGN_UP(e->base);
+        uint64_t end = PAGE_ALIGN_DOWN(e->base + e->length);
+        if (g_dma32_bytes && start < g_dma32_base + g_dma32_bytes && end > g_dma32_base) {
+            uint64_t before = g_dma32_base > start ? g_dma32_base - start : 0;
+            uint64_t after = end > g_dma32_base + g_dma32_bytes ?
+                             end - (g_dma32_base + g_dma32_bytes) : 0;
+            if (after > before) start = g_dma32_base + g_dma32_bytes;
+            else end = g_dma32_base;
+        }
+        if (end > start && end - start > region_len) {
+            region_base = start;
+            region_len = end - start;
         }
     }
     if (!region_base) {
@@ -109,6 +161,12 @@ void pmm_init(struct limine_memmap_response *mmap, uint64_t hhdm_offset, uint64_
         meta_phys = PAGE_ALIGN_UP(kernel_end_phys);
     }
 
+    if (meta_phys > region_base + region_len ||
+        meta_total > region_base + region_len - meta_phys ||
+        region_base + region_len - meta_phys - meta_total < 513 * PAGE_SIZE) {
+        log_error("PMM: insufficient room for metadata and frames");
+        cpu_halt();
+    }
     g_meta_local = (uint8_t *) (meta_phys + hhdm_offset);
     g_meta_trees = g_meta_local + ms.local;
     g_meta_lower = g_meta_trees + ms.trees;

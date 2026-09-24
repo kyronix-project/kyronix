@@ -84,6 +84,24 @@ KERNEL_C_SRCS := \
 	kernel/drivers/block/block.c \
 	kernel/drivers/block/blockdev.c \
 	kernel/drivers/ata/ahci.c \
+	kernel/drivers/usb/usb.c \
+	kernel/drivers/usb/usb_glue.c \
+	kernel/drivers/usb/usb_config.c \
+	kernel/drivers/usb/usb_enum.c \
+	kernel/drivers/usb/usb_hid.c \
+	kernel/drivers/usb/usb_msc.c \
+	kernel/drivers/usb/xhci/xhci.c \
+	kernel/drivers/usb/xhci/hid.c \
+	kernel/drivers/usb/xhci/hub.c \
+	kernel/drivers/usb/xhci/msc.c \
+	kernel/drivers/usb/ehci/ehci.c \
+	kernel/drivers/usb/ehci/hid.c \
+	kernel/drivers/usb/ehci/hub.c \
+	kernel/drivers/usb/ehci/msc.c \
+	kernel/drivers/usb/uhci/uhci.c \
+	kernel/drivers/usb/uhci/hid.c \
+	kernel/drivers/usb/uhci/hub.c \
+	kernel/drivers/usb/uhci/msc.c \
 	kernel/drivers/char/serial.c \
 	kernel/drivers/input/kbd.c \
 	kernel/drivers/tty/tty.c \
