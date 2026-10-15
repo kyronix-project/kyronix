@@ -13,6 +13,8 @@ QEMU_DISK_ARGS = \
 	-device ahci,id=ahci \
 	-device ide-hd,drive=hd0,bus=ahci.0
 
+QEMU_NET_ARGS = -netdev user,id=n0 -device virtio-net-pci,netdev=n0
+
 .PHONY: run boot
 
 run: $(ISO) $(DISK)
@@ -25,6 +27,7 @@ run: $(ISO) $(DISK)
 	    -cdrom $(ISO) -boot d \
 	    -serial stdio \
 	    -vga qxl -global qxl-vga.vgamem_mb=1024 \
+	    $(QEMU_NET_ARGS) \
 	    $(QEMU_DISK_ARGS)
 
 boot: $(DISK)
@@ -36,5 +39,5 @@ boot: $(DISK)
 	    -device usb-mouse,bus=xhci.0 \
 	    -boot c -serial stdio \
 	    -vga qxl -global qxl-vga.vgamem_mb=1024 \
-	    -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
+	    $(QEMU_NET_ARGS) \
 	    $(QEMU_DISK_ARGS)

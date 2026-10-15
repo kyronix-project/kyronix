@@ -8,6 +8,7 @@
 
 #include "lwip/dns.h"
 #include "lwip/dhcp.h"
+#include "lwip/def.h"
 #include "lwip/etharp.h"
 #include "lwip/init.h"
 #include "lwip/ip4_addr.h"
@@ -29,6 +30,44 @@ static proc_t *g_net_worker;
 static volatile uint32_t g_poll_pending;
 static const net_driver_ops_t *driver_acquire(bool require_netif);
 static void driver_release(void);
+
+#define NET_DHCP_TIMEOUT_MS 5000u
+
+static uint64_t g_addr_deadline;
+static uint32_t g_addr_logged;
+static bool g_addr_fallback;
+
+static void net_log_addr(const char *tag, const ip4_addr_t *ip, const ip4_addr_t *mask,
+                         const ip4_addr_t *gw) {
+    log_info("net: %s %u.%u.%u.%u mask %u.%u.%u.%u gw %u.%u.%u.%u", tag, ip4_addr1(ip),
+             ip4_addr2(ip), ip4_addr3(ip), ip4_addr4(ip), ip4_addr1(mask), ip4_addr2(mask),
+             ip4_addr3(mask), ip4_addr4(mask), ip4_addr1(gw), ip4_addr2(gw), ip4_addr3(gw),
+             ip4_addr4(gw));
+}
+
+static void net_addr_monitor(void) {
+    if (!g_netif_active) return;
+
+    const ip4_addr_t *ip = netif_ip4_addr(&g_netif);
+    if (!ip4_addr_isany_val(*ip)) {
+        if (g_addr_logged != ip4_addr_get_u32(ip)) {
+            g_addr_logged = ip4_addr_get_u32(ip);
+            net_log_addr("bound", ip, netif_ip4_netmask(&g_netif), netif_ip4_gw(&g_netif));
+        }
+        return;
+    }
+
+    if (g_addr_fallback || g_ticks < g_addr_deadline) return;
+
+    ip4_addr_t addr, mask, gw;
+    ip4_addr_set_u32(&addr, lwip_htonl(NET_MY_IP));
+    ip4_addr_set_u32(&mask, lwip_htonl(NET_MASK));
+    ip4_addr_set_u32(&gw, lwip_htonl(NET_GW));
+    netif_set_addr(&g_netif, &addr, &mask, &gw);
+    g_addr_fallback = true;
+    log_warn("net: no DHCP lease after %u ms, falling back to static address",
+             (unsigned) NET_DHCP_TIMEOUT_MS);
+}
 
 static void net_worker_main(void) {
     for (;;) {
@@ -58,6 +97,7 @@ static void net_worker_main(void) {
             driver_release();
         }
         if (g_lwip_initialized) sys_check_timeouts();
+        net_addr_monitor();
     }
 }
 
@@ -110,16 +150,22 @@ bool net_driver_register(const net_driver_ops_t *ops) {
     g_netif_active = true;
     spin_unlock_irqrestore(&g_driver_lock);
 
+    g_addr_logged = 0;
+    g_addr_fallback = false;
+    g_addr_deadline = g_ticks + NET_DHCP_TIMEOUT_MS;
+
     err_t dhcp_err = dhcp_start(&g_netif);
     if (dhcp_err != ERR_OK) {
         log_warn("net: DHCP start failed (%d)", dhcp_err);
+        g_addr_deadline = g_ticks;
     } else {
         log_info("net: DHCP started");
     }
 
     if (!g_net_worker) g_net_worker = proc_create_kernel("[net-rx]", net_worker_main);
     net_schedule_poll();
-    log_info("net: lwIP initialized, waiting for DHCP lease");
+    log_info("net: lwIP initialized, DHCP lease pending (timeout %u ms)",
+             (unsigned) NET_DHCP_TIMEOUT_MS);
     return true;
 }
 
@@ -136,6 +182,8 @@ void net_driver_unregister(const net_driver_ops_t *ops) {
     while (__atomic_load_n(&g_driver_calls, __ATOMIC_ACQUIRE)) cpu_relax();
     netif_set_down(&g_netif);
     netif_remove(&g_netif);
+    g_addr_logged = 0;
+    g_addr_fallback = false;
 }
 
 bool net_driver_send(const uint8_t *data, uint16_t len) {
