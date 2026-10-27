@@ -38,8 +38,7 @@ static const char *magic_file(const char *path) {
     fclose(f);
     if (n == 0) return "empty";
 
-    if (n >= 4 && buf[0] == 0x7f && buf[1] == 'E' && buf[2] == 'L' && buf[3] == 'F')
-        return "ELF";
+    if (n >= 4 && buf[0] == 0x7f && buf[1] == 'E' && buf[2] == 'L' && buf[3] == 'F') return "ELF";
 
     if (n >= 2 && buf[0] == '#' && buf[1] == '!') {
         char line[512];
@@ -68,10 +67,8 @@ static const char *magic_file(const char *path) {
 
     if (n >= 4 && buf[0] == '%' && buf[1] == 'P' && buf[2] == 'D' && buf[3] == 'F')
         return "PDF document";
-    if (n >= 2 && buf[0] == 0x1f && buf[1] == 0x8b)
-        return "gzip compressed data";
-    if (n >= 4 && buf[0] == 0x1f && buf[1] == 0x9d)
-        return "compress'd data";
+    if (n >= 2 && buf[0] == 0x1f && buf[1] == 0x8b) return "gzip compressed data";
+    if (n >= 4 && buf[0] == 0x1f && buf[1] == 0x9d) return "compress'd data";
     if (n >= 3 && buf[0] == 0x42 && buf[1] == 0x5a && buf[2] == 0x68)
         return "bzip2 compressed data";
     if (n >= 7 && ((buf[0] == 0xfd && buf[1] == '7' && buf[2] == 'z' && buf[3] == 'X' &&
@@ -79,8 +76,7 @@ static const char *magic_file(const char *path) {
                    (buf[0] == '7' && buf[1] == 'z' && buf[2] == 0xbc && buf[3] == 0xaf &&
                     buf[4] == 0x27 && buf[5] == 0x1c)))
         return "7-zip archive data";
-    if (n >= 4 && buf[0] == 'M' && buf[1] == 'Z')
-        return "DOS/MBR executable";
+    if (n >= 4 && buf[0] == 'M' && buf[1] == 'Z') return "DOS/MBR executable";
     if (n >= 257) {
         if (memcmp(buf + 257, "ustar", 5) == 0) {
             if (buf[262] == ' ') return "POSIX tar archive";
@@ -89,12 +85,14 @@ static const char *magic_file(const char *path) {
     }
     if (n >= 4 && buf[0] == 0x89 && buf[1] == 'P' && buf[2] == 'N' && buf[3] == 'G')
         return "PNG image data";
-    if (n >= 2 && buf[0] == 0xff && buf[1] == 0xd8)
-        return "JPEG image data";
+    if (n >= 2 && buf[0] == 0xff && buf[1] == 0xd8) return "JPEG image data";
 
     bool printable = true;
     for (size_t i = 0; i < n; i++) {
-        if (buf[i] == 0) { printable = false; break; }
+        if (buf[i] == 0) {
+            printable = false;
+            break;
+        }
     }
     if (printable) return "ASCII text";
     return "data";
@@ -136,31 +134,28 @@ static const char *magic_mime(const char *path) {
 
     if (n >= 4 && buf[0] == '%' && buf[1] == 'P' && buf[2] == 'D' && buf[3] == 'F')
         return "application/pdf";
-    if (n >= 2 && buf[0] == 0x1f && buf[1] == 0x8b)
-        return "application/gzip";
-    if (n >= 4 && buf[0] == 0x1f && buf[1] == 0x9d)
-        return "application/x-compress";
-    if (n >= 3 && buf[0] == 0x42 && buf[1] == 0x5a && buf[2] == 0x68)
-        return "application/x-bzip2";
+    if (n >= 2 && buf[0] == 0x1f && buf[1] == 0x8b) return "application/gzip";
+    if (n >= 4 && buf[0] == 0x1f && buf[1] == 0x9d) return "application/x-compress";
+    if (n >= 3 && buf[0] == 0x42 && buf[1] == 0x5a && buf[2] == 0x68) return "application/x-bzip2";
     if (n >= 7 && ((buf[0] == 0xfd && buf[1] == '7' && buf[2] == 'z' && buf[3] == 'X' &&
                     buf[4] == 'Z' && buf[5] == 0x00) ||
                    (buf[0] == '7' && buf[1] == 'z' && buf[2] == 0xbc && buf[3] == 0xaf &&
                     buf[4] == 0x27 && buf[5] == 0x1c)))
         return "application/x-7z-compressed";
-    if (n >= 4 && buf[0] == 'M' && buf[1] == 'Z')
-        return "application/x-dosexec";
+    if (n >= 4 && buf[0] == 'M' && buf[1] == 'Z') return "application/x-dosexec";
     if (n >= 257) {
-        if (memcmp(buf + 257, "ustar", 5) == 0)
-            return "application/x-tar";
+        if (memcmp(buf + 257, "ustar", 5) == 0) return "application/x-tar";
     }
     if (n >= 4 && buf[0] == 0x89 && buf[1] == 'P' && buf[2] == 'N' && buf[3] == 'G')
         return "image/png";
-    if (n >= 2 && buf[0] == 0xff && buf[1] == 0xd8)
-        return "image/jpeg";
+    if (n >= 2 && buf[0] == 0xff && buf[1] == 0xd8) return "image/jpeg";
 
     bool printable = true;
     for (size_t i = 0; i < n; i++) {
-        if (buf[i] == 0) { printable = false; break; }
+        if (buf[i] == 0) {
+            printable = false;
+            break;
+        }
     }
     if (printable) return "text/plain";
     return "application/octet-stream";
@@ -179,12 +174,9 @@ static void do_file(const char *path) {
     }
 
     const char *desc = NULL;
-    if (S_ISREG(st.st_mode) && !flag_s) {
-        desc = flag_i ? magic_mime(path) : magic_file(path);
-    }
+    if (S_ISREG(st.st_mode) && !flag_s) { desc = flag_i ? magic_mime(path) : magic_file(path); }
 
-    if (!desc)
-        desc = flag_i ? ftype_mime(st.st_mode) : ftype_name(st.st_mode);
+    if (!desc) desc = flag_i ? ftype_mime(st.st_mode) : ftype_name(st.st_mode);
 
     if (flag_b) {
         fputs(desc, stdout);
@@ -204,7 +196,10 @@ int main(int argc, char **argv) {
     int first = 1;
     for (; first < argc; first++) {
         const char *arg = argv[first];
-        if (strcmp(arg, "--") == 0) { first++; break; }
+        if (strcmp(arg, "--") == 0) {
+            first++;
+            break;
+        }
         if (arg[0] != '-' || arg[1] == '\0') break;
 
         if (strcmp(arg, "--help") == 0) {
@@ -226,12 +221,24 @@ int main(int argc, char **argv) {
 
         for (const char *p = arg + 1; *p; p++) {
             switch (*p) {
-            case 'b': flag_b = true; break;
-            case 'h': fprintf(stderr, "usage: file [-bhiL0s] [-F SEP] FILE...\n"); return 0;
-            case 'i': flag_i = true; break;
-            case 'L': flag_L = true; break;
-            case '0': flag_0 = true; break;
-            case 's': flag_s = true; break;
+            case 'b':
+                flag_b = true;
+                break;
+            case 'h':
+                fprintf(stderr, "usage: file [-bhiL0s] [-F SEP] FILE...\n");
+                return 0;
+            case 'i':
+                flag_i = true;
+                break;
+            case 'L':
+                flag_L = true;
+                break;
+            case '0':
+                flag_0 = true;
+                break;
+            case 's':
+                flag_s = true;
+                break;
             default:
                 fprintf(stderr, "usage: file [-bhiL0s] [-F SEP] FILE...\n");
                 return 1;
@@ -244,8 +251,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    for (int i = first; i < argc; i++)
-        do_file(argv[i]);
+    for (int i = first; i < argc; i++) do_file(argv[i]);
 
     return 0;
 }

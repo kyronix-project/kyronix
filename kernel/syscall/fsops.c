@@ -36,8 +36,7 @@ int64_t sys_uname(struct utsname *buf) {
 }
 
 int64_t sys_sethostname(const char *name, uint64_t length) {
-    if (length == 0 || length > sizeof(system_hostname) - 1)
-        return -(int64_t) EINVAL;
+    if (length == 0 || length > sizeof(system_hostname) - 1) return -(int64_t) EINVAL;
     if (!name || !uptr_ok(name, length)) return -(int64_t) EFAULT;
 
     spin_lock(&hostname_lock);
@@ -160,15 +159,15 @@ int64_t sys_statfs(const char *path, void *buf) {
         if (!uptr_ok_w(buf, 120)) return -(int64_t) EFAULT;
         memset(buf, 0, 120);
         uint64_t *w = (uint64_t *) buf;
-        w[0] = 0x858458f6;              // f_type = RAMFS_MAGIC
-        w[1] = 4096;                    // f_bsize
-        w[2] = 65536;                   // f_blocks
-        w[3] = 65536;                   // f_bfree
-        w[4] = 65536;                   // f_bavail
-        w[5] = 4096;                    // f_files
-        w[6] = 4096;                    // f_ffree
-        w[8] = 255;                     // f_namelen
-        w[9] = 4096;                    // f_frsize
+        w[0] = 0x858458f6; // f_type = RAMFS_MAGIC
+        w[1] = 4096;       // f_bsize
+        w[2] = 65536;      // f_blocks
+        w[3] = 65536;      // f_bfree
+        w[4] = 65536;      // f_bavail
+        w[5] = 4096;       // f_files
+        w[6] = 4096;       // f_ffree
+        w[8] = 255;        // f_namelen
+        w[9] = 4096;       // f_frsize
     }
     return 0;
 }

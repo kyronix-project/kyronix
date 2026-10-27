@@ -48,8 +48,7 @@ int main(int argc, char **argv) {
 
     if (first < argc) {
         fprintf(log, "%s [%s]", ts, tag);
-        for (int i = first; i < argc; i++)
-            fprintf(log, " %s", argv[i]);
+        for (int i = first; i < argc; i++) fprintf(log, " %s", argv[i]);
         fprintf(log, "\n");
     } else {
         char buf[4096];
@@ -58,14 +57,17 @@ int main(int argc, char **argv) {
             char *p = buf;
             ssize_t remain = n;
             while (remain > 0) {
-                char *nl = memchr(p, '\n', (size_t)remain);
-                size_t len = nl ? (size_t)(nl - p) : (size_t)remain;
+                char *nl = memchr(p, '\n', (size_t) remain);
+                size_t len = nl ? (size_t) (nl - p) : (size_t) remain;
                 char saved = p[len];
                 p[len] = 0;
                 fprintf(log, "%s [%s] %s\n", ts, tag, p);
                 p[len] = saved;
-                if (nl) { p = nl + 1; remain -= (len + 1); }
-                else break;
+                if (nl) {
+                    p = nl + 1;
+                    remain -= (len + 1);
+                } else
+                    break;
             }
         }
     }

@@ -94,16 +94,16 @@ static int64_t proc_pci_devices_read(vfs_node_t *n, char *buf, uint64_t len, uin
     size_t used = 0;
     for (int i = 0; i < g_pci_ndevs && used < sizeof(data); i++) {
         pci_dev_t *d = &g_pci_devs[i];
-        int written = snprintf(data + used, sizeof(data) - used,
-                               "%02x:%02x.%x %04x:%04x class %02x:%02x prog-if %02x irq %u\n",
-                               d->bus, d->dev, d->fn, d->vendor, d->device,
-                               d->class, d->subclass, d->prog_if, d->irq_line);
+        int written =
+            snprintf(data + used, sizeof(data) - used,
+                     "%02x:%02x.%x %04x:%04x class %02x:%02x prog-if %02x irq %u\n", d->bus, d->dev,
+                     d->fn, d->vendor, d->device, d->class, d->subclass, d->prog_if, d->irq_line);
         if (written < 0) break;
-        if ((size_t)written >= sizeof(data) - used) {
+        if ((size_t) written >= sizeof(data) - used) {
             used = sizeof(data);
             break;
         }
-        used += (size_t)written;
+        used += (size_t) written;
     }
     return read_buf(buf, len, off, data, used);
 }
@@ -307,9 +307,8 @@ static int64_t proc_loadavg_read(vfs_node_t *n, char *buf, uint64_t len, uint64_
     uint64_t l5f = ((avenrun[1] & (LOAD_FIXED - 1)) * 100) >> LOAD_SHIFT;
     uint64_t l15 = avenrun[2] >> LOAD_SHIFT;
     uint64_t l15f = ((avenrun[2] & (LOAD_FIXED - 1)) * 100) >> LOAD_SHIFT;
-    int sz =
-        snprintf(tmp, sizeof(tmp), "%lu.%02lu %lu.%02lu %lu.%02lu %d/%d %d\n",
-                 l1, l1f, l5, l5f, l15, l15f, runnable, alive, proc_last_pid());
+    int sz = snprintf(tmp, sizeof(tmp), "%lu.%02lu %lu.%02lu %lu.%02lu %d/%d %d\n", l1, l1f, l5,
+                      l5f, l15, l15f, runnable, alive, proc_last_pid());
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
@@ -321,11 +320,11 @@ static int64_t proc_stat_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t o
     uint32_t ncpus = g_cpu_count;
     if (ncpus > MAX_CPUS) ncpus = MAX_CPUS;
 
-    sz += snprintf(tmp + sz, sizeof(tmp) - (uint64_t) sz,
-                   "cpu  %lu 0 %lu %lu 0 0 0 0 0 0\n", ticks, ticks / 4, ticks);
+    sz += snprintf(tmp + sz, sizeof(tmp) - (uint64_t) sz, "cpu  %lu 0 %lu %lu 0 0 0 0 0 0\n", ticks,
+                   ticks / 4, ticks);
     for (uint32_t i = 0; i < ncpus; i++) {
-        sz += snprintf(tmp + sz, sizeof(tmp) - (uint64_t) sz,
-                       "cpu%u %lu 0 %lu %lu 0 0 0 0 0 0\n", i, ticks, ticks / 4, ticks);
+        sz += snprintf(tmp + sz, sizeof(tmp) - (uint64_t) sz, "cpu%u %lu 0 %lu %lu 0 0 0 0 0 0\n",
+                       i, ticks, ticks / 4, ticks);
     }
     sz += snprintf(tmp + sz, sizeof(tmp) - (uint64_t) sz,
                    "intr 0\n"
@@ -436,7 +435,7 @@ static int64_t proc_hostname_read(vfs_node_t *n, char *buf, uint64_t len, uint64
 
 static proc_t *node_to_proc(vfs_node_t *n) {
     if (n->fs_private) {
-        uint32_t pid = (uint32_t)(uintptr_t) n->fs_private;
+        uint32_t pid = (uint32_t) (uintptr_t) n->fs_private;
         return proc_find(pid);
     }
     return g_current_proc;
@@ -444,7 +443,10 @@ static proc_t *node_to_proc(vfs_node_t *n) {
 
 static int64_t proc_self_exe_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     proc_t *p = node_to_proc(n);
-    if (!p || !p->exe_path[0]) { if (p && n->fs_private) proc_unref(p); return 0; }
+    if (!p || !p->exe_path[0]) {
+        if (p && n->fs_private) proc_unref(p);
+        return 0;
+    }
     int64_t r = read_buf(buf, len, off, p->exe_path, strlen(p->exe_path));
     if (n->fs_private) proc_unref(p);
     return r;
@@ -452,7 +454,10 @@ static int64_t proc_self_exe_read(vfs_node_t *n, char *buf, uint64_t len, uint64
 
 static int64_t proc_self_cmdline_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     proc_t *p = node_to_proc(n);
-    if (!p || !p->exe_path[0]) { if (p && n->fs_private) proc_unref(p); return 0; }
+    if (!p || !p->exe_path[0]) {
+        if (p && n->fs_private) proc_unref(p);
+        return 0;
+    }
     int64_t r = read_buf(buf, len, off, p->exe_path, strlen(p->exe_path) + 1);
     if (n->fs_private) proc_unref(p);
     return r;
@@ -504,10 +509,11 @@ static int64_t proc_self_stat_read(vfs_node_t *n, char *buf, uint64_t len, uint6
     proc_t *p = node_to_proc(n);
     if (!p) return 0;
     char tmp[512];
-    int sz = snprintf(tmp, sizeof(tmp),
-                      "%u (%s) %c %u %d 0 0 0 0 0 0 0 0 0 0 0 0 20 0 1 0 %lu 0 0 0 0 0 0 0 0 0 0 0 0 "
-                      "0 0 0 0 0 0 0\n",
-                      p->pid, proc_name(p), proc_state_char(p), p->ppid, p->pgid, g_ticks / 10);
+    int sz =
+        snprintf(tmp, sizeof(tmp),
+                 "%u (%s) %c %u %d 0 0 0 0 0 0 0 0 0 0 0 0 20 0 1 0 %lu 0 0 0 0 0 0 0 0 0 0 0 0 "
+                 "0 0 0 0 0 0 0\n",
+                 p->pid, proc_name(p), proc_state_char(p), p->ppid, p->pgid, g_ticks / 10);
     if (n->fs_private) proc_unref(p);
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
@@ -517,8 +523,8 @@ static int64_t proc_self_statm_read(vfs_node_t *n, char *buf, uint64_t len, uint
     if (!p) return 0;
     char tmp[64];
     uint64_t pages = p->pages_alloc > p->pages_freed ? p->pages_alloc - p->pages_freed : 0;
-    int sz = snprintf(tmp, sizeof(tmp), "%lu %lu 0 0 0 0 0\n",
-                      (unsigned long) pages, (unsigned long) pages);
+    int sz = snprintf(tmp, sizeof(tmp), "%lu %lu 0 0 0 0 0\n", (unsigned long) pages,
+                      (unsigned long) pages);
     if (n->fs_private) proc_unref(p);
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
@@ -540,8 +546,14 @@ static int64_t proc_self_maps_read(vfs_node_t *n, char *buf, uint64_t len, uint6
 
 static int64_t proc_self_pagemap_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     proc_t *p = node_to_proc(n);
-    if (p && p->euid != 0) { if (n->fs_private) proc_unref(p); return -(int64_t) EPERM; }
-    if (!p || !p->space || len < 8) { if (p && n->fs_private) proc_unref(p); return 0; }
+    if (p && p->euid != 0) {
+        if (n->fs_private) proc_unref(p);
+        return -(int64_t) EPERM;
+    }
+    if (!p || !p->space || len < 8) {
+        if (p && n->fs_private) proc_unref(p);
+        return 0;
+    }
     uint64_t nentries = len / 8;
     uint64_t written = 0;
     for (uint64_t i = 0; i < nentries; i++) {
@@ -588,21 +600,26 @@ bool procfs_getdents64(vfs_node_t *dir, uint64_t *pos, void *buf, uint64_t count
 
         if (idx++ >= skip && emit_dirent(dst, count, &done, dir->ino, (int64_t) idx, DT_DIR, "."))
             emitted++;
-        if (idx++ >= skip && emit_dirent(dst, count, &done, dir->parent ? dir->parent->ino : dir->ino,
-                                         (int64_t) idx, DT_DIR, ".."))
+        if (idx++ >= skip &&
+            emit_dirent(dst, count, &done, dir->parent ? dir->parent->ino : dir->ino, (int64_t) idx,
+                        DT_DIR, ".."))
             emitted++;
 
         for (vfs_node_t *c = dir->children; c; c = c->next) {
             const char *n = c->name;
             bool is_numeric = *n != 0;
             for (; *n; n++)
-                if (*n < '0' || *n > '9') { is_numeric = false; break; }
+                if (*n < '0' || *n > '9') {
+                    is_numeric = false;
+                    break;
+                }
 
             if (is_numeric) continue;
             if (idx++ < skip) continue;
             uint8_t t = (c->type == VFS_TYPE_DIR) ? DT_DIR :
                         (c->type == VFS_TYPE_CHR) ? DT_CHR :
-                        (c->type == VFS_TYPE_SYM) ? DT_LNK : DT_REG;
+                        (c->type == VFS_TYPE_SYM) ? DT_LNK :
+                                                    DT_REG;
             if (!emit_dirent(dst, count, &done, c->ino, (int64_t) idx, t, c->name)) break;
             emitted++;
         }
@@ -701,13 +718,23 @@ bool procfs_readlink(const char *path, char *buf, uint64_t bufsz, int *out) {
         uint32_t pid = 0;
         bool valid = start < end;
         for (const char *c = start; c < end && valid; c++) {
-            if (*c < '0' || *c > '9') { valid = false; break; }
+            if (*c < '0' || *c > '9') {
+                valid = false;
+                break;
+            }
             pid = pid * 10 + (uint32_t) (*c - '0');
         }
         if (valid && pid > 0) {
             proc_t *p = proc_find(pid);
-            if (!p) { *out = -(int) ENOENT; return true; }
-            if (!p->exe_path[0]) { proc_unref(p); *out = -(int) ENOENT; return true; }
+            if (!p) {
+                *out = -(int) ENOENT;
+                return true;
+            }
+            if (!p->exe_path[0]) {
+                proc_unref(p);
+                *out = -(int) ENOENT;
+                return true;
+            }
             uint64_t n = strlen(p->exe_path);
             if (n > bufsz) n = bufsz;
             memcpy(buf, p->exe_path, n);
@@ -750,8 +777,7 @@ bool procfs_try_pid_dir(vfs_node_t *parent, const char *name) {
         if (*c < '0' || *c > '9') return false;
 
     uint32_t pid = 0;
-    for (const char *c = name; *c; c++)
-        pid = pid * 10 + (uint32_t) (*c - '0');
+    for (const char *c = name; *c; c++) pid = pid * 10 + (uint32_t) (*c - '0');
 
     proc_t *p = proc_find(pid);
     if (!p) return false;

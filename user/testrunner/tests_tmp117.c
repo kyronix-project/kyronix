@@ -236,9 +236,8 @@ int test_tmp117_emulation_dynamic(void) {
 
     ioctl(fd, TMP117_IOC_RESET, NULL);
 
-    int32_t test_temps[] = {
-        -55000, -40000, -20000, -5000, 0, 1000, 23500, 37000, 50000, 85000, 125000, 150000
-    };
+    int32_t test_temps[] = { -55000, -40000, -20000, -5000, 0,      1000,
+                             23500,  37000,  50000,  85000, 125000, 150000 };
     size_t count = sizeof(test_temps) / sizeof(test_temps[0]);
 
     for (size_t i = 0; i < count; i++) {

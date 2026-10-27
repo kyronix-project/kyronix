@@ -33,8 +33,7 @@ int main(int argc, char **argv) {
             quiet = true;
         } else if (strcmp(arg, "-u") == 0) {
             dry_run = true;
-        } else if ((strcmp(arg, "-p") == 0 || strcmp(arg, "--tmpdir") == 0) &&
-                   i + 1 < argc) {
+        } else if ((strcmp(arg, "-p") == 0 || strcmp(arg, "--tmpdir") == 0) && i + 1 < argc) {
             tmpdir = argv[++i];
         } else if (strncmp(arg, "--tmpdir=", 9) == 0) {
             tmpdir = arg + 9;

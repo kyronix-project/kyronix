@@ -1,17 +1,16 @@
 #pragma once
 
+#include "arch/x86_64/spinlock.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "arch/x86_64/spinlock.h"
 
 #ifndef offsetof
-#define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
+#define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *) 0)->MEMBER)
 #endif
 
 #ifndef container_of
-#define container_of(ptr, type, member) \
-    ((type *)((char *)(ptr) - offsetof(type, member)))
+#define container_of(ptr, type, member) ((type *) ((char *) (ptr) - offsetof(type, member)))
 #endif
 
 #define SPI_CPHA 0x01
@@ -41,7 +40,7 @@
 #define SPI_IOC_WR_BITS_PER_WORD 0x40016B03
 #define SPI_IOC_RD_MAX_SPEED_HZ 0x80046B04
 #define SPI_IOC_WR_MAX_SPEED_HZ 0x40046B04
-#define SPI_IOC_MESSAGE(N) (0x40006B00 | ((uint32_t)(N * sizeof(struct spi_ioc_transfer)) << 16))
+#define SPI_IOC_MESSAGE(N) (0x40006B00 | ((uint32_t) (N * sizeof(struct spi_ioc_transfer)) << 16))
 
 #define SPI_NAME_SIZE 32
 #define SPI_MAX_CONTROLLERS 8
@@ -137,7 +136,8 @@ struct spi_controller {
     char name[SPI_NAME_SIZE];
     int (*setup)(struct spi_device *spi);
     int (*transfer)(struct spi_device *spi, struct spi_message *mesg);
-    int (*transfer_one)(struct spi_controller *ctlr, struct spi_device *spi, struct spi_transfer *t);
+    int (*transfer_one)(struct spi_controller *ctlr, struct spi_device *spi,
+                        struct spi_transfer *t);
     int (*transfer_one_message)(struct spi_controller *ctlr, struct spi_message *mesg);
     void (*set_cs)(struct spi_device *spi, bool enable);
     void *priv;
@@ -195,6 +195,7 @@ int spi_sync_transfer(struct spi_device *spi, struct spi_transfer *xfers, unsign
 
 int spi_write(struct spi_device *spi, const void *buf, size_t len);
 int spi_read(struct spi_device *spi, void *buf, size_t len);
-int spi_write_then_read(struct spi_device *spi, const void *txbuf, unsigned n_tx, void *rxbuf, unsigned n_rx);
+int spi_write_then_read(struct spi_device *spi, const void *txbuf, unsigned n_tx, void *rxbuf,
+                        unsigned n_rx);
 
 int spi_stub_create_controller(int bus_num);

@@ -151,8 +151,7 @@ void proc_kstack_free(proc_t *p) {
 proc_t *proc_find(uint32_t pid) {
     spin_lock(&g_proctable_lock);
     for (int i = 0; i < PROC_MAX; i++) {
-        if (g_proctable[i].state != PROC_UNUSED &&
-            g_proctable[i].state != PROC_EMBRYO &&
+        if (g_proctable[i].state != PROC_UNUSED && g_proctable[i].state != PROC_EMBRYO &&
             g_proctable[i].pid == pid) {
             proc_ref(&g_proctable[i]);
             spin_unlock(&g_proctable_lock);
@@ -203,8 +202,9 @@ proc_t *sched_claim_next(proc_t *skip) {
         int st = __atomic_load_n(&next->state, __ATOMIC_ACQUIRE);
         if (st != PROC_READY) {
             if (st == PROC_RUNNING)
-                log_warn("SCHED: proc slot=%d pid=%d RUNNING while still in ready mask (double-sched)",
-                         proc_slot(next), next->pid);
+                log_warn(
+                    "SCHED: proc slot=%d pid=%d RUNNING while still in ready mask (double-sched)",
+                    proc_slot(next), next->pid);
             __atomic_fetch_and(&g_ready_mask, ~(1ULL << proc_slot(next)), __ATOMIC_RELAXED);
         }
     }

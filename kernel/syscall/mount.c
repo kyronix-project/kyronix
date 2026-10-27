@@ -121,8 +121,7 @@ int64_t sys_umount2(const char *target, int flags) {
     if (!m) return -(int64_t) EINVAL;
 
     struct filesystem *fs = vfs_find_fs(m->fstype);
-    if (fs && fs->unmount && !fs->unmount(ktarget))
-        return -(int64_t) EBUSY;
+    if (fs && fs->unmount && !fs->unmount(ktarget)) return -(int64_t) EBUSY;
 
     mount_remove(ktarget);
     log_info("umount: %s", ktarget);

@@ -23,7 +23,7 @@ static bool parse_epoch(const char *value, struct timespec *result) {
 
 static bool parse_date(const char *value, struct timespec *result) {
     if (parse_epoch(value, result)) return true;
-    struct tm tm = {0};
+    struct tm tm = { 0 };
     char *end = strptime(value, "%Y-%m-%d %H:%M:%S", &tm);
     if (!end || *end) {
         memset(&tm, 0, sizeof(tm));
@@ -67,7 +67,7 @@ static bool parse_stamp(const char *value, struct timespec *result) {
         tm.tm_year = (y >= 69 ? 1900 + y : 2000 + y) - 1900;
         pos = 2;
     }
-    char part[3] = {0};
+    char part[3] = { 0 };
     memcpy(part, digits + pos, 2);
     tm.tm_mon = atoi(part) - 1;
     memcpy(part, digits + pos + 2, 2);
@@ -80,9 +80,8 @@ static bool parse_stamp(const char *value, struct timespec *result) {
     tm.tm_isdst = -1;
 
     time_t seconds = mktime(&tm);
-    if (seconds == (time_t) -1 || tm.tm_mon < 0 || tm.tm_mon > 11 ||
-        tm.tm_mday < 1 || tm.tm_mday > 31 || tm.tm_hour > 23 ||
-        tm.tm_min > 59 || tm.tm_sec > 60)
+    if (seconds == (time_t) -1 || tm.tm_mon < 0 || tm.tm_mon > 11 || tm.tm_mday < 1 ||
+        tm.tm_mday > 31 || tm.tm_hour > 23 || tm.tm_min > 59 || tm.tm_sec > 60)
         return false;
     result->tv_sec = seconds;
     result->tv_nsec = 0;
@@ -91,7 +90,7 @@ static bool parse_stamp(const char *value, struct timespec *result) {
 
 int main(int argc, char **argv) {
     kx_prog = "touch";
-    touch_options_t o = {0};
+    touch_options_t o = { 0 };
     const char *reference = NULL;
     int first = 1;
 
@@ -106,8 +105,8 @@ int main(int argc, char **argv) {
             puts("usage: touch [-acmh] [-d DATE|-t STAMP|-r FILE] FILE...");
             return 0;
         }
-        if ((strcmp(arg, "-d") == 0 || strcmp(arg, "-t") == 0 ||
-             strcmp(arg, "-r") == 0) && first + 1 >= argc)
+        if ((strcmp(arg, "-d") == 0 || strcmp(arg, "-t") == 0 || strcmp(arg, "-r") == 0) &&
+            first + 1 >= argc)
             kx_die("option requires an argument");
         if (strcmp(arg, "-d") == 0) {
             if (!parse_date(argv[++first], &o.time)) kx_die("invalid date");
@@ -120,11 +119,20 @@ int main(int argc, char **argv) {
         } else {
             for (const char *p = arg + 1; *p; p++) {
                 switch (*p) {
-                case 'a': o.access_only = true; break;
-                case 'c': o.no_create = true; break;
-                case 'h': o.no_dereference = true; break;
-                case 'm': o.modify_only = true; break;
-                default: kx_die("invalid option");
+                case 'a':
+                    o.access_only = true;
+                    break;
+                case 'c':
+                    o.no_create = true;
+                    break;
+                case 'h':
+                    o.no_dereference = true;
+                    break;
+                case 'm':
+                    o.modify_only = true;
+                    break;
+                default:
+                    kx_die("invalid option");
                 }
             }
         }

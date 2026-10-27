@@ -265,6 +265,5 @@ void shm_proc_exit(uint32_t pid) {
 
 void shm_proc_reassign(uint32_t from_pid, uint32_t to_pid) {
     for (int i = 0; i < SHM_MAX_ATTACH; i++)
-        if (g_attaches[i].shmid && g_attaches[i].pid == from_pid)
-            g_attaches[i].pid = to_pid;
+        if (g_attaches[i].shmid && g_attaches[i].pid == from_pid) g_attaches[i].pid = to_pid;
 }

@@ -27,9 +27,8 @@ int confirm_prompt(const char *prompt);
 int run_cmd(char *const argv[]);
 int run_cmd_in(const char *dir, char *const argv[]);
 int run_cmd_input_file(const char *input_path, char *const argv[]);
-int run_pipeline_file_in(const char *dir, const char *input_path,
-                         char *const producer[], char *const consumer[],
-                         size_t max_output);
+int run_pipeline_file_in(const char *dir, const char *input_path, char *const producer[],
+                         char *const consumer[], size_t max_output);
 
 int read_repos(RepoConfig *repos, int max);
 void write_repos(const RepoConfig *repos, int count);

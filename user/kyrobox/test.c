@@ -34,8 +34,7 @@ static bool unary(const char *op, const char *arg) {
     if (strcmp(op, "-d") == 0) return have && S_ISDIR(st.st_mode);
     if (strcmp(op, "-f") == 0) return have && S_ISREG(st.st_mode);
     if (strcmp(op, "-g") == 0) return have && (st.st_mode & S_ISGID);
-    if (strcmp(op, "-h") == 0 || strcmp(op, "-L") == 0)
-        return lhave && S_ISLNK(lst.st_mode);
+    if (strcmp(op, "-h") == 0 || strcmp(op, "-L") == 0) return lhave && S_ISLNK(lst.st_mode);
     if (strcmp(op, "-k") == 0) return have && (st.st_mode & S_ISVTX);
     if (strcmp(op, "-p") == 0) return have && S_ISFIFO(st.st_mode);
     if (strcmp(op, "-r") == 0) return access(arg, R_OK) == 0;
@@ -50,19 +49,17 @@ static bool unary(const char *op, const char *arg) {
 }
 
 static bool is_unary(const char *s) {
-    static const char *const ops[] = {
-        "-a", "-b", "-c", "-d", "-e", "-f", "-g", "-G", "-h", "-k", "-L",
-        "-n", "-O", "-p", "-r", "-s", "-S", "-t", "-u", "-w", "-x", "-z"
-    };
+    static const char *const ops[] = { "-a", "-b", "-c", "-d", "-e", "-f", "-g", "-G",
+                                       "-h", "-k", "-L", "-n", "-O", "-p", "-r", "-s",
+                                       "-S", "-t", "-u", "-w", "-x", "-z" };
     for (size_t i = 0; i < sizeof(ops) / sizeof(ops[0]); i++)
         if (strcmp(s, ops[i]) == 0) return true;
     return false;
 }
 
 static bool is_binary(const char *s) {
-    static const char *const ops[] = {
-        "=", "==", "!=", "<", ">", "-eq", "-ne", "-gt", "-ge", "-lt", "-le", "-ef", "-nt", "-ot"
-    };
+    static const char *const ops[] = { "=",   "==",  "!=",  "<",   ">",   "-eq", "-ne",
+                                       "-gt", "-ge", "-lt", "-le", "-ef", "-nt", "-ot" };
     for (size_t i = 0; i < sizeof(ops) / sizeof(ops[0]); i++)
         if (strcmp(s, ops[i]) == 0) return true;
     return false;

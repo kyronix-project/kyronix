@@ -1,24 +1,21 @@
 #include "panel.h"
-#include "menu.h"
 #include "clock.h"
-#include "taskbar.h"
 #include "icons.h"
+#include "menu.h"
+#include "taskbar.h"
 
-static void on_launcher_clicked(GtkWidget *button, gpointer user_data)
-{
+static void on_launcher_clicked(GtkWidget *button, gpointer user_data) {
     menu_popup(user_data, button);
 }
 
-void panel_window_place(GtkWidget *win, gpointer user_data)
-{
-    (void)win;
-    (void)user_data;
+void panel_window_place(GtkWidget *win, gpointer user_data) {
+    (void) win;
+    (void) user_data;
     /* The compositor docks the panel to the bottom edge (so: shell hook);
      * GNOME/Wayland needs no client-side positioning here. */
 }
 
-GtkWidget *panel_window_new(void)
-{
+GtkWidget *panel_window_new(void) {
     GtkWidget *win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(win, "panel-window");
     gtk_style_context_add_class(gtk_widget_get_style_context(win), "panel");

@@ -1,6 +1,6 @@
 #pragma once
 
-// module declars here 
+// module declars here
 
 #include "version.h"
 
@@ -19,8 +19,7 @@
 MODULE_INFO(vermagic, KERNEL_VERSION);
 
 #define module_init(fn)                                                                            \
-    int init_module(void) { return (fn)(); }
+    int init_module(void) { return (fn) (); }
 
 #define module_exit(fn)                                                                            \
     void cleanup_module(void) { (fn)(); }
-

@@ -94,9 +94,12 @@ static void parse_columns(const char *list) {
 static int compare_processes(const void *va, const void *vb) {
     const process_t *a = va, *b = vb;
     int result;
-    if (strcmp(sort_key, "pid") == 0) result = (a->pid > b->pid) - (a->pid < b->pid);
-    else if (strcmp(sort_key, "ppid") == 0) result = (a->ppid > b->ppid) - (a->ppid < b->ppid);
-    else if (strcmp(sort_key, "uid") == 0) result = (a->uid > b->uid) - (a->uid < b->uid);
+    if (strcmp(sort_key, "pid") == 0)
+        result = (a->pid > b->pid) - (a->pid < b->pid);
+    else if (strcmp(sort_key, "ppid") == 0)
+        result = (a->ppid > b->ppid) - (a->ppid < b->ppid);
+    else if (strcmp(sort_key, "uid") == 0)
+        result = (a->uid > b->uid) - (a->uid < b->uid);
     else if (strcmp(sort_key, "rss") == 0 || strcmp(sort_key, "vsz") == 0 ||
              strcmp(sort_key, "mem") == 0)
         result = (a->mem_kb > b->mem_kb) - (a->mem_kb < b->mem_kb);
@@ -119,28 +122,41 @@ static bool selected(const process_t *p) {
 }
 
 static const char *column_header(column_t c) {
-    static const char *const names[] = {
-        "PID", "PPID", "UID", "USER", "S", "MEM(KB)", "VSZ", "RSS", "COMMAND", "COMMAND"
-    };
+    static const char *const names[] = { "PID",     "PPID", "UID", "USER",    "S",
+                                         "MEM(KB)", "VSZ",  "RSS", "COMMAND", "COMMAND" };
     return names[c];
 }
 
 static void print_column(column_t c, const process_t *p) {
     struct passwd *pw;
     switch (c) {
-        case COL_PID: printf("%5u", p->pid); break;
-        case COL_PPID: printf("%5u", p->ppid); break;
-        case COL_UID: printf("%5u", p->uid); break;
-        case COL_USER:
-            pw = getpwuid((uid_t) p->uid);
-            printf("%-8.8s", pw ? pw->pw_name : "?");
-            break;
-        case COL_STATE: printf("%c", p->state); break;
-        case COL_MEM:
-        case COL_VSZ:
-        case COL_RSS: printf("%8lu", p->mem_kb); break;
-        case COL_COMM: printf("%s", kx_base(p->command)); break;
-        case COL_COMMAND: printf("%s", p->command); break;
+    case COL_PID:
+        printf("%5u", p->pid);
+        break;
+    case COL_PPID:
+        printf("%5u", p->ppid);
+        break;
+    case COL_UID:
+        printf("%5u", p->uid);
+        break;
+    case COL_USER:
+        pw = getpwuid((uid_t) p->uid);
+        printf("%-8.8s", pw ? pw->pw_name : "?");
+        break;
+    case COL_STATE:
+        printf("%c", p->state);
+        break;
+    case COL_MEM:
+    case COL_VSZ:
+    case COL_RSS:
+        printf("%8lu", p->mem_kb);
+        break;
+    case COL_COMM:
+        printf("%s", kx_base(p->command));
+        break;
+    case COL_COMMAND:
+        printf("%s", p->command);
+        break;
     }
 }
 
@@ -165,15 +181,16 @@ int main(int argc, char **argv) {
             }
             continue;
         }
-        if ((strcmp(a, "-p") == 0 || strcmp(a, "--pid") == 0 ||
-             strcmp(a, "-q") == 0) && i + 1 < argc) {
+        if ((strcmp(a, "-p") == 0 || strcmp(a, "--pid") == 0 || strcmp(a, "-q") == 0) &&
+            i + 1 < argc) {
             parse_pid_list(argv[++i]);
             continue;
         }
         if ((strcmp(a, "-U") == 0 || strcmp(a, "--User") == 0) && i + 1 < argc) {
             const char *user = argv[++i];
             unsigned uid;
-            if (parse_unsigned(user, &uid)) selected_uid = uid;
+            if (parse_unsigned(user, &uid))
+                selected_uid = uid;
             else {
                 struct passwd *pw = getpwnam(user);
                 if (!pw) kx_die("unknown user");
@@ -237,8 +254,9 @@ int main(int argc, char **argv) {
     char line[1024];
     while (count < sizeof(processes) / sizeof(processes[0]) && fgets(line, sizeof(line), f)) {
         process_t p = { 0 };
-        if (sscanf(line, "%u %u %c %u %lu %511s", &p.pid, &p.ppid, &p.state, &p.uid,
-                   &p.mem_kb, p.command) >= 5 && selected(&p))
+        if (sscanf(line, "%u %u %c %u %lu %511s", &p.pid, &p.ppid, &p.state, &p.uid, &p.mem_kb,
+                   p.command) >= 5 &&
+            selected(&p))
             processes[count++] = p;
     }
     fclose(f);

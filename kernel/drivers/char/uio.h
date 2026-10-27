@@ -1,7 +1,7 @@
 #pragma once
-#include "../proc/proc.h"
-#include "../bus/pci/pci.h"
 #include "../arch/x86_64/spinlock.h"
+#include "../bus/pci/pci.h"
+#include "../proc/proc.h"
 #include <stdint.h>
 
 typedef struct {

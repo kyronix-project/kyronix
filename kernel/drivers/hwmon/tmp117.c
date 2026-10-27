@@ -12,10 +12,7 @@
 #define ERANGE 34
 #define ENOMEM 12
 
-static const struct i2c_device_id tmp117_id[] = {
-    { "tmp117", 0 },
-    { "", 0 }
-};
+static const struct i2c_device_id tmp117_id[] = { { "tmp117", 0 }, { "", 0 } };
 
 static const uint16_t g_conv_times_ms[] = { 16, 125, 250, 500, 1000, 4000, 8000, 16000 };
 
@@ -35,9 +32,7 @@ int16_t tmp117_mc_to_raw(int32_t temp_mc) {
     return (int16_t) ((mc * TMP117_RESOLUTION_DENOM + round) / TMP117_RESOLUTION_NUM);
 }
 
-int64_t tmp117_raw_to_uc(int16_t raw) {
-    return ((int64_t) raw * TMP117_RESOLUTION_NUM) / 10LL;
-}
+int64_t tmp117_raw_to_uc(int16_t raw) { return ((int64_t) raw * TMP117_RESOLUTION_NUM) / 10LL; }
 
 int16_t tmp117_uc_to_raw(int64_t temp_uc) {
     int64_t round = (temp_uc >= 0) ? TMP117_REVERSE_ROUND : -TMP117_REVERSE_ROUND;
@@ -156,13 +151,15 @@ int tmp117_get_status_flags(tmp117_data_t *data, uint16_t *flags) {
     int ret = i2c_smbus_read_word_swapped(data->client, TMP117_REG_CONFIGURATION, &cfg);
     if (ret < 0) return ret;
     data->cached_config = cfg;
-    *flags = cfg & (TMP117_CONFIG_HIGH_ALERT | TMP117_CONFIG_LOW_ALERT | TMP117_CONFIG_DATA_READY | TMP117_CONFIG_EEPROM_BUSY);
+    *flags = cfg & (TMP117_CONFIG_HIGH_ALERT | TMP117_CONFIG_LOW_ALERT | TMP117_CONFIG_DATA_READY |
+                    TMP117_CONFIG_EEPROM_BUSY);
     return 0;
 }
 
 int tmp117_soft_reset(tmp117_data_t *data) {
     if (!data || !data->client) return -EINVAL;
-    return i2c_smbus_write_word_swapped(data->client, TMP117_REG_CONFIGURATION, TMP117_CONFIG_SOFT_RESET);
+    return i2c_smbus_write_word_swapped(data->client, TMP117_REG_CONFIGURATION,
+                                        TMP117_CONFIG_SOFT_RESET);
 }
 
 int tmp117_inject_raw(tmp117_data_t *data, int16_t raw) {
@@ -179,7 +176,9 @@ static int32_t parse_signed_int(const char *buf, uint64_t len) {
     int32_t val = 0;
     bool neg = false;
     uint64_t idx = 0;
-    while (idx < len && (buf[idx] == ' ' || buf[idx] == '\t' || buf[idx] == '\n' || buf[idx] == '\r')) idx++;
+    while (idx < len &&
+           (buf[idx] == ' ' || buf[idx] == '\t' || buf[idx] == '\n' || buf[idx] == '\r'))
+        idx++;
     if (idx < len && buf[idx] == '-') {
         neg = true;
         idx++;
@@ -493,49 +492,56 @@ static int tmp117_i2c_probe(struct i2c_client *client, const struct i2c_device_i
         data->sysfs_name = n_name;
     }
 
-    vfs_node_t *n_input = vfs_create_chr("/sys/class/hwmon/hwmon0/temp1_input", sysfs_temp_input_read, NULL);
+    vfs_node_t *n_input =
+        vfs_create_chr("/sys/class/hwmon/hwmon0/temp1_input", sysfs_temp_input_read, NULL);
     if (n_input) {
         n_input->data = (uint8_t *) data;
         n_input->mode = S_IFCHR | 0444;
         data->sysfs_temp_input = n_input;
     }
 
-    vfs_node_t *n_max = vfs_create_chr("/sys/class/hwmon/hwmon0/temp1_max", sysfs_temp_max_read, sysfs_temp_max_write);
+    vfs_node_t *n_max = vfs_create_chr("/sys/class/hwmon/hwmon0/temp1_max", sysfs_temp_max_read,
+                                       sysfs_temp_max_write);
     if (n_max) {
         n_max->data = (uint8_t *) data;
         n_max->mode = S_IFCHR | 0666;
         data->sysfs_temp_max = n_max;
     }
 
-    vfs_node_t *n_min = vfs_create_chr("/sys/class/hwmon/hwmon0/temp1_min", sysfs_temp_min_read, sysfs_temp_min_write);
+    vfs_node_t *n_min = vfs_create_chr("/sys/class/hwmon/hwmon0/temp1_min", sysfs_temp_min_read,
+                                       sysfs_temp_min_write);
     if (n_min) {
         n_min->data = (uint8_t *) data;
         n_min->mode = S_IFCHR | 0666;
         data->sysfs_temp_min = n_min;
     }
 
-    vfs_node_t *n_max_alarm = vfs_create_chr("/sys/class/hwmon/hwmon0/temp1_max_alarm", sysfs_max_alarm_read, NULL);
+    vfs_node_t *n_max_alarm =
+        vfs_create_chr("/sys/class/hwmon/hwmon0/temp1_max_alarm", sysfs_max_alarm_read, NULL);
     if (n_max_alarm) {
         n_max_alarm->data = (uint8_t *) data;
         n_max_alarm->mode = S_IFCHR | 0444;
         data->sysfs_temp_max_alarm = n_max_alarm;
     }
 
-    vfs_node_t *n_min_alarm = vfs_create_chr("/sys/class/hwmon/hwmon0/temp1_min_alarm", sysfs_min_alarm_read, NULL);
+    vfs_node_t *n_min_alarm =
+        vfs_create_chr("/sys/class/hwmon/hwmon0/temp1_min_alarm", sysfs_min_alarm_read, NULL);
     if (n_min_alarm) {
         n_min_alarm->data = (uint8_t *) data;
         n_min_alarm->mode = S_IFCHR | 0444;
         data->sysfs_temp_min_alarm = n_min_alarm;
     }
 
-    vfs_node_t *n_offset = vfs_create_chr("/sys/class/hwmon/hwmon0/temp1_offset", sysfs_temp_offset_read, sysfs_temp_offset_write);
+    vfs_node_t *n_offset = vfs_create_chr("/sys/class/hwmon/hwmon0/temp1_offset",
+                                          sysfs_temp_offset_read, sysfs_temp_offset_write);
     if (n_offset) {
         n_offset->data = (uint8_t *) data;
         n_offset->mode = S_IFCHR | 0666;
         data->sysfs_temp_offset = n_offset;
     }
 
-    vfs_node_t *n_intv = vfs_create_chr("/sys/class/hwmon/hwmon0/update_interval", sysfs_interval_read, NULL);
+    vfs_node_t *n_intv =
+        vfs_create_chr("/sys/class/hwmon/hwmon0/update_interval", sysfs_interval_read, NULL);
     if (n_intv) {
         n_intv->data = (uint8_t *) data;
         n_intv->mode = S_IFCHR | 0444;
@@ -544,7 +550,8 @@ static int tmp117_i2c_probe(struct i2c_client *client, const struct i2c_device_i
 
     data->probed = true;
     g_default_data = data;
-    log_info("tmp117: probed TI TMP117 at I2C addr 0x%02x (device id 0x%04x)", client->addr, dev_id);
+    log_info("tmp117: probed TI TMP117 at I2C addr 0x%02x (device id 0x%04x)", client->addr,
+             dev_id);
     return 0;
 }
 
@@ -586,9 +593,7 @@ static struct i2c_driver tmp117_driver = {
     .id_table = tmp117_id,
 };
 
-tmp117_data_t *tmp117_get_default_device(void) {
-    return g_default_data;
-}
+tmp117_data_t *tmp117_get_default_device(void) { return g_default_data; }
 
 void tmp117_subsys_init(void) {
     i2c_register_driver(NULL, &tmp117_driver);

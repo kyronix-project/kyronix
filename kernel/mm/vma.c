@@ -66,8 +66,10 @@ int vma_add(vmm_space_t *sp, uint64_t start, uint64_t len, uint32_t prot, uint32
     for (int i = 0; i < VMM_VMA_MAX; i++) {
         vmm_vma_t *v = &sp->vmas[i];
         if (!v->used || !vma_same_kind(v, prot, map_flags, free_on_unmap)) continue;
-        if (v->end == start) before = v;
-        else if (v->start == end) after = v;
+        if (v->end == start)
+            before = v;
+        else if (v->start == end)
+            after = v;
     }
     if (before && after) {
         before->end = after->end;
@@ -144,8 +146,7 @@ bool vma_range_info(vmm_space_t *sp, uint64_t start, uint64_t len, uint32_t *pro
     uint64_t cur = start;
     while (cur < end) {
         vmm_vma_t *v = containing(sp, cur);
-        if (!v || v->prot != p || v->map_flags != mf ||
-            (v->free_on_unmap != 0) != owned)
+        if (!v || v->prot != p || v->map_flags != mf || (v->free_on_unmap != 0) != owned)
             return false;
         cur = v->end < end ? v->end : end;
     }

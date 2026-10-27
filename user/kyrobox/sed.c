@@ -130,9 +130,12 @@ static void parse_script(const char *script) {
             char *pat = extract_delim(&p, delim);
             char *repl = extract_delim(&p, delim);
             while (*p == 'g' || *p == 'i' || *p == 'p') {
-                if (*p == 'g') c.s_global = true;
-                else if (*p == 'i') c.s_icase = true;
-                else c.s_print = true;
+                if (*p == 'g')
+                    c.s_global = true;
+                else if (*p == 'i')
+                    c.s_icase = true;
+                else
+                    c.s_print = true;
                 p++;
             }
             int flags = REG_EXTENDED | (c.s_icase ? REG_ICASE : 0);
@@ -148,10 +151,14 @@ static void parse_script(const char *script) {
 
 static bool addr_match_single(addr_t *a, const char *line, long lineno, long total) {
     switch (a->kind) {
-        case ADDR_LINE: return lineno == a->line;
-        case ADDR_LAST: return lineno == total;
-        case ADDR_REGEX: return regexec(&a->re, line, 0, NULL, 0) == 0;
-        default: return false;
+    case ADDR_LINE:
+        return lineno == a->line;
+    case ADDR_LAST:
+        return lineno == total;
+    case ADDR_REGEX:
+        return regexec(&a->re, line, 0, NULL, 0) == 0;
+    default:
+        return false;
     }
 }
 
@@ -161,8 +168,10 @@ static bool cmd_applies(cmd_t *c, const char *line, long lineno, long total) {
     if (!c->in_range) {
         if (!addr_match_single(&c->a1, line, lineno, total)) return false;
         c->in_range = true;
-        if (c->a2.kind == ADDR_LINE && c->a2.line <= lineno) c->in_range = false;
-        else if (c->a2.kind == ADDR_REGEX && addr_match_single(&c->a2, line, lineno, total)) c->in_range = false;
+        if (c->a2.kind == ADDR_LINE && c->a2.line <= lineno)
+            c->in_range = false;
+        else if (c->a2.kind == ADDR_REGEX && addr_match_single(&c->a2, line, lineno, total))
+            c->in_range = false;
         return true;
     }
     if (addr_match_single(&c->a2, line, lineno, total)) c->in_range = false;
@@ -183,7 +192,9 @@ static char *do_subst(cmd_t *c, const char *line, bool *changed) {
         for (const char *r = c->repl; *r; r++) {
             if (*r == '\\' && r[1] >= '0' && r[1] <= '9') {
                 int gi = r[1] - '0';
-                if (m[gi].rm_so >= 0) buf_append(&out, &cap, &len, p + m[gi].rm_so, (size_t) (m[gi].rm_eo - m[gi].rm_so));
+                if (m[gi].rm_so >= 0)
+                    buf_append(&out, &cap, &len, p + m[gi].rm_so,
+                               (size_t) (m[gi].rm_eo - m[gi].rm_so));
                 r++;
             } else if (*r == '\\' && r[1]) {
                 buf_append(&out, &cap, &len, r + 1, 1);

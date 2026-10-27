@@ -67,7 +67,7 @@ uint32_t phantom_event_weight(uint32_t kind, uint32_t flags) {
     case PHANTOM_EVENT_ACCESS:
         if (flags & 1u) return 50u; // execute denial
         if (flags & 2u) return 30u; // write denial
-        return 10u;   // lookup/read denial
+        return 10u;                 // lookup/read denial
     case PHANTOM_EVENT_NETWORK:
         return 10u;
     case PHANTOM_EVENT_CRYPTO:
@@ -82,8 +82,7 @@ static void phantom_score_event(uint32_t kind, uint32_t flags) {
     if (!p || p->phantom_sandbox || kind == PHANTOM_EVENT_CLONE) return;
 
     uint64_t now = g_ticks;
-    if (p->phantom_score &&
-        now - p->phantom_score_tick > PHANTOM_SCORE_WINDOW_TICKS)
+    if (p->phantom_score && now - p->phantom_score_tick > PHANTOM_SCORE_WINDOW_TICKS)
         p->phantom_score = 0;
     p->phantom_score_tick = now;
 
@@ -91,17 +90,15 @@ static void phantom_score_event(uint32_t kind, uint32_t flags) {
     p->phantom_score = (uint16_t) (score > UINT16_MAX ? UINT16_MAX : score);
     if (p->phantom_score < PHANTOM_SCORE_THRESHOLD) return;
     if (p->phantom_clone_count >= PHANTOM_CLONE_BUDGET) return;
-    if (p->phantom_clone_count &&
-        now - p->phantom_last_clone_tick < PHANTOM_CLONE_COOLDOWN_TICKS)
+    if (p->phantom_clone_count && now - p->phantom_last_clone_tick < PHANTOM_CLONE_COOLDOWN_TICKS)
         return;
 
     p->phantom_pending = 1;
     p->phantom_score = 0;
 }
 
-static void phantom_record_owner(const proc_t *owner, uint32_t kind,
-                                 uint32_t flags, uint64_t address,
-                                 uint64_t instruction, const char *detail,
+static void phantom_record_owner(const proc_t *owner, uint32_t kind, uint32_t flags,
+                                 uint64_t address, uint64_t instruction, const char *detail,
                                  bool score) {
     if (g_mode == PHANTOM_OFF) return;
     uint32_t slot = __atomic_fetch_add(&g_write, 1, __ATOMIC_RELAXED) % PHANTOM_EVENT_RING;
@@ -114,24 +111,23 @@ static void phantom_record_owner(const proc_t *owner, uint32_t kind,
     event->flags = flags;
     event->address = address;
     event->instruction = instruction;
-    if (detail) strncpy(event->detail, detail, PHANTOM_DETAIL_MAX - 1);
-    else event->detail[0] = '\0';
+    if (detail)
+        strncpy(event->detail, detail, PHANTOM_DETAIL_MAX - 1);
+    else
+        event->detail[0] = '\0';
     event->detail[PHANTOM_DETAIL_MAX - 1] = '\0';
     if (score && (g_mode == PHANTOM_TRAP || g_mode == PHANTOM_QUARANTINE))
         phantom_score_event(kind, flags);
 }
 
-void phantom_record(uint32_t kind, uint32_t flags, uint64_t address,
-                    uint64_t instruction, const char *detail) {
-    phantom_record_owner(g_current_proc, kind, flags, address, instruction,
-                         detail, true);
+void phantom_record(uint32_t kind, uint32_t flags, uint64_t address, uint64_t instruction,
+                    const char *detail) {
+    phantom_record_owner(g_current_proc, kind, flags, address, instruction, detail, true);
 }
 
-void phantom_record_for(const struct proc *owner, uint32_t kind,
-                        uint32_t flags, uint64_t address,
+void phantom_record_for(const struct proc *owner, uint32_t kind, uint32_t flags, uint64_t address,
                         uint64_t instruction, const char *detail) {
-    phantom_record_owner(owner, kind, flags, address, instruction, detail,
-                         false);
+    phantom_record_owner(owner, kind, flags, address, instruction, detail, false);
 }
 
 bool phantom_fault_candidate(const cpu_state_t *state, uint64_t address) {
@@ -140,17 +136,15 @@ bool phantom_fault_candidate(const cpu_state_t *state, uint64_t address) {
     bool write = (state->error_code & 2u) != 0;
     bool execute = (state->error_code & 16u) != 0;
     if (!present || (!write && !execute)) return false;
-    phantom_record(PHANTOM_EVENT_FAULT, (uint32_t) state->error_code, address,
-                   state->rip, execute ? "user instruction violation" : "user write violation");
+    phantom_record(PHANTOM_EVENT_FAULT, (uint32_t) state->error_code, address, state->rip,
+                   execute ? "user instruction violation" : "user write violation");
     return g_mode == PHANTOM_TRAP || g_mode == PHANTOM_QUARANTINE;
 }
 
 static bool phantom_proc_on_cpu(const proc_t *target) {
     uint32_t ncpu = g_cpu_count < MAX_CPUS ? g_cpu_count : MAX_CPUS;
     for (uint32_t i = 0; i < ncpu; i++)
-        if (__atomic_load_n(&g_cpu_local[i].current, __ATOMIC_ACQUIRE) ==
-            target)
-            return true;
+        if (__atomic_load_n(&g_cpu_local[i].current, __ATOMIC_ACQUIRE) == target) return true;
     return false;
 }
 
@@ -164,8 +158,7 @@ static void phantom_wake_source(proc_t *source) {
     spin_unlock(&g_proctable_lock);
 }
 
-static bool phantom_fault_enqueue(proc_t *source, const cpu_state_t *state,
-                                  uint64_t address) {
+static bool phantom_fault_enqueue(proc_t *source, const cpu_state_t *state, uint64_t address) {
     spin_lock(&g_fault_lock);
     if (!g_fault_worker || g_fault_count == PHANTOM_FAULT_QUEUE_SIZE) {
         spin_unlock(&g_fault_lock);
@@ -180,8 +173,7 @@ static bool phantom_fault_enqueue(proc_t *source, const cpu_state_t *state,
     g_fault_tail = (g_fault_tail + 1u) % PHANTOM_FAULT_QUEUE_SIZE;
     g_fault_count++;
 
-    if (__sync_bool_compare_and_swap(&g_fault_worker->state, PROC_WAITING,
-                                     PROC_READY))
+    if (__sync_bool_compare_and_swap(&g_fault_worker->state, PROC_WAITING, PROC_READY))
         proc_set_ready(g_fault_worker);
     spin_unlock(&g_fault_lock);
     return true;
@@ -197,8 +189,7 @@ static bool phantom_fault_dequeue(phantom_fault_job_t *job) {
     }
 
     *job = g_fault_jobs[g_fault_head];
-    memset(&g_fault_jobs[g_fault_head], 0,
-           sizeof(g_fault_jobs[g_fault_head]));
+    memset(&g_fault_jobs[g_fault_head], 0, sizeof(g_fault_jobs[g_fault_head]));
     g_fault_head = (g_fault_head + 1u) % PHANTOM_FAULT_QUEUE_SIZE;
     g_fault_count--;
     spin_unlock(&g_fault_lock);
@@ -213,20 +204,16 @@ static void phantom_fault_complete(proc_t *source, int64_t sandbox_pid) {
         source->phantom_sandbox_pid = (uint32_t) sandbox_pid;
     else
         source->phantom_quarantine_action = PHANTOM_CTL_TERMINATE;
-    terminate =
-        source->phantom_quarantine_action == PHANTOM_CTL_TERMINATE;
+    terminate = source->phantom_quarantine_action == PHANTOM_CTL_TERMINATE;
     if (terminate) source->phantom_quarantined = 0;
     spin_unlock(&g_proctable_lock);
 
     if (sandbox_pid > 0) {
-        phantom_record_for(source, PHANTOM_EVENT_QUARANTINE,
-                           PHANTOM_QUARANTINEF_READY,
-                           (uint64_t) (uint32_t) sandbox_pid, source->pid,
-                           "fault sandbox ready");
+        phantom_record_for(source, PHANTOM_EVENT_QUARANTINE, PHANTOM_QUARANTINEF_READY,
+                           (uint64_t) (uint32_t) sandbox_pid, source->pid, "fault sandbox ready");
     } else {
-        phantom_record_for(source, PHANTOM_EVENT_QUARANTINE,
-                           PHANTOM_QUARANTINEF_TERMINATE, 0, source->pid,
-                           "fault sandbox failed closed");
+        phantom_record_for(source, PHANTOM_EVENT_QUARANTINE, PHANTOM_QUARANTINEF_TERMINATE, 0,
+                           source->pid, "fault sandbox failed closed");
     }
     if (terminate) phantom_wake_source(source);
 }
@@ -239,8 +226,7 @@ static void __attribute__((noreturn)) phantom_fault_worker(void) {
             continue;
         }
 
-        int64_t child =
-            proc_phantom_fault_clone(job.source, &job.state, job.address);
+        int64_t child = proc_phantom_fault_clone(job.source, &job.state, job.address);
         phantom_fault_complete(job.source, child);
         proc_unref(job.source);
     }
@@ -248,8 +234,7 @@ static void __attribute__((noreturn)) phantom_fault_worker(void) {
 
 bool phantom_worker_start(void) {
     if (g_fault_worker) return true;
-    g_fault_worker =
-        proc_create_kernel("[phantom-worker]", phantom_fault_worker);
+    g_fault_worker = proc_create_kernel("[phantom-worker]", phantom_fault_worker);
     if (!g_fault_worker) {
         log_error("PHANTOM: could not create fault worker");
         return false;
@@ -261,8 +246,7 @@ bool phantom_worker_start(void) {
 
 bool phantom_handle_fault(const cpu_state_t *state, uint64_t address) {
     proc_t *p = g_current_proc;
-    if (g_mode != PHANTOM_QUARANTINE || !p || p->phantom_sandbox)
-        return false;
+    if (g_mode != PHANTOM_QUARANTINE || !p || p->phantom_sandbox) return false;
 
     spin_lock(&g_proctable_lock);
     p->phantom_pending = 0;
@@ -282,24 +266,21 @@ bool phantom_handle_fault(const cpu_state_t *state, uint64_t address) {
         p->phantom_fault_job_pending = 0;
         p->state = PROC_RUNNING;
         spin_unlock(&g_proctable_lock);
-        phantom_record(PHANTOM_EVENT_CLONE,
-                       PHANTOM_CLONEF_FAILED | PHANTOM_CLONEF_WORKER,
-                       address, state->rip, "fault worker queue full");
+        phantom_record(PHANTOM_EVENT_CLONE, PHANTOM_CLONEF_FAILED | PHANTOM_CLONEF_WORKER, address,
+                       state->rip, "fault worker queue full");
         return false;
     }
 
     p->phantom_last_clone_tick = g_ticks;
     if (p->phantom_clone_count < UINT8_MAX) p->phantom_clone_count++;
-    phantom_record(PHANTOM_EVENT_QUARANTINE, PHANTOM_QUARANTINEF_HOLD,
-                   address, state->rip, "fault source queued");
+    phantom_record(PHANTOM_EVENT_QUARANTINE, PHANTOM_QUARANTINEF_HOLD, address, state->rip,
+                   "fault source queued");
 
     sched_block_current();
     proc_do_exit(-11);
 }
 
-bool phantom_pending(void) {
-    return g_current_proc && g_current_proc->phantom_pending != 0;
-}
+bool phantom_pending(void) { return g_current_proc && g_current_proc->phantom_pending != 0; }
 
 void phantom_safe_point(syscall_frame_t *frame) {
     if (!phantom_pending() || !g_current_proc || !g_current_proc->phantom_pending) return;
@@ -313,8 +294,7 @@ void phantom_safe_point(syscall_frame_t *frame) {
             g_current_proc->phantom_last_clone_tick = g_ticks;
             if (g_current_proc->phantom_clone_count < UINT8_MAX)
                 g_current_proc->phantom_clone_count++;
-            if (mode == PHANTOM_QUARANTINE)
-                phantom_quarantine_current((uint32_t) child);
+            if (mode == PHANTOM_QUARANTINE) phantom_quarantine_current((uint32_t) child);
         }
     }
 }
@@ -327,16 +307,15 @@ void phantom_quarantine_current(uint32_t sandbox_pid) {
     p->phantom_sandbox_pid = sandbox_pid;
     p->phantom_quarantine_action = PHANTOM_CTL_STATUS;
     p->phantom_quarantined = 1;
-    phantom_record(PHANTOM_EVENT_QUARANTINE, PHANTOM_QUARANTINEF_HOLD,
-                   sandbox_pid, p->pid, "source timeline quarantined");
+    phantom_record(PHANTOM_EVENT_QUARANTINE, PHANTOM_QUARANTINEF_HOLD, sandbox_pid, p->pid,
+                   "source timeline quarantined");
     p->state = PROC_QUARANTINED;
     proc_clear_ready(p);
     spin_unlock(&g_proctable_lock);
 
     sched_block_current();
 
-    uint8_t action =
-        __atomic_load_n(&p->phantom_quarantine_action, __ATOMIC_ACQUIRE);
+    uint8_t action = __atomic_load_n(&p->phantom_quarantine_action, __ATOMIC_ACQUIRE);
     p->phantom_quarantine_action = PHANTOM_CTL_STATUS;
     if (action == PHANTOM_CTL_TERMINATE) {
         int status = p->phantom_fault_quarantine ? -11 : -9;

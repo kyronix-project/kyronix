@@ -114,8 +114,7 @@ static void die(const char *what) {
 
 static uint64_t device_size(int fd) {
     uint64_t size = 0;
-    if (ioctl(fd, BLKGETSIZE64, &size) == 0 ||
-        ioctl(fd, BLKGETSIZE64_COMPAT, &size) == 0)
+    if (ioctl(fd, BLKGETSIZE64, &size) == 0 || ioctl(fd, BLKGETSIZE64_COMPAT, &size) == 0)
         return size;
 
     off_t end = lseek(fd, 0, SEEK_END);
@@ -132,10 +131,8 @@ static void write_exact(int fd, uint64_t offset, const void *data, size_t size) 
         ssize_t n = write(fd, p + done, size - done);
         if (n < 0) {
             if (errno == EINTR) continue;
-            fprintf(stderr,
-                    "%s: write failed at offset %llu (%zu/%zu bytes): %s\n",
-                    program, (unsigned long long) (offset + done),
-                    size - done, size, strerror(errno));
+            fprintf(stderr, "%s: write failed at offset %llu (%zu/%zu bytes): %s\n", program,
+                    (unsigned long long) (offset + done), size - done, size, strerror(errno));
             exit(1);
         }
         if (n == 0) {
@@ -205,19 +202,16 @@ int main(int argc, char **argv) {
     uint64_t bytes = device_size(fd);
     uint64_t block_count64 = bytes / BLOCK_SIZE;
     if (block_count64 < 2048u || block_count64 > UINT32_MAX) {
-        fprintf(stderr, "%s: unsupported filesystem size: %llu bytes\n",
-                program, (unsigned long long) bytes);
+        fprintf(stderr, "%s: unsupported filesystem size: %llu bytes\n", program,
+                (unsigned long long) bytes);
         close(fd);
         return 1;
     }
 
     uint32_t blocks = (uint32_t) block_count64;
-    uint32_t groups =
-        (blocks + BLOCKS_PER_GROUP - 1u) / BLOCKS_PER_GROUP;
-    uint32_t gdt_blocks =
-        (groups * sizeof(ext2_group_t) + BLOCK_SIZE - 1u) / BLOCK_SIZE;
-    uint32_t inode_table_blocks =
-        (INODES_PER_GROUP * INODE_SIZE + BLOCK_SIZE - 1u) / BLOCK_SIZE;
+    uint32_t groups = (blocks + BLOCKS_PER_GROUP - 1u) / BLOCKS_PER_GROUP;
+    uint32_t gdt_blocks = (groups * sizeof(ext2_group_t) + BLOCK_SIZE - 1u) / BLOCK_SIZE;
+    uint32_t inode_table_blocks = (INODES_PER_GROUP * INODE_SIZE + BLOCK_SIZE - 1u) / BLOCK_SIZE;
     uint32_t metadata_blocks = 3u + gdt_blocks + inode_table_blocks;
 
     for (uint32_t g = 0; g < groups; g++) {
@@ -242,8 +236,7 @@ int main(int argc, char **argv) {
         gdt[g].bg_inode_bitmap = start + 2u + gdt_blocks;
         gdt[g].bg_inode_table = start + 3u + gdt_blocks;
         gdt[g].bg_free_blocks_count = (uint16_t) (available - used);
-        gdt[g].bg_free_inodes_count =
-            (uint16_t) (INODES_PER_GROUP - (g == 0 ? 10u : 0u));
+        gdt[g].bg_free_inodes_count = (uint16_t) (INODES_PER_GROUP - (g == 0 ? 10u : 0u));
         gdt[g].bg_used_dirs_count = (uint16_t) (g == 0 ? 1u : 0u);
         free_blocks_total += gdt[g].bg_free_blocks_count;
         free_inodes_total += gdt[g].bg_free_inodes_count;
@@ -282,8 +275,7 @@ int main(int argc, char **argv) {
     uint8_t *inode_bitmap = calloc(1, BLOCK_SIZE);
     uint8_t *gdt_image = calloc(gdt_blocks, BLOCK_SIZE);
     uint8_t *backup_image = calloc(1, BLOCK_SIZE);
-    if (!zero || !block_bitmap || !inode_bitmap || !gdt_image ||
-        !backup_image)
+    if (!zero || !block_bitmap || !inode_bitmap || !gdt_image || !backup_image)
         die("format buffers");
     memcpy(gdt_image, gdt, groups * sizeof(*gdt));
 
@@ -294,8 +286,7 @@ int main(int argc, char **argv) {
 
         memset(block_bitmap, 0, BLOCK_SIZE);
         for (uint32_t bit = 0; bit < used; bit++) set_bit(block_bitmap, bit);
-        for (uint32_t bit = available; bit < BLOCKS_PER_GROUP; bit++)
-            set_bit(block_bitmap, bit);
+        for (uint32_t bit = available; bit < BLOCKS_PER_GROUP; bit++) set_bit(block_bitmap, bit);
         write_block(fd, gdt[g].bg_block_bitmap, block_bitmap);
 
         memset(inode_bitmap, 0, BLOCK_SIZE);
@@ -331,10 +322,8 @@ int main(int argc, char **argv) {
     root.i_links_count = 2;
     root.i_blocks = BLOCK_SIZE / 512u;
     root.i_block[0] = root_block;
-    write_exact(fd,
-                (uint64_t) gdt[0].bg_inode_table * BLOCK_SIZE +
-                    (2u - 1u) * INODE_SIZE,
-                &root, sizeof(root));
+    write_exact(fd, (uint64_t) gdt[0].bg_inode_table * BLOCK_SIZE + (2u - 1u) * INODE_SIZE, &root,
+                sizeof(root));
 
     uint8_t *dir = calloc(1, BLOCK_SIZE);
     if (!dir) die("root directory");
@@ -356,9 +345,8 @@ int main(int argc, char **argv) {
     if (fsync(fd) < 0) die("sync");
     close(fd);
 
-    printf("Created ext2 filesystem on %s: %u blocks, %u inodes, label=%.*s\n",
-           device, blocks, super.s_inodes_count,
-           (int) sizeof(super.s_volume_name), super.s_volume_name);
+    printf("Created ext2 filesystem on %s: %u blocks, %u inodes, label=%.*s\n", device, blocks,
+           super.s_inodes_count, (int) sizeof(super.s_volume_name), super.s_volume_name);
 
     free(dir);
     free(backup_image);

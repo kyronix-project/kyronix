@@ -44,7 +44,7 @@ int test_dev_urandom(void) {
         if (a[i] != 0) all_zero = 0;
         if (a[i] != a[0]) all_same = 0;
     }
-    ASSERT_FALSE(all_zero);             /* not a constant stream */
+    ASSERT_FALSE(all_zero); /* not a constant stream */
     ASSERT_FALSE(all_same);
     ASSERT_NE(0, memcmp(a, b, sizeof(a))); /* successive reads differ */
     return 1;

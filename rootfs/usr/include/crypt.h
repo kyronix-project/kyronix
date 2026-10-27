@@ -6,8 +6,8 @@ extern "C" {
 #endif
 
 struct crypt_data {
-	int initialized;
-	char __buf[256];
+    int initialized;
+    char __buf[256];
 };
 
 char *crypt(const char *, const char *);

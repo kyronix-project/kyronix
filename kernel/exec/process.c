@@ -46,8 +46,7 @@ static void stack_write_u64(uint64_t uva, uint64_t val, uint64_t *phys_arr, uint
 
 static void stack_release(vmm_space_t *space, uint64_t stack_base, uint64_t *phys, int mapped,
                           bool vma_added) {
-    if (vma_added)
-        vma_remove(space, stack_base, (uint64_t) USER_STACK_PAGES * PAGE_SIZE);
+    if (vma_added) vma_remove(space, stack_base, (uint64_t) USER_STACK_PAGES * PAGE_SIZE);
     for (int i = 0; i < mapped; i++) {
         vmm_unmap(space, stack_base + (uint64_t) i * PAGE_SIZE);
         pmm_free((void *) phys[i]);
@@ -55,9 +54,8 @@ static void stack_release(vmm_space_t *space, uint64_t stack_base, uint64_t *phy
 }
 
 uint64_t setup_user_stack(vmm_space_t *space, const elf_load_result_t *elf, int argc,
-                          const char *const *argv, const char *const *envp,
-                          uint32_t uid, uint32_t euid, uint32_t gid, uint32_t egid,
-                          bool secure_exec) {
+                          const char *const *argv, const char *const *envp, uint32_t uid,
+                          uint32_t euid, uint32_t gid, uint32_t egid, bool secure_exec) {
     int envc = 0;
     if (envp)
         while (envp[envc]) envc++;
@@ -199,8 +197,7 @@ int process_exec(const void *data, uint64_t size, const char *name) {
     const char *init_argv[] = { name, NULL };
     const char *init_envp[] = { "TERM=xterm-color", "HOME=/", "PATH=/:/bin:/usr/bin", "SHELL=/init",
                                 NULL };
-    uint64_t rsp = setup_user_stack(res.space, &res, 1, init_argv, init_envp,
-                                    0, 0, 0, 0, false);
+    uint64_t rsp = setup_user_stack(res.space, &res, 1, init_argv, init_envp, 0, 0, 0, 0, false);
     if (!rsp) {
         log_error("process_exec: stack setup failed");
         vmm_space_free(res.space);

@@ -19,7 +19,7 @@ int test_ahci_rw_512(void) {
     if (!mnt_ok()) return 1;
     const char *path = MNT "/ahci_rw512";
     char wbuf[512], rbuf[512];
-    for (int i = 0; i < 512; i++) wbuf[i] = (char)(i & 0xFF);
+    for (int i = 0; i < 512; i++) wbuf[i] = (char) (i & 0xFF);
 
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     ASSERT_GE(fd, 0);
@@ -44,19 +44,35 @@ int test_ahci_rw_large(void) {
 
     char *wbuf = malloc(SIZE);
     ASSERT_NOTNULL(wbuf);
-    for (int i = 0; i < SIZE; i++) wbuf[i] = (char)(i * 7 + 13);
+    for (int i = 0; i < SIZE; i++) wbuf[i] = (char) (i * 7 + 13);
 
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd < 0) { free(wbuf); return 0; }
+    if (fd < 0) {
+        free(wbuf);
+        return 0;
+    }
     ssize_t n = write(fd, wbuf, SIZE);
     close(fd);
-    if (n != SIZE) { free(wbuf); unlink(path); return 0; }
+    if (n != SIZE) {
+        free(wbuf);
+        unlink(path);
+        return 0;
+    }
 
     char *rbuf = malloc(SIZE);
-    if (!rbuf) { free(wbuf); unlink(path); return 0; }
+    if (!rbuf) {
+        free(wbuf);
+        unlink(path);
+        return 0;
+    }
 
     fd = open(path, O_RDONLY);
-    if (fd < 0) { free(wbuf); free(rbuf); unlink(path); return 0; }
+    if (fd < 0) {
+        free(wbuf);
+        free(rbuf);
+        unlink(path);
+        return 0;
+    }
     n = read(fd, rbuf, SIZE);
     close(fd);
 
@@ -79,7 +95,7 @@ int test_ext2_create_stat(void) {
     struct stat st;
     ASSERT_EQ(0, stat(path, &st));
     ASSERT_TRUE(S_ISREG(st.st_mode));
-    ASSERT_GT((long long)st.st_ino, 0LL);
+    ASSERT_GT((long long) st.st_ino, 0LL);
     unlink(path);
     return 1;
 }
@@ -93,7 +109,7 @@ int test_ext2_write_read_text(void) {
 
     char buf[64];
     ssize_t n = read_file(path, buf, sizeof(buf));
-    ASSERT_EQ((ssize_t)strlen(data), n);
+    ASSERT_EQ((ssize_t) strlen(data), n);
     ASSERT_STREQ(data, buf);
     unlink(path);
     return 1;
@@ -106,7 +122,7 @@ int test_ext2_write_binary(void) {
     const int SIZE = 4096;
     char *wbuf = malloc(SIZE);
     ASSERT_NOTNULL(wbuf);
-    for (int i = 0; i < SIZE; i++) wbuf[i] = (char)((i * 31 + 7) & 0xFF);
+    for (int i = 0; i < SIZE; i++) wbuf[i] = (char) ((i * 31 + 7) & 0xFF);
 
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     ASSERT_GE(fd, 0);
@@ -174,7 +190,7 @@ int test_ext2_stat_size(void) {
     struct stat st;
     ASSERT_EQ(0, stat(path, &st));
     ASSERT_TRUE(S_ISREG(st.st_mode));
-    ASSERT_EQ(10, (int)st.st_size);
+    ASSERT_EQ(10, (int) st.st_size);
     unlink(path);
     return 1;
 }
@@ -219,7 +235,7 @@ REGISTER_TEST(ext2_nested_dirs, "Phase 6: Disk");
 
 int test_ext2_file_in_subdir(void) {
     if (!mnt_ok()) return 1;
-    const char *dir  = MNT "/ext2_subfd";
+    const char *dir = MNT "/ext2_subfd";
     const char *file = MNT "/ext2_subfd/data";
 
     ASSERT_EQ(0, mkdir(dir, 0755));
@@ -238,7 +254,7 @@ REGISTER_TEST(ext2_file_in_subdir, "Phase 6: Disk");
 int test_ext2_symlink_fast(void) {
     if (!mnt_ok()) return 1;
     const char *target = MNT "/ext2_sym_tgt";
-    const char *lnk    = MNT "/ext2_sym_fast";
+    const char *lnk = MNT "/ext2_sym_fast";
 
     ASSERT_TRUE(write_file(target, "target content"));
     ASSERT_EQ(0, symlink(target, lnk));
@@ -261,8 +277,9 @@ REGISTER_TEST(ext2_symlink_fast, "Phase 6: Disk");
 
 int test_ext2_symlink_slow(void) {
     if (!mnt_ok()) return 1;
-    const char *target = MNT "/this_is_a_very_long_symlink_target_path_that_will_not_fit_in_fast_symlink_iblock_area";
-    const char *lnk    = MNT "/ext2_sym_slow";
+    const char *target = MNT
+        "/this_is_a_very_long_symlink_target_path_that_will_not_fit_in_fast_symlink_iblock_area";
+    const char *lnk = MNT "/ext2_sym_slow";
 
     ASSERT_EQ(0, symlink(target, lnk));
 
@@ -297,26 +314,31 @@ int test_ext2_readdir(void) {
     ASSERT_EQ(0, mkdir(dir, 0755));
 
     char p[PATH_MAX];
-    snprintf(p, sizeof(p), "%s/alpha", dir); ASSERT_TRUE(write_file(p, "a"));
-    snprintf(p, sizeof(p), "%s/beta",  dir); ASSERT_TRUE(write_file(p, "b"));
-    snprintf(p, sizeof(p), "%s/gamma", dir); ASSERT_TRUE(write_file(p, "c"));
+    snprintf(p, sizeof(p), "%s/alpha", dir);
+    ASSERT_TRUE(write_file(p, "a"));
+    snprintf(p, sizeof(p), "%s/beta", dir);
+    ASSERT_TRUE(write_file(p, "b"));
+    snprintf(p, sizeof(p), "%s/gamma", dir);
+    ASSERT_TRUE(write_file(p, "c"));
 
     DIR *d = opendir(dir);
     ASSERT_NOTNULL(d);
     int found = 0;
     struct dirent *ent;
     while ((ent = readdir(d)) != NULL) {
-        if (strcmp(ent->d_name, "alpha") == 0 ||
-            strcmp(ent->d_name, "beta")  == 0 ||
+        if (strcmp(ent->d_name, "alpha") == 0 || strcmp(ent->d_name, "beta") == 0 ||
             strcmp(ent->d_name, "gamma") == 0)
             found++;
     }
     closedir(d);
     ASSERT_EQ(3, found);
 
-    snprintf(p, sizeof(p), "%s/alpha", dir); unlink(p);
-    snprintf(p, sizeof(p), "%s/beta",  dir); unlink(p);
-    snprintf(p, sizeof(p), "%s/gamma", dir); unlink(p);
+    snprintf(p, sizeof(p), "%s/alpha", dir);
+    unlink(p);
+    snprintf(p, sizeof(p), "%s/beta", dir);
+    unlink(p);
+    snprintf(p, sizeof(p), "%s/gamma", dir);
+    unlink(p);
     rmdir(dir);
     return 1;
 }
@@ -329,7 +351,7 @@ int test_ext2_large_file(void) {
 
     char *wbuf = malloc(SIZE);
     ASSERT_NOTNULL(wbuf);
-    for (int i = 0; i < SIZE; i++) wbuf[i] = (char)(i % 251);
+    for (int i = 0; i < SIZE; i++) wbuf[i] = (char) (i % 251);
 
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     ASSERT_GE(fd, 0);
@@ -338,7 +360,7 @@ int test_ext2_large_file(void) {
 
     struct stat st;
     ASSERT_EQ(0, stat(path, &st));
-    ASSERT_EQ(SIZE, (int)st.st_size);
+    ASSERT_EQ(SIZE, (int) st.st_size);
 
     char *rbuf = malloc(SIZE);
     ASSERT_NOTNULL(rbuf);

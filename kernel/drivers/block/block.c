@@ -20,8 +20,7 @@ bool block_unregister(struct block_device *dev) {
     if (!dev) return false;
     for (int i = 0; i < g_count; i++) {
         if (g_devices[i] != dev) continue;
-        for (int j = i; j + 1 < g_count; j++)
-            g_devices[j] = g_devices[j + 1];
+        for (int j = i; j + 1 < g_count; j++) g_devices[j] = g_devices[j + 1];
         g_devices[--g_count] = NULL;
         return true;
     }

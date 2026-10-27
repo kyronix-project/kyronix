@@ -32,9 +32,7 @@ static int cmp_name(const void *a, const void *b) {
     return strcmp(*(const char *const *) a, *(const char *const *) b);
 }
 
-static bool is_hidden(const char *name) {
-    return name[0] == '.';
-}
+static bool is_hidden(const char *name) { return name[0] == '.'; }
 
 static int should_show(const char *name, struct stat *st, bool follow) {
     if (!show_hidden && is_hidden(name)) return 0;
@@ -91,7 +89,7 @@ static char **list_dir(const char *path, int *out_n, bool follow, int *rc) {
 
     while ((entry = readdir(d)) != NULL) {
         int nlen = snprintf(full, sizeof(full), "%s/%s", path, entry->d_name);
-        if (nlen < 0 || (size_t)nlen >= sizeof(full)) {
+        if (nlen < 0 || (size_t) nlen >= sizeof(full)) {
             errno = ENAMETOOLONG;
             kx_warn(path);
             *rc = 1;
@@ -109,18 +107,17 @@ static char **list_dir(const char *path, int *out_n, bool follow, int *rc) {
 
         if (n >= cap) {
             cap = cap ? cap * 2 : 64;
-            names = realloc(names, (size_t)cap * sizeof(char *));
+            names = realloc(names, (size_t) cap * sizeof(char *));
         }
         names[n++] = strdup(entry->d_name);
     }
     closedir(d);
-    qsort(names, (size_t)n, sizeof(char *), cmp_name);
+    qsort(names, (size_t) n, sizeof(char *), cmp_name);
     *out_n = n;
     return names;
 }
 
-static void print_entry(const char *display, struct stat *st, const char *prefix,
-                        bool last) {
+static void print_entry(const char *display, struct stat *st, const char *prefix, bool last) {
     if (show_perms || show_size) {
         out_printf("%s", prefix);
         out_printf("%s", last ? "\\-- " : "+-- ");
@@ -131,16 +128,14 @@ static void print_entry(const char *display, struct stat *st, const char *prefix
             out_printf("%s", m);
             if (show_size) out_printf(" ");
         }
-        if (show_size)
-            out_printf("%8lld", (long long)st->st_size);
+        if (show_size) out_printf("%8lld", (long long) st->st_size);
         out_printf("]  ");
         out_printf("%s", display);
     } else {
         out_printf("%s%s%s", prefix, last ? "\\-- " : "+-- ", display);
     }
 
-    if (show_type && S_ISREG(st->st_mode) && (st->st_mode & 0111))
-        out_printf("*");
+    if (show_type && S_ISREG(st->st_mode) && (st->st_mode & 0111)) out_printf("*");
 
     out_printf("\n");
 }
@@ -189,7 +184,7 @@ static void print_tree(const char *path, int depth, const char *prefix, bool las
     for (int i = 0; i < n; i++) {
         char child[PATH_MAX];
         int nlen = snprintf(child, sizeof(child), "%s/%s", path, entries[i]);
-        if (nlen < 0 || (size_t)nlen >= sizeof(child)) {
+        if (nlen < 0 || (size_t) nlen >= sizeof(child)) {
             errno = ENAMETOOLONG;
             kx_warn(path);
             *rc = 1;
@@ -235,15 +230,35 @@ int main(int argc, char **argv) {
         }
         for (const char *p = arg + 1; *p; p++) {
             switch (*p) {
-            case 'a': show_hidden = true; break;
-            case 'd': show_dirs = true; show_files = false; show_only_dirs = true; break;
-            case 'f': full_path = true; break;
-            case 'F': show_type = true; break;
-            case 'h': usage(); return 0;
-            case 'l': follow = true; break;
-            case 'p': show_perms = true; break;
-            case 's': show_size = true; break;
-            default: usage(); return 1;
+            case 'a':
+                show_hidden = true;
+                break;
+            case 'd':
+                show_dirs = true;
+                show_files = false;
+                show_only_dirs = true;
+                break;
+            case 'f':
+                full_path = true;
+                break;
+            case 'F':
+                show_type = true;
+                break;
+            case 'h':
+                usage();
+                return 0;
+            case 'l':
+                follow = true;
+                break;
+            case 'p':
+                show_perms = true;
+                break;
+            case 's':
+                show_size = true;
+                break;
+            default:
+                usage();
+                return 1;
             }
         }
     }

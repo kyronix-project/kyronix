@@ -56,13 +56,9 @@ bool serial_init(uint16_t port) {
     return ok;
 }
 
-void serial_putchar(uint16_t port, char c) {
-    serial_write_n(port, &c, 1);
-}
+void serial_putchar(uint16_t port, char c) { serial_write_n(port, &c, 1); }
 
-void serial_write(uint16_t port, const char *s) {
-    serial_write_n(port, s, strlen(s));
-}
+void serial_write(uint16_t port, const char *s) { serial_write_n(port, s, strlen(s)); }
 
 void serial_write_n(uint16_t port, const char *s, uint64_t len) {
     int index = port_index(port);

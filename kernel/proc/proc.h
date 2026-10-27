@@ -62,11 +62,11 @@ typedef struct proc {
     uint8_t fpu_state[512] __attribute__((aligned(16)));
     uint64_t sig_altstack_sp;
     uint64_t sig_altstack_size;
-    uint8_t on_sigstack;  // currently executing a handler on the alt stack
-    uint64_t pages_alloc; // pages allocated via brk/mmap
-    uint64_t pages_freed; // pages freed via munmap/shrink brk
-    uint32_t jail_id;     // 0 = host; appended at end so sched.S offsets stay fixed
-    uint8_t jail_exempt;  // inherited; init=1, suppresses auto-isolation
+    uint8_t on_sigstack;     // currently executing a handler on the alt stack
+    uint64_t pages_alloc;    // pages allocated via brk/mmap
+    uint64_t pages_freed;    // pages freed via munmap/shrink brk
+    uint32_t jail_id;        // 0 = host; appended at end so sched.S offsets stay fixed
+    uint8_t jail_exempt;     // inherited; init=1, suppresses auto-isolation
     uint8_t phantom_sandbox; // network/vfs simulation is enabled for this process
     uint8_t phantom_pending; // trap observed; clone at the next safe syscall point
     uint16_t phantom_score;

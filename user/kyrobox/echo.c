@@ -13,49 +13,68 @@ static bool print_escaped(const char *s) {
         }
         int c;
         switch (*p) {
-            case 'a': c = '\a'; break;
-            case 'b': c = '\b'; break;
-            case 'c': return false;
-            case 'e':
-            case 'E': c = 27; break;
-            case 'f': c = '\f'; break;
-            case 'n': c = '\n'; break;
-            case 'r': c = '\r'; break;
-            case 't': c = '\t'; break;
-            case 'v': c = '\v'; break;
-            case '\\': c = '\\'; break;
-            case '0': {
-                unsigned value = 0;
-                int digits = 0;
-                while (digits < 3 && p[1] >= '0' && p[1] <= '7') {
-                    value = value * 8 + (unsigned) (*++p - '0');
-                    digits++;
-                }
-                c = (unsigned char) value;
-                break;
+        case 'a':
+            c = '\a';
+            break;
+        case 'b':
+            c = '\b';
+            break;
+        case 'c':
+            return false;
+        case 'e':
+        case 'E':
+            c = 27;
+            break;
+        case 'f':
+            c = '\f';
+            break;
+        case 'n':
+            c = '\n';
+            break;
+        case 'r':
+            c = '\r';
+            break;
+        case 't':
+            c = '\t';
+            break;
+        case 'v':
+            c = '\v';
+            break;
+        case '\\':
+            c = '\\';
+            break;
+        case '0': {
+            unsigned value = 0;
+            int digits = 0;
+            while (digits < 3 && p[1] >= '0' && p[1] <= '7') {
+                value = value * 8 + (unsigned) (*++p - '0');
+                digits++;
             }
-            case 'x': {
-                unsigned value = 0;
-                int digits = 0;
-                while (digits < 2 && isxdigit((unsigned char) p[1])) {
-                    char h = *++p;
-                    value = value * 16 +
-                            (unsigned) (isdigit((unsigned char) h) ? h - '0'
-                                                                 : tolower((unsigned char) h) - 'a' + 10);
-                    digits++;
-                }
-                if (!digits) {
-                    putchar('\\');
-                    c = 'x';
-                } else {
-                    c = (unsigned char) value;
-                }
-                break;
+            c = (unsigned char) value;
+            break;
+        }
+        case 'x': {
+            unsigned value = 0;
+            int digits = 0;
+            while (digits < 2 && isxdigit((unsigned char) p[1])) {
+                char h = *++p;
+                value = value * 16 + (unsigned) (isdigit((unsigned char) h) ?
+                                                     h - '0' :
+                                                     tolower((unsigned char) h) - 'a' + 10);
+                digits++;
             }
-            default:
+            if (!digits) {
                 putchar('\\');
-                c = (unsigned char) *p;
-                break;
+                c = 'x';
+            } else {
+                c = (unsigned char) value;
+            }
+            break;
+        }
+        default:
+            putchar('\\');
+            c = (unsigned char) *p;
+            break;
         }
         putchar(c);
     }
@@ -72,9 +91,12 @@ int main(int argc, char **argv) {
             if (*p != 'n' && *p != 'e' && *p != 'E') valid = false;
         if (!valid) break;
         for (const char *p = argv[i] + 1; *p; p++) {
-            if (*p == 'n') newline = false;
-            else if (*p == 'e') escapes = true;
-            else if (*p == 'E') escapes = false;
+            if (*p == 'n')
+                newline = false;
+            else if (*p == 'e')
+                escapes = true;
+            else if (*p == 'E')
+                escapes = false;
         }
     }
     bool first_operand = true;

@@ -14,8 +14,7 @@ static bool number(const char *s, unsigned long long *out) {
 }
 
 static int skip_bytes(FILE *f, unsigned long long count) {
-    if (count <= (unsigned long long) LLONG_MAX &&
-        fseeko(f, (off_t) count, SEEK_SET) == 0)
+    if (count <= (unsigned long long) LLONG_MAX && fseeko(f, (off_t) count, SEEK_SET) == 0)
         return 0;
     clearerr(f);
     while (count--) {
@@ -85,9 +84,12 @@ int main(int argc, char **argv) {
             continue;
         }
         for (const char *o = a + 1; *o; o++) {
-            if (*o == 'b') print_bytes = true;
-            else if (*o == 'l') list = true;
-            else if (*o == 's') silent = true;
+            if (*o == 'b')
+                print_bytes = true;
+            else if (*o == 'l')
+                list = true;
+            else if (*o == 's')
+                silent = true;
             else {
                 usage();
                 return 2;
@@ -131,8 +133,8 @@ int main(int argc, char **argv) {
             } else if (ca != cb) {
                 different = 1;
                 if (!silent && !list)
-                    fprintf(stderr, "cmp: EOF on %s after byte %llu\n",
-                            ca == EOF ? name1 : name2, byte - 1);
+                    fprintf(stderr, "cmp: EOF on %s after byte %llu\n", ca == EOF ? name1 : name2,
+                            byte - 1);
             }
             break;
         }

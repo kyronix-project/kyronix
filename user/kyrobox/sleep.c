@@ -10,11 +10,20 @@ static double parse_duration(const char *value) {
     if (*end != '\0') {
         if (end[1] != '\0') kx_die("invalid time suffix");
         switch (*end) {
-        case 's': scale = 1.0; break;
-        case 'm': scale = 60.0; break;
-        case 'h': scale = 3600.0; break;
-        case 'd': scale = 86400.0; break;
-        default: kx_die("invalid time suffix");
+        case 's':
+            scale = 1.0;
+            break;
+        case 'm':
+            scale = 60.0;
+            break;
+        case 'h':
+            scale = 3600.0;
+            break;
+        case 'd':
+            scale = 86400.0;
+            break;
+        default:
+            kx_die("invalid time suffix");
         }
     }
     return amount * scale;

@@ -34,9 +34,7 @@ static int64_t i2c_dev_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off
     client.adapter = adap;
 
     int ret = i2c_master_recv(&client, kbuf, (int) len);
-    if (ret > 0) {
-        memcpy(buf, kbuf, (size_t) ret);
-    }
+    if (ret > 0) { memcpy(buf, kbuf, (size_t) ret); }
     kfree(kbuf);
     return (int64_t) ret;
 }
@@ -129,9 +127,7 @@ static int64_t i2cdev_ioctl_rdwr(struct i2c_adapter *adap, uint64_t arg) {
     }
 
     for (uint32_t i = 0; i < rdwr.nmsgs; i++) {
-        if (msgs[i].buf) {
-            kfree(msgs[i].buf);
-        }
+        if (msgs[i].buf) { kfree(msgs[i].buf); }
     }
 
     return (int64_t) res;
@@ -151,9 +147,7 @@ static int64_t i2c_dev_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
     case I2C_FUNCS: {
         if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(uint32_t))) return -EFAULT;
         uint32_t funcs = I2C_FUNC_I2C | I2C_FUNC_SMBUS_EMUL;
-        if (adap->algo && adap->algo->functionality) {
-            funcs = adap->algo->functionality(adap);
-        }
+        if (adap->algo && adap->algo->functionality) { funcs = adap->algo->functionality(adap); }
         *(uint32_t *) (uintptr_t) arg = funcs;
         return 0;
     }
@@ -220,9 +214,7 @@ static int64_t i2c_dev_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
 }
 
 int i2c_add_adapter(struct i2c_adapter *adap) {
-    if (!adap || !adap->algo || !adap->algo->master_xfer) {
-        return -EINVAL;
-    }
+    if (!adap || !adap->algo || !adap->algo->master_xfer) { return -EINVAL; }
     for (int i = 0; i < I2C_MAX_ADAPTERS; i++) {
         if (!g_adapters[i]) {
             adap->nr = i;
@@ -231,9 +223,17 @@ int i2c_add_adapter(struct i2c_adapter *adap) {
             g_adapters[i] = adap;
 
             char dev_path[32];
-            dev_path[0] = '/'; dev_path[1] = 'd'; dev_path[2] = 'e'; dev_path[3] = 'v';
-            dev_path[4] = '/'; dev_path[5] = 'i'; dev_path[6] = '2'; dev_path[7] = 'c';
-            dev_path[8] = '-'; dev_path[9] = (char) ('0' + i); dev_path[10] = '\0';
+            dev_path[0] = '/';
+            dev_path[1] = 'd';
+            dev_path[2] = 'e';
+            dev_path[3] = 'v';
+            dev_path[4] = '/';
+            dev_path[5] = 'i';
+            dev_path[6] = '2';
+            dev_path[7] = 'c';
+            dev_path[8] = '-';
+            dev_path[9] = (char) ('0' + i);
+            dev_path[10] = '\0';
 
             vfs_node_t *node = vfs_create_chr(dev_path, i2c_dev_read, i2c_dev_write);
             if (node) {
@@ -290,7 +290,8 @@ void i2c_del_driver(struct i2c_driver *driver) {
     }
 }
 
-static const struct i2c_device_id *i2c_match_id(const struct i2c_device_id *id, const struct i2c_client *client) {
+static const struct i2c_device_id *i2c_match_id(const struct i2c_device_id *id,
+                                                const struct i2c_client *client) {
     if (!id || !client) return NULL;
     while (id->name[0]) {
         if (strcmp(client->name, id->name) == 0) return id;
@@ -299,7 +300,8 @@ static const struct i2c_device_id *i2c_match_id(const struct i2c_device_id *id, 
     return NULL;
 }
 
-struct i2c_client *i2c_new_client_device(struct i2c_adapter *adap, struct i2c_board_info const *info) {
+struct i2c_client *i2c_new_client_device(struct i2c_adapter *adap,
+                                         struct i2c_board_info const *info) {
     if (!adap || !info) return NULL;
 
     struct i2c_client *client = (struct i2c_client *) kmalloc(sizeof(struct i2c_client));
@@ -342,9 +344,7 @@ void i2c_unregister_device(struct i2c_client *client) {
 
     if (client->dev.driver) {
         struct i2c_driver *drv = to_i2c_driver(client->dev.driver);
-        if (drv && drv->remove) {
-            drv->remove(client);
-        }
+        if (drv && drv->remove) { drv->remove(client); }
         client->dev.driver = NULL;
     }
 
@@ -355,12 +355,8 @@ void i2c_unregister_device(struct i2c_client *client) {
 }
 
 int i2c_transfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num) {
-    if (!adap || !adap->active || !adap->algo || !adap->algo->master_xfer) {
-        return -ENODEV;
-    }
-    if (!msgs || num <= 0) {
-        return -EINVAL;
-    }
+    if (!adap || !adap->active || !adap->algo || !adap->algo->master_xfer) { return -ENODEV; }
+    if (!msgs || num <= 0) { return -EINVAL; }
     return adap->algo->master_xfer(adap, msgs, num);
 }
 
@@ -463,7 +459,8 @@ int i2c_smbus_write_word_swapped(const struct i2c_client *client, uint8_t comman
     return (ret == 1) ? 0 : (ret < 0 ? ret : -EIO);
 }
 
-int i2c_smbus_read_i2c_block_data(const struct i2c_client *client, uint8_t command, uint8_t length, uint8_t *values) {
+int i2c_smbus_read_i2c_block_data(const struct i2c_client *client, uint8_t command, uint8_t length,
+                                  uint8_t *values) {
     if (!client || !client->adapter || !values || length == 0) return -EINVAL;
     struct i2c_msg msgs[2] = {
         { .addr = client->addr, .flags = 0, .len = 1, .buf = &command },
@@ -473,7 +470,8 @@ int i2c_smbus_read_i2c_block_data(const struct i2c_client *client, uint8_t comma
     return (ret == 2) ? (int) length : (ret < 0 ? ret : -EIO);
 }
 
-int i2c_smbus_write_i2c_block_data(const struct i2c_client *client, uint8_t command, uint8_t length, const uint8_t *values) {
+int i2c_smbus_write_i2c_block_data(const struct i2c_client *client, uint8_t command, uint8_t length,
+                                   const uint8_t *values) {
     if (!client || !client->adapter || !values || length == 0 || length > 32) return -EINVAL;
     uint8_t buf[33];
     buf[0] = command;
@@ -502,13 +500,9 @@ static void stub_update_state(uint8_t addr) {
         int16_t low = (int16_t) g_stub_regs[addr][0x03];
         int16_t effective = temp + offset;
 
-        g_stub_regs[addr][0x01] &= ~( (1u << 15) | (1u << 14) );
-        if (effective > high) {
-            g_stub_regs[addr][0x01] |= (1u << 15);
-        }
-        if (effective < low) {
-            g_stub_regs[addr][0x01] |= (1u << 14);
-        }
+        g_stub_regs[addr][0x01] &= ~((1u << 15) | (1u << 14));
+        if (effective > high) { g_stub_regs[addr][0x01] |= (1u << 15); }
+        if (effective < low) { g_stub_regs[addr][0x01] |= (1u << 14); }
     }
 }
 

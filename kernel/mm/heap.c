@@ -1,7 +1,7 @@
 #include "heap.h"
 #include "arch/x86_64/cpu.h"
-#include "arch/x86_64/spinlock.h"
 #include "arch/x86_64/percpu.h"
+#include "arch/x86_64/spinlock.h"
 #include "lib/log.h"
 #include "lib/printf.h"
 #include "lib/string.h"
@@ -100,8 +100,7 @@ static block_hdr_t *heap_grow(uint64_t min_payload) {
         if (!phys || vmm_map(&g_kernel_space, va, (uint64_t) phys, VMM_KDATA) < 0) {
             if (phys) pmm_free(phys);
             for (uint64_t j = 0; j < i; j++) {
-                uint64_t old_phys =
-                    vmm_virt_to_phys(&g_kernel_space, g_brk + j * PAGE_SIZE);
+                uint64_t old_phys = vmm_virt_to_phys(&g_kernel_space, g_brk + j * PAGE_SIZE);
                 vmm_unmap(&g_kernel_space, g_brk + j * PAGE_SIZE);
                 if (old_phys) pmm_free((void *) old_phys);
             }
@@ -226,8 +225,7 @@ void kfree(void *ptr) {
     /* State 2 claims the block without exposing it to coalescing before it is
        actually linked into a cache or a global free bin. */
     if (!__sync_bool_compare_and_swap(&blk->free, 0, 2)) return;
-    if (blk->size && blk->size <= SMALL_CLASS_COUNT * 16u &&
-        !(blk->size & 15u)) {
+    if (blk->size && blk->size <= SMALL_CLASS_COUNT * 16u && !(blk->size & 15u)) {
         uint64_t flags = irq_save();
         small_cache_t *cache = &g_small_cache[this_cpu_id()];
         unsigned cls = (unsigned) (blk->size / 16u - 1u);

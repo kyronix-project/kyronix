@@ -143,8 +143,7 @@ int64_t sys_epoll_create1(int flags) {
             g_epolls[i].nw = 0;
         }
     }
-    int epfd =
-        fd_open_host("/dev/null", O_RDONLY, 0); // internal handle: not subject to jail root
+    int epfd = fd_open_host("/dev/null", O_RDONLY, 0); // internal handle: not subject to jail root
     if (epfd < 0) {
         spin_unlock(&g_epolls_lock);
         return -(int64_t) EMFILE;
@@ -248,7 +247,7 @@ int64_t sys_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int 
         void *objects[64];
         bool wildcard = false;
         uint32_t object_count = epoll_objects(ep, objects, 64, &wildcard);
-        poll_wait_once(epoll_wait_deadline(ep, deadline), epoll_ready, ep,
-                       objects, object_count, wildcard);
+        poll_wait_once(epoll_wait_deadline(ep, deadline), epoll_ready, ep, objects, object_count,
+                       wildcard);
     }
 }

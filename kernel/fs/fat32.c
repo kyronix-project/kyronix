@@ -1,8 +1,8 @@
 #include "fat32.h"
+#include "arch/x86_64/spinlock.h"
 #include "lib/log.h"
 #include "lib/string.h"
 #include "mm/heap.h"
-#include "arch/x86_64/spinlock.h"
 #include "vfs.h"
 
 #define FAT32_EOC 0x0FFFFFF8u
@@ -216,8 +216,7 @@ static int64_t fat32_reg_read(vfs_node_t *n, char *buf, uint64_t off, uint64_t l
             if (ctx->read(ctx->ctx, lba, ctx->sectors_per_cluster, buf + done) < 0) break;
         } else {
             if (!scratch) scratch = (uint8_t *) kmalloc(ctx->cluster_size);
-            if (!scratch || ctx->read(ctx->ctx, lba, ctx->sectors_per_cluster, scratch) < 0)
-                break;
+            if (!scratch || ctx->read(ctx->ctx, lba, ctx->sectors_per_cluster, scratch) < 0) break;
             memcpy(buf + done, scratch + in_cluster, (size_t) chunk);
         }
         done += chunk;
@@ -408,15 +407,18 @@ int fat32_mount(fat32_read_fn read, void *opaque, const char *mountpoint) {
     uint32_t data_sectors = total_sectors > ctx->data_start ? total_sectors - ctx->data_start : 0;
     ctx->total_clusters = data_sectors / ctx->sectors_per_cluster;
     uint64_t fat_bytes = (uint64_t) ctx->fat_size * ctx->bytes_per_sector;
-    if (ctx->total_clusters == 0 || ctx->total_clusters > FAT32_BAD - 2 ||
-        ctx->root_cluster < 2 || ctx->root_cluster > ctx->total_clusters + 1 ||
+    if (ctx->total_clusters == 0 || ctx->total_clusters > FAT32_BAD - 2 || ctx->root_cluster < 2 ||
+        ctx->root_cluster > ctx->total_clusters + 1 ||
         ((uint64_t) ctx->total_clusters + 2) * 4 > fat_bytes) {
         kfree(ctx);
         return -1;
     }
 
     ctx->fat_sec = kmalloc(ctx->bytes_per_sector);
-    if (!ctx->fat_sec) { kfree(ctx); return -1; }
+    if (!ctx->fat_sec) {
+        kfree(ctx);
+        return -1;
+    }
 
     log_info("FAT32: %u B/sec, %u sec/cluster, data LBA %u, root cluster %u", ctx->bytes_per_sector,
              ctx->sectors_per_cluster, ctx->data_start, ctx->root_cluster);

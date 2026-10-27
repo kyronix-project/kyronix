@@ -12,8 +12,8 @@ typedef bool (*poll_ready_fn)(void *ctx);
 
 void poll_notify(void);
 void poll_notify_object(const void *object);
-bool poll_wait_once(uint64_t deadline, poll_ready_fn ready, void *ctx,
-                    void *const *objects, uint32_t object_count, bool wildcard);
+bool poll_wait_once(uint64_t deadline, poll_ready_fn ready, void *ctx, void *const *objects,
+                    uint32_t object_count, bool wildcard);
 
 int64_t sys_poll(struct pollfd_s *fds, uint64_t nfds, int timeout);
 int64_t sys_ppoll(struct pollfd_s *fds, uint64_t nfds, void *tmo, const void *sigmask,

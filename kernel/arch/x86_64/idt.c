@@ -13,11 +13,11 @@
 #include "net/net.h"
 #include "pic.h"
 #include "pit.h"
-#include "proc/proc.h"
-#include "security/phantom.h"
-#include "proc/signal.h"
 #include "proc/loadavg.h"
+#include "proc/proc.h"
+#include "proc/signal.h"
 #include "proc/smp.h"
+#include "security/phantom.h"
 #include "syscall/syscall.h"
 #ifdef CONFIG_PROFILER
 #include "prof/profiler.h"
@@ -343,8 +343,7 @@ void isr_dispatch(cpu_state_t *state) {
                 tm &= tm - 1;
             }
             uint64_t finished = timer_mask & ~still_active;
-            if (finished)
-                __atomic_fetch_and(&g_timer_mask, ~finished, __ATOMIC_RELAXED);
+            if (finished) __atomic_fetch_and(&g_timer_mask, ~finished, __ATOMIC_RELAXED);
             if ((state->cs & 3) == 3 && g_current_proc) {
                 proc_t *p = g_current_proc;
                 proc_t *next = sched_claim_next(p);

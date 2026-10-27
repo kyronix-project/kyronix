@@ -25,17 +25,17 @@ typedef void (*tss_dtor_t)(void *);
 #define TSS_DTOR_ITERATIONS 4
 
 enum {
-	thrd_success  = 0,
-	thrd_busy     = 1,
-	thrd_error    = 2,
-	thrd_nomem    = 3,
-	thrd_timedout = 4,
+    thrd_success = 0,
+    thrd_busy = 1,
+    thrd_error = 2,
+    thrd_nomem = 3,
+    thrd_timedout = 4,
 };
 
 enum {
-	mtx_plain     = 0,
-	mtx_recursive = 1,
-	mtx_timed     = 2,
+    mtx_plain = 0,
+    mtx_recursive = 1,
+    mtx_timed = 2,
 };
 
 #define ONCE_FLAG_INIT 0

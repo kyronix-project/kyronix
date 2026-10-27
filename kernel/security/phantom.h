@@ -49,11 +49,10 @@ void phantom_init(void);
 void phantom_set_mode(uint32_t mode);
 uint32_t phantom_get_mode(void);
 uint32_t phantom_event_weight(uint32_t kind, uint32_t flags);
-void phantom_record(uint32_t kind, uint32_t flags, uint64_t address,
-                    uint64_t instruction, const char *detail);
-void phantom_record_for(const struct proc *owner, uint32_t kind, uint32_t flags,
-                        uint64_t address, uint64_t instruction,
-                        const char *detail);
+void phantom_record(uint32_t kind, uint32_t flags, uint64_t address, uint64_t instruction,
+                    const char *detail);
+void phantom_record_for(const struct proc *owner, uint32_t kind, uint32_t flags, uint64_t address,
+                        uint64_t instruction, const char *detail);
 bool phantom_fault_candidate(const cpu_state_t *state, uint64_t address);
 bool phantom_handle_fault(const cpu_state_t *state, uint64_t address);
 bool phantom_worker_start(void);

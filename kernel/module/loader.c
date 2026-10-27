@@ -174,8 +174,8 @@ static bool module_name_valid(const char *name) {
     if (!n || n > MODULE_NAME_MAX) return false;
     for (size_t i = 0; i < n; i++) {
         char c = name[i];
-        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-              (c >= '0' && c <= '9') || c == '_' || c == '-'))
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+              c == '_' || c == '-'))
             return false;
     }
     return true;
@@ -228,9 +228,8 @@ static int validate_elf(load_ctx_t *ctx) {
     if (ctx->image_size < sizeof(elf64_ehdr_t)) return -ENOEXEC;
     const elf64_ehdr_t *eh = (const elf64_ehdr_t *) ctx->image;
     if (eh->e_ident[0] != 0x7f || eh->e_ident[1] != 'E' || eh->e_ident[2] != 'L' ||
-        eh->e_ident[3] != 'F' || eh->e_ident[4] != ELFCLASS64 ||
-        eh->e_ident[5] != ELFDATA2LSB || eh->e_type != ET_REL ||
-        eh->e_machine != EM_X86_64 || eh->e_version != EV_CURRENT ||
+        eh->e_ident[3] != 'F' || eh->e_ident[4] != ELFCLASS64 || eh->e_ident[5] != ELFDATA2LSB ||
+        eh->e_type != ET_REL || eh->e_machine != EM_X86_64 || eh->e_version != EV_CURRENT ||
         eh->e_ehsize < sizeof(elf64_ehdr_t) || eh->e_shentsize < sizeof(elf64_shdr_t) ||
         !eh->e_shnum)
         return -ENOEXEC;
@@ -249,11 +248,9 @@ static int prepare_layout(load_ctx_t *ctx) {
         const elf64_shdr_t *sh = section_at(ctx, i);
         if (!(sh->sh_flags & SHF_ALLOC)) continue;
         if (sh->sh_flags & SHF_TLS) return -ENOTSUP;
-        if ((sh->sh_flags & (SHF_WRITE | SHF_EXECINSTR)) ==
-            (SHF_WRITE | SHF_EXECINSTR))
+        if ((sh->sh_flags & (SHF_WRITE | SHF_EXECINSTR)) == (SHF_WRITE | SHF_EXECINSTR))
             return -ENOEXEC;
-        if (sh->sh_type != SHT_NOBITS &&
-            !range_ok(sh->sh_offset, sh->sh_size, ctx->image_size))
+        if (sh->sh_type != SHT_NOBITS && !range_ok(sh->sh_offset, sh->sh_size, ctx->image_size))
             return -ENOEXEC;
         uint64_t align = sh->sh_addralign ? sh->sh_addralign : 1;
         if ((align & (align - 1)) || align > PAGE_SIZE) return -ENOEXEC;
@@ -292,7 +289,7 @@ static uint64_t find_module_base(uint64_t size) {
 }
 
 static loaded_module_t *reserve_module(const char *name, const char *license, uint64_t size,
-                                        int *error) {
+                                       int *error) {
     spin_lock(&g_module_list_lock);
     loaded_module_t *slot = NULL;
     for (int i = 0; i < MODULE_MAX; i++) {
@@ -391,14 +388,13 @@ static uint64_t loaded_symbol(load_ctx_t *ctx, const char *name, int *error) {
     return 0;
 }
 
-static int symbol_value(load_ctx_t *ctx, const elf64_shdr_t *symtab,
-                        const elf64_shdr_t *strtab, uint32_t index, uint64_t *value) {
+static int symbol_value(load_ctx_t *ctx, const elf64_shdr_t *symtab, const elf64_shdr_t *strtab,
+                        uint32_t index, uint64_t *value) {
     if (!symtab->sh_entsize || symtab->sh_entsize < sizeof(elf64_sym_t) ||
         index >= symtab->sh_size / symtab->sh_entsize)
         return -ENOEXEC;
-    const elf64_sym_t *sym =
-        (const elf64_sym_t *) (ctx->image + symtab->sh_offset +
-                               (uint64_t) index * symtab->sh_entsize);
+    const elf64_sym_t *sym = (const elf64_sym_t *) (ctx->image + symtab->sh_offset +
+                                                    (uint64_t) index * symtab->sh_entsize);
     uint8_t bind = sym->st_info >> 4;
     if (sym->st_shndx == SHN_UNDEF) {
         const char *name = table_string(ctx, strtab, sym->st_name);
@@ -449,8 +445,7 @@ static int apply_one_relocation(void *where, uint32_t type, uint64_t symbol, int
         if (value < 0 || value > UINT32_MAX) return -EOVERFLOW;
         write_u32(where, (uint32_t) value);
         return 0;
-    case R_X86_64_32S:
-    {
+    case R_X86_64_32S: {
         uint64_t truncated = symbol + (uint64_t) addend;
         uint32_t low = (uint32_t) truncated;
         if ((uint64_t) (int64_t) (int32_t) low != truncated) return -EOVERFLOW;
@@ -494,8 +489,7 @@ static int apply_relocations(load_ctx_t *ctx) {
         }
         const elf64_shdr_t *strtab = section_at(ctx, symtab->sh_link);
         for (uint64_t off = 0; off < rela->sh_size; off += rela->sh_entsize) {
-            const elf64_rela_t *r =
-                (const elf64_rela_t *) (ctx->image + rela->sh_offset + off);
+            const elf64_rela_t *r = (const elf64_rela_t *) (ctx->image + rela->sh_offset + off);
             uint32_t type = (uint32_t) r->r_info;
             uint32_t width = (type == R_X86_64_64 || type == R_X86_64_PC64) ? 8 : 4;
             if (type == R_X86_64_NONE) width = 0;
@@ -883,8 +877,8 @@ int64_t sys_delete_module(const char *user_name, uint32_t flags) {
     return 0;
 }
 
-static void proc_append(char *out, size_t capacity, size_t *used, const char *fmt,
-                        const char *a, uint64_t b, uint32_t c, const char *d, uint64_t e) {
+static void proc_append(char *out, size_t capacity, size_t *used, const char *fmt, const char *a,
+                        uint64_t b, uint32_t c, const char *d, uint64_t e) {
     if (*used >= capacity) return;
     int n = snprintf(out + *used, capacity - *used, fmt, a, b, c, d, e);
     if (n < 0) return;
@@ -927,8 +921,8 @@ int64_t module_proc_read(vfs_node_t *node, char *buf, uint64_t len, uint64_t off
                 }
             }
         }
-        proc_append(text, capacity, &used, "%s %lu %u %s Live 0x%lx\n", m->name, m->size,
-                    m->users, users, m->base);
+        proc_append(text, capacity, &used, "%s %lu %u %s Live 0x%lx\n", m->name, m->size, m->users,
+                    users, m->base);
     }
     spin_unlock(&g_module_list_lock);
     if (off >= used) {

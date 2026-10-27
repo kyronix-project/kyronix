@@ -4,9 +4,8 @@
 #include <time.h>
 
 static void usage(void) {
-    fprintf(stderr,
-        "usage: useradd [-m] [-c comment] [-d home] [-g group]\n"
-        "               [-G groups] [-s shell] [-u uid] [-p password] login\n");
+    fprintf(stderr, "usage: useradd [-m] [-c comment] [-d home] [-g group]\n"
+                    "               [-G groups] [-s shell] [-u uid] [-p password] login\n");
     exit(1);
 }
 
@@ -67,7 +66,11 @@ static void add_to_group(const char *gname, const char *user) {
     snprintf(tmp, sizeof(tmp), "/etc/group.tmp");
     FILE *fin = fopen("/etc/group", "r");
     FILE *fout = fopen(tmp, "w");
-    if (!fin || !fout) { if (fin) fclose(fin); if (fout) fclose(fout); return; }
+    if (!fin || !fout) {
+        if (fin) fclose(fin);
+        if (fout) fclose(fout);
+        return;
+    }
     char line[512];
     while (fgets(line, sizeof(line), fin)) {
         char *nl = strchr(line, '\n');
@@ -111,21 +114,30 @@ int main(int argc, char **argv) {
     const char *login = NULL;
     for (i = 1; i < argc; i++) {
         if (argv[i][0] == '-') {
-            if (strcmp(argv[i], "-m") == 0) create_home = 1;
-            else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) comment = argv[++i];
-            else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) home = argv[++i];
-            else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) shell = argv[++i];
-            else if (strcmp(argv[i], "-u") == 0 && i + 1 < argc) uid = atoi(argv[++i]);
+            if (strcmp(argv[i], "-m") == 0)
+                create_home = 1;
+            else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc)
+                comment = argv[++i];
+            else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc)
+                home = argv[++i];
+            else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc)
+                shell = argv[++i];
+            else if (strcmp(argv[i], "-u") == 0 && i + 1 < argc)
+                uid = atoi(argv[++i]);
             else if (strcmp(argv[i], "-g") == 0 && i + 1 < argc) {
                 i++;
                 has_gid = 1;
                 int g = resolve_gid(argv[i]);
-                if (g >= 0) gid = g;
-                else gid = atoi(argv[i]);
-            }
-            else if (strcmp(argv[i], "-G") == 0 && i + 1 < argc) supgroups = argv[++i];
-            else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) password = argv[++i];
-            else usage();
+                if (g >= 0)
+                    gid = g;
+                else
+                    gid = atoi(argv[i]);
+            } else if (strcmp(argv[i], "-G") == 0 && i + 1 < argc)
+                supgroups = argv[++i];
+            else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc)
+                password = argv[++i];
+            else
+                usage();
         } else {
             login = argv[i];
         }
@@ -135,11 +147,15 @@ int main(int argc, char **argv) {
 
     {
         FILE *check = fopen("/etc/passwd", "r");
-        if (!check) { kx_warn("/etc/passwd"); exit(1); }
+        if (!check) {
+            kx_warn("/etc/passwd");
+            exit(1);
+        }
         char line[512];
         while (fgets(line, sizeof(line), check)) {
             char *p = strchr(line, ':');
-            if (p && (size_t)(p - line) == strlen(login) && memcmp(line, login, strlen(login)) == 0) {
+            if (p && (size_t) (p - line) == strlen(login) &&
+                memcmp(line, login, strlen(login)) == 0) {
                 fprintf(stderr, "useradd: user '%s' already exists\n", login);
                 fclose(check);
                 return 1;
@@ -158,15 +174,21 @@ int main(int argc, char **argv) {
     }
 
     FILE *fp = fopen("/etc/passwd", "a");
-    if (!fp) { kx_warn("/etc/passwd"); exit(1); }
+    if (!fp) {
+        kx_warn("/etc/passwd");
+        exit(1);
+    }
     fprintf(fp, "%s:x:%d:%d:%s:%s:%s\n", login, uid, gid, comment, home, shell);
     fflush(fp);
     fsync(fileno(fp));
     fclose(fp);
 
     FILE *fs = fopen("/etc/shadow", "a");
-    if (!fs) { kx_warn("/etc/shadow"); exit(1); }
-    long today = (long)(time(NULL) / 86400);
+    if (!fs) {
+        kx_warn("/etc/shadow");
+        exit(1);
+    }
+    long today = (long) (time(NULL) / 86400);
     if (password) {
         char salt[64];
         snprintf(salt, sizeof(salt), "$6$%ld$", today);
@@ -181,7 +203,10 @@ int main(int argc, char **argv) {
 
     if (!has_gid) {
         FILE *fg = fopen("/etc/group", "a");
-        if (!fg) { kx_warn("/etc/group"); exit(1); }
+        if (!fg) {
+            kx_warn("/etc/group");
+            exit(1);
+        }
         fprintf(fg, "%s:x:%d:\n", login, gid);
         fflush(fg);
         fsync(fileno(fg));
@@ -203,8 +228,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    for (int g = 0; g < n_to_add; g++)
-        add_to_group(to_add[g], login);
+    for (int g = 0; g < n_to_add; g++) add_to_group(to_add[g], login);
 
     if (n_to_add == 0) {
         FILE *fg = fopen("/etc/group", "r");
@@ -237,8 +261,7 @@ int main(int argc, char **argv) {
                 if (fout) {
                     char b[512];
                     size_t n;
-                    while ((n = fread(b, 1, sizeof(b), fin)) > 0)
-                        fwrite(b, 1, n, fout);
+                    while ((n = fread(b, 1, sizeof(b), fin)) > 0) fwrite(b, 1, n, fout);
                     fflush(fout);
                     fsync(fileno(fout));
                     fclose(fout);

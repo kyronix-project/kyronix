@@ -16,12 +16,18 @@ static int walk(const char *path) {
     if (name_pat && fnmatch(name_pat, kx_base(path), 0) != 0) match = 0;
     if (type_filter) {
         char ft = 'f';
-        if (S_ISDIR(st.st_mode)) ft = 'd';
-        else if (S_ISLNK(st.st_mode)) ft = 'l';
-        else if (S_ISBLK(st.st_mode)) ft = 'b';
-        else if (S_ISCHR(st.st_mode)) ft = 'c';
-        else if (S_ISFIFO(st.st_mode)) ft = 'p';
-        else if (S_ISSOCK(st.st_mode)) ft = 's';
+        if (S_ISDIR(st.st_mode))
+            ft = 'd';
+        else if (S_ISLNK(st.st_mode))
+            ft = 'l';
+        else if (S_ISBLK(st.st_mode))
+            ft = 'b';
+        else if (S_ISCHR(st.st_mode))
+            ft = 'c';
+        else if (S_ISFIFO(st.st_mode))
+            ft = 'p';
+        else if (S_ISSOCK(st.st_mode))
+            ft = 's';
         if (ft != type_filter[0]) match = 0;
     }
 

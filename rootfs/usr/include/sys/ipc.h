@@ -24,17 +24,17 @@ extern "C" {
 #include <bits/ipc.h>
 #include <bits/ipcstat.h>
 
-#define IPC_CREAT  01000
-#define IPC_EXCL   02000
+#define IPC_CREAT 01000
+#define IPC_EXCL 02000
 #define IPC_NOWAIT 04000
 
 #define IPC_RMID 0
-#define IPC_SET  1
+#define IPC_SET 1
 #define IPC_INFO 3
 
 #define IPC_PRIVATE ((key_t) 0)
 
-key_t ftok (const char *, int);
+key_t ftok(const char *, int);
 
 #ifdef __cplusplus
 }

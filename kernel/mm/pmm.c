@@ -39,7 +39,8 @@ static void reserve_dma32(struct limine_memmap_response *mmap) {
     for (uint64_t i = 0; i < mmap->entry_count; i++) {
         struct limine_memmap_entry *e = mmap->entries[i];
         if (e->type != LIMINE_MEMMAP_USABLE || e->base >= 0x100000000ULL ||
-            e->length > UINT64_MAX - e->base) continue;
+            e->length > UINT64_MAX - e->base)
+            continue;
         uint64_t start = PAGE_ALIGN_UP(e->base);
         if (start < 0x100000) start = 0x100000;
         uint64_t end = e->base + e->length;
@@ -141,10 +142,12 @@ void pmm_init(struct limine_memmap_response *mmap, uint64_t hhdm_offset, uint64_
         uint64_t end = PAGE_ALIGN_DOWN(e->base + e->length);
         if (g_dma32_bytes && start < g_dma32_base + g_dma32_bytes && end > g_dma32_base) {
             uint64_t before = g_dma32_base > start ? g_dma32_base - start : 0;
-            uint64_t after = end > g_dma32_base + g_dma32_bytes ?
-                             end - (g_dma32_base + g_dma32_bytes) : 0;
-            if (after > before) start = g_dma32_base + g_dma32_bytes;
-            else end = g_dma32_base;
+            uint64_t after =
+                end > g_dma32_base + g_dma32_bytes ? end - (g_dma32_base + g_dma32_bytes) : 0;
+            if (after > before)
+                start = g_dma32_base + g_dma32_bytes;
+            else
+                end = g_dma32_base;
         }
         if (end > start && end - start > region_len) {
             region_base = start;
@@ -161,8 +164,7 @@ void pmm_init(struct limine_memmap_response *mmap, uint64_t hhdm_offset, uint64_
         meta_phys = PAGE_ALIGN_UP(kernel_end_phys);
     }
 
-    if (meta_phys > region_base + region_len ||
-        meta_total > region_base + region_len - meta_phys ||
+    if (meta_phys > region_base + region_len || meta_total > region_base + region_len - meta_phys ||
         region_base + region_len - meta_phys - meta_total < 513 * PAGE_SIZE) {
         log_error("PMM: insufficient room for metadata and frames");
         cpu_halt();
@@ -276,8 +278,7 @@ void pmm_free_contiguous(void *phys, uint64_t n) {
     uint64_t allocated = 1ULL << order;
     for (uint64_t i = 0; i < allocated; i++) {
         uint32_t idx = pmm_ref_index((void *) ((uint64_t) phys + i * PAGE_SIZE));
-        if (idx < PMM_REF_MAX_FRAMES)
-            __atomic_store_n(&g_frame_refs[idx], 0, __ATOMIC_RELAXED);
+        if (idx < PMM_REF_MAX_FRAMES) __atomic_store_n(&g_frame_refs[idx], 0, __ATOMIC_RELAXED);
     }
 
     uint64_t frame = ((uint64_t) phys >> PAGE_SHIFT) - g_first_frame;
@@ -310,9 +311,7 @@ bool pmm_retain(void *phys) {
 uint16_t pmm_ref_count(void *phys) {
     if (!phys) return 0;
     uint32_t i = pmm_ref_index(phys);
-    return i < PMM_REF_MAX_FRAMES ?
-               __atomic_load_n(&g_frame_refs[i], __ATOMIC_ACQUIRE) :
-               0;
+    return i < PMM_REF_MAX_FRAMES ? __atomic_load_n(&g_frame_refs[i], __ATOMIC_ACQUIRE) : 0;
 }
 
 void pmm_free(void *phys) {

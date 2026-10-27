@@ -2,6 +2,7 @@
 #include "../arch/x86_64/cpu.h"
 #include "../arch/x86_64/idt.h"
 #include "../arch/x86_64/spinlock.h"
+#include "../bus/pci/pci.h"
 #include "../lib/log.h"
 #include "../lib/string.h"
 #include "../mm/kmemleak.h"
@@ -9,7 +10,6 @@
 #include "../mm/vmm.h"
 #include "../module.h"
 #include "../net/net.h"
-#include "../bus/pci/pci.h"
 
 MODULE_NAME("e1000");
 MODULE_LICENSE("GPL-2.0");
@@ -44,45 +44,43 @@ static void *g_tx_pages[E1000_NUM_TX_DESC / 2];
 static uint8_t *g_tx_buf_virt[E1000_NUM_TX_DESC];
 static uint16_t g_tx_cur = 0;
 
-static const uint16_t g_supported_dev_ids[] = {
-    E1000_DEV_ID_82542,
-    E1000_DEV_ID_82542_FIBER,
-    E1000_DEV_ID_82543GC_FIBER,
-    E1000_DEV_ID_82543GC_COPPER,
-    E1000_DEV_ID_82544EI_COPPER,
-    E1000_DEV_ID_82544EI_FIBER,
-    E1000_DEV_ID_82544GC_COPPER,
-    E1000_DEV_ID_82544GC_LOM,
-    E1000_DEV_ID_82540EM,
-    E1000_DEV_ID_82540EM_LOM,
-    E1000_DEV_ID_82540EP_LOM,
-    E1000_DEV_ID_82540EP,
-    E1000_DEV_ID_82540EP_LP,
-    E1000_DEV_ID_82545EM_COPPER,
-    E1000_DEV_ID_82545EM_FIBER,
-    E1000_DEV_ID_82545GM_COPPER,
-    E1000_DEV_ID_82545GM_FIBER,
-    E1000_DEV_ID_82545GM_SERDES,
-    E1000_DEV_ID_82546EB_COPPER,
-    E1000_DEV_ID_82546EB_FIBER,
-    E1000_DEV_ID_82546EB_QUAD_COPPER,
-    E1000_DEV_ID_82546GB_COPPER,
-    E1000_DEV_ID_82546GB_FIBER,
-    E1000_DEV_ID_82546GB_SERDES,
-    E1000_DEV_ID_82546GB_PCIE,
-    E1000_DEV_ID_82546GB_QUAD_COPPER,
-    E1000_DEV_ID_82546GB_QUAD_COPPER_KSP3,
-    E1000_DEV_ID_82541EI,
-    E1000_DEV_ID_82541EI_MOBILE,
-    E1000_DEV_ID_82541ER_LOM,
-    E1000_DEV_ID_82541ER,
-    E1000_DEV_ID_82541GI,
-    E1000_DEV_ID_82541GI_MOBILE,
-    E1000_DEV_ID_82541GI_LF,
-    E1000_DEV_ID_82547EI,
-    E1000_DEV_ID_82547EI_MOBILE,
-    E1000_DEV_ID_82547GI
-};
+static const uint16_t g_supported_dev_ids[] = { E1000_DEV_ID_82542,
+                                                E1000_DEV_ID_82542_FIBER,
+                                                E1000_DEV_ID_82543GC_FIBER,
+                                                E1000_DEV_ID_82543GC_COPPER,
+                                                E1000_DEV_ID_82544EI_COPPER,
+                                                E1000_DEV_ID_82544EI_FIBER,
+                                                E1000_DEV_ID_82544GC_COPPER,
+                                                E1000_DEV_ID_82544GC_LOM,
+                                                E1000_DEV_ID_82540EM,
+                                                E1000_DEV_ID_82540EM_LOM,
+                                                E1000_DEV_ID_82540EP_LOM,
+                                                E1000_DEV_ID_82540EP,
+                                                E1000_DEV_ID_82540EP_LP,
+                                                E1000_DEV_ID_82545EM_COPPER,
+                                                E1000_DEV_ID_82545EM_FIBER,
+                                                E1000_DEV_ID_82545GM_COPPER,
+                                                E1000_DEV_ID_82545GM_FIBER,
+                                                E1000_DEV_ID_82545GM_SERDES,
+                                                E1000_DEV_ID_82546EB_COPPER,
+                                                E1000_DEV_ID_82546EB_FIBER,
+                                                E1000_DEV_ID_82546EB_QUAD_COPPER,
+                                                E1000_DEV_ID_82546GB_COPPER,
+                                                E1000_DEV_ID_82546GB_FIBER,
+                                                E1000_DEV_ID_82546GB_SERDES,
+                                                E1000_DEV_ID_82546GB_PCIE,
+                                                E1000_DEV_ID_82546GB_QUAD_COPPER,
+                                                E1000_DEV_ID_82546GB_QUAD_COPPER_KSP3,
+                                                E1000_DEV_ID_82541EI,
+                                                E1000_DEV_ID_82541EI_MOBILE,
+                                                E1000_DEV_ID_82541ER_LOM,
+                                                E1000_DEV_ID_82541ER,
+                                                E1000_DEV_ID_82541GI,
+                                                E1000_DEV_ID_82541GI_MOBILE,
+                                                E1000_DEV_ID_82541GI_LF,
+                                                E1000_DEV_ID_82547EI,
+                                                E1000_DEV_ID_82547EI_MOBILE,
+                                                E1000_DEV_ID_82547GI };
 
 static inline void e1000_write32(uint32_t reg, uint32_t val) {
     volatile uint32_t *addr = (volatile uint32_t *) (g_mmio_vbase + reg);
@@ -96,9 +94,7 @@ static inline uint32_t e1000_read32(uint32_t reg) {
 
 static bool e1000_is_supported_device(uint16_t dev_id) {
     for (size_t i = 0; i < sizeof(g_supported_dev_ids) / sizeof(g_supported_dev_ids[0]); i++) {
-        if (g_supported_dev_ids[i] == dev_id) {
-            return true;
-        }
+        if (g_supported_dev_ids[i] == dev_id) { return true; }
     }
     return false;
 }
@@ -125,8 +121,10 @@ static void e1000_read_mac(void) {
     }
 
     if (!eerd_valid ||
-        (g_mac[0] == 0 && g_mac[1] == 0 && g_mac[2] == 0 && g_mac[3] == 0 && g_mac[4] == 0 && g_mac[5] == 0) ||
-        (g_mac[0] == 0xFF && g_mac[1] == 0xFF && g_mac[2] == 0xFF && g_mac[3] == 0xFF && g_mac[4] == 0xFF && g_mac[5] == 0xFF)) {
+        (g_mac[0] == 0 && g_mac[1] == 0 && g_mac[2] == 0 && g_mac[3] == 0 && g_mac[4] == 0 &&
+         g_mac[5] == 0) ||
+        (g_mac[0] == 0xFF && g_mac[1] == 0xFF && g_mac[2] == 0xFF && g_mac[3] == 0xFF &&
+         g_mac[4] == 0xFF && g_mac[5] == 0xFF)) {
         uint32_t ral = e1000_read32(E1000_REG_RAL);
         uint32_t rah = e1000_read32(E1000_REG_RAH);
         g_mac[0] = (uint8_t) (ral & 0xFF);
@@ -137,16 +135,14 @@ static void e1000_read_mac(void) {
         g_mac[5] = (uint8_t) ((rah >> 8) & 0xFF);
     }
 
-    uint32_t ral = (uint32_t) g_mac[0] | ((uint32_t) g_mac[1] << 8) |
-                   ((uint32_t) g_mac[2] << 16) | ((uint32_t) g_mac[3] << 24);
+    uint32_t ral = (uint32_t) g_mac[0] | ((uint32_t) g_mac[1] << 8) | ((uint32_t) g_mac[2] << 16) |
+                   ((uint32_t) g_mac[3] << 24);
     uint32_t rah = (uint32_t) g_mac[4] | ((uint32_t) g_mac[5] << 8) | E1000_RAH_AV;
     e1000_write32(E1000_REG_RAL, ral);
     e1000_write32(E1000_REG_RAH, rah);
 }
 
-static const uint8_t *e1000_mac(void) {
-    return g_mac;
-}
+static const uint8_t *e1000_mac(void) { return g_mac; }
 
 static void e1000_poll(void) {
     if (!__atomic_load_n(&g_ready, __ATOMIC_ACQUIRE)) return;
@@ -161,7 +157,8 @@ static void e1000_poll(void) {
         uint16_t len = g_rx_descs[g_rx_cur].length;
 
         if ((status & E1000_RXD_STAT_EOP) &&
-            !(errors & (E1000_RXD_ERR_CE | E1000_RXD_ERR_SE | E1000_RXD_ERR_SEQ | E1000_RXD_ERR_RXE)) &&
+            !(errors &
+              (E1000_RXD_ERR_CE | E1000_RXD_ERR_SE | E1000_RXD_ERR_SEQ | E1000_RXD_ERR_RXE)) &&
             len > 0 && len <= E1000_RX_BUFFER_SIZE) {
             uint8_t *pkt = g_rx_buf_virt[g_rx_cur];
             net_receive(pkt, len);
@@ -175,9 +172,7 @@ static void e1000_poll(void) {
         count++;
     }
 
-    if (count > 0) {
-        e1000_write32(E1000_REG_RDT, last_processed);
-    }
+    if (count > 0) { e1000_write32(E1000_REG_RDT, last_processed); }
     spin_unlock_irqrestore(&g_rx_lock);
 }
 
@@ -218,11 +213,10 @@ static void e1000_irq(int irq, void *arg) {
     (void) arg;
 
     uint32_t icr = e1000_read32(E1000_REG_ICR);
-    if (icr == 0 || icr == 0xFFFFFFFF) {
-        return;
-    }
+    if (icr == 0 || icr == 0xFFFFFFFF) { return; }
 
-    if (icr & (E1000_ICR_RXT0 | E1000_ICR_RXO | E1000_ICR_RXDMT0 | E1000_ICR_RXSEQ | E1000_ICR_TXDW | E1000_ICR_TXQE)) {
+    if (icr & (E1000_ICR_RXT0 | E1000_ICR_RXO | E1000_ICR_RXDMT0 | E1000_ICR_RXSEQ |
+               E1000_ICR_TXDW | E1000_ICR_TXQE)) {
         net_schedule_poll();
     }
 
@@ -298,9 +292,9 @@ static int e1000_init_hw(const pci_dev_t *dev) {
     if (g_mmio_pages == 0) g_mmio_pages = 32;
 
     for (uint32_t i = 0; i < g_mmio_pages; i++) {
-        int ret = vmm_map(&g_kernel_space, g_mmio_vbase + (uint64_t) i * PAGE_SIZE,
-                          pbase + (uint64_t) i * PAGE_SIZE,
-                          VMM_PRESENT | VMM_WRITE | VMM_NX | VMM_PCD);
+        int ret =
+            vmm_map(&g_kernel_space, g_mmio_vbase + (uint64_t) i * PAGE_SIZE,
+                    pbase + (uint64_t) i * PAGE_SIZE, VMM_PRESENT | VMM_WRITE | VMM_NX | VMM_PCD);
         if (ret < 0) {
             for (uint32_t j = 0; j < i; j++) {
                 vmm_unmap(&g_kernel_space, g_mmio_vbase + (uint64_t) j * PAGE_SIZE);
@@ -337,9 +331,7 @@ static int e1000_init_hw(const pci_dev_t *dev) {
     e1000_write32(E1000_REG_FCT, 0x8808);
     e1000_write32(E1000_REG_FCTTV, 0x0100);
 
-    for (int i = 0; i < 128; i++) {
-        e1000_write32(E1000_REG_MTA + i * 4, 0);
-    }
+    for (int i = 0; i < 128; i++) { e1000_write32(E1000_REG_MTA + i * 4, 0); }
 
     void *rx_ring_page = pmm_alloc_zeroed();
     if (!rx_ring_page) return -ENOMEM;
@@ -376,7 +368,8 @@ static int e1000_init_hw(const pci_dev_t *dev) {
     e1000_write32(E1000_REG_RDT, E1000_NUM_RX_DESC - 1);
     e1000_write32(E1000_REG_RDTR, 0);
     e1000_write32(E1000_REG_RADV, 0);
-    e1000_write32(E1000_REG_RCTL, E1000_RCTL_EN | E1000_RCTL_BAM | E1000_RCTL_BSIZE_2048 | E1000_RCTL_SECRC);
+    e1000_write32(E1000_REG_RCTL,
+                  E1000_RCTL_EN | E1000_RCTL_BAM | E1000_RCTL_BSIZE_2048 | E1000_RCTL_SECRC);
 
     void *tx_ring_page = pmm_alloc_zeroed();
     if (!tx_ring_page) return -ENOMEM;
@@ -414,10 +407,8 @@ static int e1000_init_hw(const pci_dev_t *dev) {
     e1000_write32(E1000_REG_TDH, 0);
     e1000_write32(E1000_REG_TDT, 0);
     e1000_write32(E1000_REG_TIPG, (10 & 0x3FF) | ((8 & 0x3FF) << 10) | ((10 & 0x3FF) << 20));
-    e1000_write32(E1000_REG_TCTL, E1000_TCTL_EN | E1000_TCTL_PSP |
-                                 (0x0F << E1000_TCTL_CT_SHIFT) |
-                                 (0x40 << E1000_TCTL_COLD_SHIFT) |
-                                 E1000_TCTL_RTLC);
+    e1000_write32(E1000_REG_TCTL, E1000_TCTL_EN | E1000_TCTL_PSP | (0x0F << E1000_TCTL_CT_SHIFT) |
+                                      (0x40 << E1000_TCTL_COLD_SHIFT) | E1000_TCTL_RTLC);
 
     __atomic_store_n(&g_ready, true, __ATOMIC_RELEASE);
     if (!net_driver_register(&g_e1000_net_ops)) {
@@ -430,10 +421,9 @@ static int e1000_init_hw(const pci_dev_t *dev) {
     request_irq(g_irq_line, e1000_irq, NULL);
     g_irq_registered = true;
 
-    e1000_write32(E1000_REG_IMS, E1000_ICR_RXT0 | E1000_ICR_RXO |
-                                 E1000_ICR_RXDMT0 | E1000_ICR_RXSEQ |
-                                 E1000_ICR_LSC | E1000_ICR_TXDW |
-                                 E1000_ICR_TXQE);
+    e1000_write32(E1000_REG_IMS, E1000_ICR_RXT0 | E1000_ICR_RXO | E1000_ICR_RXDMT0 |
+                                     E1000_ICR_RXSEQ | E1000_ICR_LSC | E1000_ICR_TXDW |
+                                     E1000_ICR_TXQE);
 
     return 0;
 }
@@ -459,9 +449,7 @@ static int e1000_init(void) {
     return 0;
 }
 
-static void e1000_exit(void) {
-    e1000_stop();
-}
+static void e1000_exit(void) { e1000_stop(); }
 
 module_init(e1000_init);
 module_exit(e1000_exit);

@@ -90,9 +90,7 @@ static int run_sandbox(const char *test_name, int (*test_fn)(void)) {
 
     char buf[256];
     ssize_t n;
-    do {
-        n = read(p[0], buf, sizeof(buf) - 1);
-    } while (n < 0 && errno == EINTR);
+    do { n = read(p[0], buf, sizeof(buf) - 1); } while (n < 0 && errno == EINTR);
     close(p[0]);
     failure_pipe[0] = -1;
 
@@ -202,9 +200,7 @@ int test_ls_grep_pipeline(void) {
 
     char buf[256];
     ssize_t n;
-    do {
-        n = read(p2[0], buf, sizeof(buf) - 1);
-    } while (n < 0 && errno == EINTR);
+    do { n = read(p2[0], buf, sizeof(buf) - 1); } while (n < 0 && errno == EINTR);
     close(p2[0]);
     buf[n > 0 ? n : 0] = '\0';
 
@@ -319,9 +315,8 @@ int main(void) {
     fprintf(stderr, "--------------------\n");
 
     fprintf(stderr, ANSI_CYAN "  kmemleak: %s" ANSI_RESET "\n",
-            access("/proc/kmemleak", R_OK) == 0 ?
-                "available (full scan skipped)" :
-                "not available");
+            access("/proc/kmemleak", R_OK) == 0 ? "available (full scan skipped)" :
+                                                  "not available");
     fprintf(stderr, "\n");
 
     for (int i = 0; i < test_count; i++) {

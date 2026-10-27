@@ -60,7 +60,8 @@ static int load_procs(pinfo_t **out) {
         pinfo_t p;
         memset(&p, 0, sizeof(p));
         if (sscanf(line, "%u %u %c %u %lu %511s", &p.pid, &p.ppid, &p.state, &p.uid, &p.mem_kb,
-                   p.exe) < 6) continue;
+                   p.exe) < 6)
+            continue;
         if (n == cap) {
             cap = cap ? cap * 2 : 32;
             procs = realloc(procs, (size_t) cap * sizeof(*procs));
@@ -173,9 +174,12 @@ static void draw(bool interactive) {
 
     int running = 0, sleeping = 0, zombie = 0;
     for (int i = 0; i < n; i++) {
-        if (procs[i].state == 'R') running++;
-        else if (procs[i].state == 'S') sleeping++;
-        else if (procs[i].state == 'Z') zombie++;
+        if (procs[i].state == 'R')
+            running++;
+        else if (procs[i].state == 'S')
+            sleeping++;
+        else if (procs[i].state == 'Z')
+            zombie++;
     }
 
     if (interactive) fputs("\033[H\033[J", stdout);
@@ -183,8 +187,8 @@ static void draw(bool interactive) {
     printf("Tasks: %d total, %d running, %d sleeping, %d zombie\n", n, running, sleeping, zombie);
     printf("MiB Mem : %8.1f total, %8.1f free, %8.1f used\n", mem_total / 1024.0, mem_free / 1024.0,
            mem_used / 1024.0);
-    printf("MiB Swap: %8.1f total, %8.1f free, %8.1f used\n", swap_total / 1024.0, swap_free / 1024.0,
-           swap_used / 1024.0);
+    printf("MiB Swap: %8.1f total, %8.1f free, %8.1f used\n", swap_total / 1024.0,
+           swap_free / 1024.0, swap_used / 1024.0);
     printf("\n%6s %-8s %c %10s %s\n", "PID", "USER", 'S', "MEM(KB)", "COMMAND");
 
     int maxrows = interactive && rows > 7 ? rows - 7 : n;
@@ -250,7 +254,7 @@ int main(int argc, char **argv) {
     for (int iter = 0; (iterations < 0 || iter < iterations) && !stop_flag; iter++) {
         draw(interactive);
         if (interactive) {
-            struct pollfd pfd = {.fd = STDIN_FILENO, .events = POLLIN};
+            struct pollfd pfd = { .fd = STDIN_FILENO, .events = POLLIN };
             if (poll(&pfd, 1, delay_ms) > 0) {
                 char c;
                 if (read(STDIN_FILENO, &c, 1) == 1 && (c == 'q' || c == 'Q')) break;

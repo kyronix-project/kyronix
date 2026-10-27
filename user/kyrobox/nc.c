@@ -59,13 +59,18 @@ int main(int argc, char **argv) {
         if (argv[i][0] != '-' || argv[i][1] == '\0') break;
         for (const char *o = argv[i] + 1; *o; o++) {
             switch (*o) {
-                case 'l': listen_mode = 1; break;
-                case 'u': udp = 1; break;
-                case 'p':
-                    if (i + 1 >= argc) usage();
-                    src_port = argv[++i];
-                    break;
-                default: usage();
+            case 'l':
+                listen_mode = 1;
+                break;
+            case 'u':
+                udp = 1;
+                break;
+            case 'p':
+                if (i + 1 >= argc) usage();
+                src_port = argv[++i];
+                break;
+            default:
+                usage();
             }
         }
     }

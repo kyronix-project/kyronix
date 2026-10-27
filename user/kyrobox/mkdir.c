@@ -1,8 +1,6 @@
 #include "common.h"
 
-static void usage(void) {
-    fprintf(stderr, "usage: mkdir [-pv] [-m MODE] DIRECTORY...\n");
-}
+static void usage(void) { fprintf(stderr, "usage: mkdir [-pv] [-m MODE] DIRECTORY...\n"); }
 
 static mode_t parse_mode(const char *s) {
     char *end;
@@ -77,8 +75,10 @@ int main(int argc, char **argv) {
         }
         if (a[0] != '-' || a[1] == '\0') break;
         for (const char *o = a + 1; *o; o++) {
-            if (*o == 'p') parents = true;
-            else if (*o == 'v') verbose = true;
+            if (*o == 'p')
+                parents = true;
+            else if (*o == 'v')
+                verbose = true;
             else if (*o == 'm') {
                 const char *value = o[1] ? o + 1 : (++i < argc ? argv[i] : NULL);
                 if (!value) {
@@ -101,8 +101,10 @@ int main(int argc, char **argv) {
 
     int rc = 0;
     for (; i < argc; i++) {
-        if (parents) rc |= make_parents(argv[i], mode, explicit_mode, verbose);
-        else rc |= make_one(argv[i], mode, verbose, false);
+        if (parents)
+            rc |= make_parents(argv[i], mode, explicit_mode, verbose);
+        else
+            rc |= make_one(argv[i], mode, verbose, false);
     }
     return rc;
 }

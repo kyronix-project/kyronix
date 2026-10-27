@@ -25,8 +25,7 @@
 
 static void proc_release_fdtable(proc_t *p) {
     if (!p || !p->fds) return;
-    bool last = !p->fds_refcnt ||
-                __atomic_fetch_sub(p->fds_refcnt, 1, __ATOMIC_ACQ_REL) == 1;
+    bool last = !p->fds_refcnt || __atomic_fetch_sub(p->fds_refcnt, 1, __ATOMIC_ACQ_REL) == 1;
     if (last) {
         vfs_free_fdtable(p->fds);
         if (p->fds_refcnt) kfree(p->fds_refcnt);
@@ -61,10 +60,8 @@ static bool proc_has_private_space(proc_t *p) {
     return private;
 }
 
-static int64_t sys_fork_at_mode(proc_t *parent, syscall_frame_t *f,
-                                uint64_t child_stack, bool cow,
-                                uint64_t child_rax, bool publish,
-                                proc_t **prepared_child) {
+static int64_t sys_fork_at_mode(proc_t *parent, syscall_frame_t *f, uint64_t child_stack, bool cow,
+                                uint64_t child_rax, bool publish, proc_t **prepared_child) {
     if (!parent) return -(int64_t) ENOMEM;
     if (!jail_can_fork(parent->jail_id)) return -(int64_t) EAGAIN;
 
@@ -74,8 +71,8 @@ static int64_t sys_fork_at_mode(proc_t *parent, syscall_frame_t *f,
     child->space = vmm_space_new();
     if (!child->space) goto fail_space;
 
-    if ((cow ? vmm_fork_user_cow(child->space, parent->space)
-             : vmm_fork_user(child->space, parent->space)) < 0)
+    if ((cow ? vmm_fork_user_cow(child->space, parent->space) :
+               vmm_fork_user(child->space, parent->space)) < 0)
         goto fail_fork;
 
     vfs_copy_fdtable(child->fds, parent->fds);
@@ -149,8 +146,7 @@ static int64_t proc_phantom_commit(proc_t *parent, proc_t *child, int64_t pid,
     char path[192];
     int jid = -1;
 
-    if (!vfs_mkdir_p("/tmp/phantom", 0755) || !vfs_mkdir_p(root, 0755))
-        goto fail_closed;
+    if (!vfs_mkdir_p("/tmp/phantom", 0755) || !vfs_mkdir_p(root, 0755)) goto fail_closed;
     snprintf(path, sizeof(path), "%s/etc", root);
     if (!vfs_mkdir_p(path, 0755)) goto fail_closed;
     snprintf(path, sizeof(path), "%s/etc/ssl", root);
@@ -173,33 +169,24 @@ static int64_t proc_phantom_commit(proc_t *parent, proc_t *child, int64_t pid,
     child->phantom_sandbox = 1;
     int sanitized = vfs_phantom_sanitize_fdtable(child->fds);
     if (sanitized < 0) goto fail_closed;
-    if (fault_error &&
-        vmm_phantom_relax_page(child->space, fault_address,
-                               (fault_error & 2u) != 0,
-                               (fault_error & 16u) != 0) < 0)
+    if (fault_error && vmm_phantom_relax_page(child->space, fault_address, (fault_error & 2u) != 0,
+                                              (fault_error & 16u) != 0) < 0)
         goto fail_closed;
     uint32_t clone_flags = PHANTOM_CLONEF_COW | PHANTOM_CLONEF_COMMITTED;
-    if (fault_error)
-        clone_flags |= PHANTOM_CLONEF_FAULT | PHANTOM_CLONEF_WORKER;
-    phantom_record_for(parent, PHANTOM_EVENT_CLONE, clone_flags,
-                       (uint64_t) (uint32_t) pid,
+    if (fault_error) clone_flags |= PHANTOM_CLONEF_FAULT | PHANTOM_CLONEF_WORKER;
+    phantom_record_for(parent, PHANTOM_EVENT_CLONE, clone_flags, (uint64_t) (uint32_t) pid,
                        (uint64_t) (uint32_t) jid,
-                       fault_error ? "fault sandbox committed"
-                                   : "COW sandbox committed");
+                       fault_error ? "fault sandbox committed" : "COW sandbox committed");
     if (sanitized > 0)
-        phantom_record_for(parent, PHANTOM_EVENT_CLONE,
-                           PHANTOM_CLONEF_FDS_SANITIZED, 0,
-                           (uint64_t) (uint32_t) sanitized,
-                           "inherited descriptors sanitized");
+        phantom_record_for(parent, PHANTOM_EVENT_CLONE, PHANTOM_CLONEF_FDS_SANITIZED, 0,
+                           (uint64_t) (uint32_t) sanitized, "inherited descriptors sanitized");
     proc_publish_ready(child);
     return pid;
 
 fail_closed:
     phantom_record_for(parent, PHANTOM_EVENT_CLONE,
-                       PHANTOM_CLONEF_FAILED |
-                           (fault_error ? PHANTOM_CLONEF_WORKER : 0),
-                       (uint64_t) (uint32_t) pid, 0,
-                       "sandbox setup failed closed");
+                       PHANTOM_CLONEF_FAILED | (fault_error ? PHANTOM_CLONEF_WORKER : 0),
+                       (uint64_t) (uint32_t) pid, 0, "sandbox setup failed closed");
     if (jid > 0) {
         jail_unref(child->jail_id);
         jail_remove((uint32_t) jid, parent);
@@ -223,21 +210,19 @@ int64_t proc_phantom_clone(syscall_frame_t *f) {
     proc_t *parent = cur();
     if (!parent) return -(int64_t) EPERM;
     proc_t *child = NULL;
-    int64_t pid =
-        sys_fork_at_mode(parent, f, 0, true, 0, false, &child);
+    int64_t pid = sys_fork_at_mode(parent, f, 0, true, 0, false, &child);
     if (pid < 0) return pid;
     return proc_phantom_commit(parent, child, pid, 0, 0);
 }
 
-int64_t proc_phantom_fault_clone(proc_t *source, const cpu_state_t *state,
-                                 uint64_t address) {
+int64_t proc_phantom_fault_clone(proc_t *source, const cpu_state_t *state, uint64_t address) {
     if (!source || !state) return -(int64_t) EPERM;
 
     syscall_frame_t placeholder;
     memset(&placeholder, 0, sizeof(placeholder));
     proc_t *child = NULL;
-    int64_t pid = sys_fork_at_mode(source, &placeholder, state->rsp, true,
-                                   state->rax, false, &child);
+    int64_t pid =
+        sys_fork_at_mode(source, &placeholder, state->rsp, true, state->rax, false, &child);
     if (pid < 0) return pid;
 
     uint8_t *ksp = child->kstack + KSTACK_SIZE;
@@ -250,8 +235,7 @@ int64_t proc_phantom_fault_clone(proc_t *source, const cpu_state_t *state,
     child->kstack_rsp = (uint64_t) ksp;
     child->user_rsp = state->rsp;
 
-    return proc_phantom_commit(source, child, pid, address,
-                               state->error_code);
+    return proc_phantom_commit(source, child, pid, address, state->error_code);
 }
 
 int64_t sys_phantom_clone(syscall_frame_t *f) {
@@ -292,8 +276,7 @@ int64_t sys_clone(uint64_t flags, uint64_t child_stack, uint32_t *ptid, uint32_t
         kfree(child->fds_refcnt);
         child->fds = parent->fds;
         child->fds_refcnt = parent->fds_refcnt;
-        if (child->fds_refcnt)
-            __atomic_add_fetch(child->fds_refcnt, 1, __ATOMIC_ACQ_REL);
+        if (child->fds_refcnt) __atomic_add_fetch(child->fds_refcnt, 1, __ATOMIC_ACQ_REL);
     } else {
         vfs_copy_fdtable(child->fds, parent->fds);
         if (child->fds_refcnt) *child->fds_refcnt = 1;
@@ -557,8 +540,8 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
         return -(int64_t) ENOEXEC;
     }
     uint32_t exec_mode = node->mode;
-    uint32_t exec_uid  = node->uid;
-    uint32_t exec_gid  = node->gid;
+    uint32_t exec_uid = node->uid;
+    uint32_t exec_gid = node->gid;
     vfs_node_unref_internal(node); // data is now mapped; release our ref
     node = NULL;
 
@@ -596,8 +579,8 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
     uint32_t next_egid = (exec_mode & S_ISGID) ? exec_gid : cur()->egid;
     bool secure_exec = next_euid != cur()->uid || next_egid != cur()->gid;
     uint64_t rsp = setup_user_stack(res.space, &res, argc, (const char *const *) kargv,
-                                    (const char *const *) kenvp, cur()->uid, next_euid,
-                                    cur()->gid, next_egid, secure_exec);
+                                    (const char *const *) kenvp, cur()->uid, next_euid, cur()->gid,
+                                    next_egid, secure_exec);
     FREE_EXEC_STRS();
 
     if (!rsp) {
@@ -626,12 +609,8 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
     }
 
     // setuid/setgid on exec: elevate euid/egid to file owner
-    if (exec_mode & S_ISUID) {
-        p->suid = p->euid = p->fsuid = exec_uid;
-    }
-    if (exec_mode & S_ISGID) {
-        p->sgid = p->egid = p->fsgid = exec_gid;
-    }
+    if (exec_mode & S_ISUID) { p->suid = p->euid = p->fsuid = exec_uid; }
+    if (exec_mode & S_ISGID) { p->sgid = p->egid = p->fsgid = exec_gid; }
 
     vmm_syscall_access_end();
     vmm_switch(p->space);

@@ -1,13 +1,13 @@
 #include "tty.h"
 #include "../arch/x86_64/cpu.h"
 #include "../arch/x86_64/pit.h"
+#include "../char/serial.h"
+#include "../input/input.h"
+#include "../input/kbd.h"
 #include "../proc/proc.h"
 #include "../proc/signal.h"
 #include "../syscall/poll.h"
 #include "../video/fb.h"
-#include "../input/input.h"
-#include "../input/kbd.h"
-#include "../char/serial.h"
 #include "vt.h"
 
 #define EINTR 4
@@ -50,8 +50,7 @@ static void tty_enqueue(uint8_t c) {
         tty_buf_head = next;
     }
     proc_t *w = tty_waiter;
-    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
-        proc_set_ready(w);
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
     tty_waiter = NULL;
     spin_unlock_irqrestore(&tty_lock);
     poll_notify();

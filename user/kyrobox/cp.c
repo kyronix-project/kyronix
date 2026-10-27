@@ -82,14 +82,13 @@ static bool target_is_inside_source(const char *source, const char *target) {
         char parent_real[PATH_MAX];
         if (!realpath(parent, parent_real)) return false;
         if (snprintf(target_real, sizeof(target_real), "%s%s%s", parent_real,
-                     parent_real[strlen(parent_real) - 1] == '/' ? "" : "/", base) >=
-            (int) sizeof(target_real))
+                     parent_real[strlen(parent_real) - 1] == '/' ? "" : "/",
+                     base) >= (int) sizeof(target_real))
             return false;
     }
     size_t source_len = strlen(source_real);
     return strcmp(source_real, target_real) == 0 ||
-           (strncmp(source_real, target_real, source_len) == 0 &&
-            target_real[source_len] == '/');
+           (strncmp(source_real, target_real, source_len) == 0 && target_real[source_len] == '/');
 }
 
 static int copy_directory(const char *source, const char *target, const struct stat *st,
@@ -260,7 +259,7 @@ static int copy_path(const char *source, const char *target, const cp_options_t 
 
 int main(int argc, char **argv) {
     kx_prog = "cp";
-    cp_options_t o = {0};
+    cp_options_t o = { 0 };
     int first = 1;
 
     for (; first < argc; first++) {
@@ -277,14 +276,32 @@ int main(int argc, char **argv) {
         for (const char *p = arg + 1; *p; p++) {
             switch (*p) {
             case 'R':
-            case 'r': o.recursive = true; break;
-            case 'a': o.recursive = o.preserve = true; break;
-            case 'f': o.force = true; o.interactive = o.no_clobber = false; break;
-            case 'i': o.interactive = true; o.force = o.no_clobber = false; break;
-            case 'n': o.no_clobber = true; o.force = o.interactive = false; break;
-            case 'p': o.preserve = true; break;
-            case 'v': o.verbose = true; break;
-            default: kx_die("invalid option");
+            case 'r':
+                o.recursive = true;
+                break;
+            case 'a':
+                o.recursive = o.preserve = true;
+                break;
+            case 'f':
+                o.force = true;
+                o.interactive = o.no_clobber = false;
+                break;
+            case 'i':
+                o.interactive = true;
+                o.force = o.no_clobber = false;
+                break;
+            case 'n':
+                o.no_clobber = true;
+                o.force = o.interactive = false;
+                break;
+            case 'p':
+                o.preserve = true;
+                break;
+            case 'v':
+                o.verbose = true;
+                break;
+            default:
+                kx_die("invalid option");
             }
         }
     }

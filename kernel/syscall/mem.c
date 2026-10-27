@@ -2,13 +2,13 @@
 
 #include "fs/vfs.h"
 #include "internal.h"
+#include "lib/log.h"
 #include "lib/string.h"
 #include "mm/pmm.h"
 #include "mm/shmem.h"
 #include "mm/vma.h"
 #include "mm/vmm.h"
 #include "proc/proc.h"
-#include "lib/log.h"
 #include "security/anti_toctou.h"
 
 #define PROT_READ 0x1
@@ -32,8 +32,7 @@ static int64_t sys_brk_impl(uint64_t addr) {
     if (!p || !p->space) return -(int64_t) ENOMEM;
     if (addr == 0) return (int64_t) p->brk;
     if (addr < p->brk_base) return (int64_t) p->brk;
-    if (addr >= USER_LIMIT || addr > USER_LIMIT - (PAGE_SIZE - 1))
-        return (int64_t) p->brk;
+    if (addr >= USER_LIMIT || addr > USER_LIMIT - (PAGE_SIZE - 1)) return (int64_t) p->brk;
 
     if (addr <= p->brk) {
         uint64_t new_end = PAGE_ALIGN_UP(addr);
@@ -184,8 +183,7 @@ static int64_t sys_mmap_impl(uint64_t addr, uint64_t length, uint64_t prot, uint
         if (!fn) return -(int64_t) EBADF;
         if (fn->type != VFS_TYPE_REG && !(fn->type == VFS_TYPE_CHR && fn->chr_mmap))
             return -(int64_t) EBADF;
-        if ((flags & MAP_SHARED) && (prot & PROT_WRITE) &&
-            (file->flags & O_ACCMODE) == O_RDONLY)
+        if ((flags & MAP_SHARED) && (prot & PROT_WRITE) && (file->flags & O_ACCMODE) == O_RDONLY)
             return -(int64_t) EACCES;
     }
 
@@ -313,10 +311,11 @@ int64_t sys_mmap(uint64_t addr, uint64_t length, uint64_t prot, uint64_t flags, 
     int64_t rc = sys_mmap_impl(addr, length, prot, flags, fd, off);
     vmm_space_mutation_end(p->space);
     if (rc < 0)
-        // log_warn("DBG mmap fail pid=%u rc=%ld len=%lx prot=%lx flags=%lx vmas=%d bump=%lx", p->pid,
+        // log_warn("DBG mmap fail pid=%u rc=%ld len=%lx prot=%lx flags=%lx vmas=%d bump=%lx",
+        // p->pid,
         //          (long) rc, (unsigned long) length, (unsigned long) prot, (unsigned long) flags,
         //          vma_used_count(p->space), (unsigned long) p->mmap_bump);
-    return rc;
+        return rc;
 }
 
 static int64_t sys_munmap_impl(uint64_t addr, uint64_t len) {
@@ -389,16 +388,15 @@ int64_t sys_madvise(void *addr, uint64_t len, int advice) {
     return 0;
 }
 
-static int64_t sys_mremap_impl(uint64_t old_addr, uint64_t old_sz, uint64_t new_sz,
-                               uint64_t flags, uint64_t new_addr) {
+static int64_t sys_mremap_impl(uint64_t old_addr, uint64_t old_sz, uint64_t new_sz, uint64_t flags,
+                               uint64_t new_addr) {
     proc_t *p = cur();
     if (!p || !old_sz || !new_sz) return -(int64_t) EINVAL;
     if (flags & ~(uint64_t) (MREMAP_MAYMOVE | MREMAP_FIXED)) return -(int64_t) EINVAL;
     if ((flags & MREMAP_FIXED) && !(flags & MREMAP_MAYMOVE)) return -(int64_t) EINVAL;
     if ((old_addr & (PAGE_SIZE - 1)) || ((flags & MREMAP_FIXED) && (new_addr & (PAGE_SIZE - 1))))
         return -(int64_t) EINVAL;
-    if (old_sz > UINT64_MAX - (PAGE_SIZE - 1) ||
-        new_sz > UINT64_MAX - (PAGE_SIZE - 1))
+    if (old_sz > UINT64_MAX - (PAGE_SIZE - 1) || new_sz > UINT64_MAX - (PAGE_SIZE - 1))
         return -(int64_t) EINVAL;
     old_sz = PAGE_ALIGN_UP(old_sz);
     new_sz = PAGE_ALIGN_UP(new_sz);

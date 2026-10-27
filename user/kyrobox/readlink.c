@@ -21,8 +21,7 @@ static int lexical_path(const char *path, char *output, size_t size) {
     char *parts[PATH_MAX / 2];
     size_t count = 0;
     char *save = NULL;
-    for (char *part = strtok_r(absolute, "/", &save); part;
-         part = strtok_r(NULL, "/", &save)) {
+    for (char *part = strtok_r(absolute, "/", &save); part; part = strtok_r(NULL, "/", &save)) {
         if (strcmp(part, ".") == 0 || part[0] == '\0') continue;
         if (strcmp(part, "..") == 0) {
             if (count) count--;
@@ -101,15 +100,31 @@ int main(int argc, char **argv) {
         }
         for (const char *p = arg + 1; *p; p++) {
             switch (*p) {
-            case 'f': mode = CANON_FINAL; break;
-            case 'e': mode = CANON_ALL; break;
-            case 'm': mode = CANON_MISSING; break;
-            case 'n': newline = false; break;
+            case 'f':
+                mode = CANON_FINAL;
+                break;
+            case 'e':
+                mode = CANON_ALL;
+                break;
+            case 'm':
+                mode = CANON_MISSING;
+                break;
+            case 'n':
+                newline = false;
+                break;
             case 'q':
-            case 's': quiet = true; break;
-            case 'v': quiet = false; break;
-            case 'z': zero = true; newline = false; break;
-            default: kx_die("invalid option");
+            case 's':
+                quiet = true;
+                break;
+            case 'v':
+                quiet = false;
+                break;
+            case 'z':
+                zero = true;
+                newline = false;
+                break;
+            default:
+                kx_die("invalid option");
             }
         }
     }

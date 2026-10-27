@@ -42,18 +42,18 @@ static volatile sig_atomic_t child_pid = -1;
 
 static void usage(FILE *stream) {
     fprintf(stream,
-        "usage:\n"
-        "  jailctl create [-n name] [-r root] [-f flags] [-p max-procs]\n"
-        "  jailctl exec   [-n name] [-r root] [-f flags] [-p max-procs] -- command [args...]\n"
-        "  jailctl attach ID -- command [args...]\n"
-        "  jailctl list\n"
-        "  jailctl show ID\n"
-        "  jailctl remove ID\n"
-        "  jailctl self\n"
-        "  jailctl auto on|off\n"
-        "\n"
-        "  (flags: all, none, or a comma-separated list of fs,pid,ipc,priv)\n"
-        "  (defaults: root=/, flags=all, max-procs=unlimited              )\n");
+            "usage:\n"
+            "  jailctl create [-n name] [-r root] [-f flags] [-p max-procs]\n"
+            "  jailctl exec   [-n name] [-r root] [-f flags] [-p max-procs] -- command [args...]\n"
+            "  jailctl attach ID -- command [args...]\n"
+            "  jailctl list\n"
+            "  jailctl show ID\n"
+            "  jailctl remove ID\n"
+            "  jailctl self\n"
+            "  jailctl auto on|off\n"
+            "\n"
+            "  (flags: all, none, or a comma-separated list of fs,pid,ipc,priv)\n"
+            "  (defaults: root=/, flags=all, max-procs=unlimited              )\n");
 }
 
 static int parse_u32(const char *text, uint32_t *value, int allow_zero) {
@@ -61,9 +61,8 @@ static int parse_u32(const char *text, uint32_t *value, int allow_zero) {
     errno = 0;
     char *end = NULL;
     unsigned long parsed = strtoul(text, &end, 10);
-    if (errno || !end || *end || parsed > UINT32_MAX || (!allow_zero && parsed == 0))
-        return -1;
-    *value = (uint32_t)parsed;
+    if (errno || !end || *end || parsed > UINT32_MAX || (!allow_zero && parsed == 0)) return -1;
+    *value = (uint32_t) parsed;
     return 0;
 }
 
@@ -82,8 +81,7 @@ static int parse_flags(const char *text, uint32_t *flags) {
     strcpy(copy, text);
     uint32_t parsed = 0;
     char *save = NULL;
-    for (char *part = strtok_r(copy, ",", &save); part;
-         part = strtok_r(NULL, ",", &save)) {
+    for (char *part = strtok_r(copy, ",", &save); part; part = strtok_r(NULL, ",", &save)) {
         if (strcmp(part, "fs") == 0)
             parsed |= JAILF_FS;
         else if (strcmp(part, "pid") == 0)
@@ -110,8 +108,10 @@ static void flags_string(uint32_t flags, char *out, size_t size) {
         uint32_t flag;
         const char *name;
     } names[] = {
-        {JAILF_FS, "fs"}, {JAILF_PID, "pid"},
-        {JAILF_IPC, "ipc"}, {JAILF_PRIV, "priv"},
+        { JAILF_FS, "fs" },
+        { JAILF_PID, "pid" },
+        { JAILF_IPC, "ipc" },
+        { JAILF_PRIV, "priv" },
     };
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
         if (!(flags & names[i].flag)) continue;
@@ -120,9 +120,7 @@ static void flags_string(uint32_t flags, char *out, size_t size) {
     }
 }
 
-static long jail_create_call(kjail_conf_t *conf) {
-    return syscall(SYS_jail_create, conf);
-}
+static long jail_create_call(kjail_conf_t *conf) { return syscall(SYS_jail_create, conf); }
 
 static long jail_get_call(uint32_t id, kjail_info_t *info) {
     return syscall(SYS_jail_get, id, info);
@@ -131,9 +129,8 @@ static long jail_get_call(uint32_t id, kjail_info_t *info) {
 static void print_info(const kjail_info_t *info) {
     char flags[64];
     flags_string(info->flags, flags, sizeof(flags));
-    printf("%-4u %-4u %-6u %-6u %-5u %-17s %-31s %s\n",
-           info->id, info->parent_id, info->nprocs, info->max_procs,
-           info->creator_uid, flags, info->name[0] ? info->name : "-",
+    printf("%-4u %-4u %-6u %-6u %-5u %-17s %-31s %s\n", info->id, info->parent_id, info->nprocs,
+           info->max_procs, info->creator_uid, flags, info->name[0] ? info->name : "-",
            info->root[0] ? info->root : "/");
 }
 
@@ -158,12 +155,12 @@ static int list_jails(void) {
         puts("No jails.");
         return 0;
     }
-    if ((unsigned long)count > SIZE_MAX / sizeof(uint32_t)) {
+    if ((unsigned long) count > SIZE_MAX / sizeof(uint32_t)) {
         errno = EOVERFLOW;
         kx_warn("jail_list");
         return 1;
     }
-    uint32_t *ids = calloc((size_t)count, sizeof(*ids));
+    uint32_t *ids = calloc((size_t) count, sizeof(*ids));
     if (!ids) {
         kx_warn("calloc");
         return 1;
@@ -198,8 +195,8 @@ static int validate_root(const kjail_conf_t *conf) {
     return 0;
 }
 
-static int parse_config(int argc, char **argv, int start, kjail_conf_t *conf,
-                        int require_command, int *command_index) {
+static int parse_config(int argc, char **argv, int start, kjail_conf_t *conf, int require_command,
+                        int *command_index) {
     memset(conf, 0, sizeof(*conf));
     strcpy(conf->root, "/");
     strcpy(conf->name, "jail");
@@ -278,7 +275,7 @@ static void exec_in_jail(uint32_t id, char **command) {
 }
 
 static void forward_signal(int signal_number) {
-    pid_t pid = (pid_t)child_pid;
+    pid_t pid = (pid_t) child_pid;
     if (pid > 0) kill(pid, signal_number);
 }
 
@@ -317,7 +314,7 @@ static int create_or_exec(int argc, char **argv, int execute) {
         kx_warn("jail_create");
         return 1;
     }
-    uint32_t id = (uint32_t)created;
+    uint32_t id = (uint32_t) created;
     if (!execute) {
         printf("%u\n", id);
         return 0;

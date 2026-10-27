@@ -11,10 +11,9 @@ typedef struct {
 } options_t;
 
 static void usage(void) {
-    fprintf(stderr,
-            "usage: ln [-sfinTv] TARGET LINK\n"
-            "       ln [-sfinv] TARGET... DIRECTORY\n"
-            "       ln [-sfinv] -t DIRECTORY TARGET...\n");
+    fprintf(stderr, "usage: ln [-sfinTv] TARGET LINK\n"
+                    "       ln [-sfinv] TARGET... DIRECTORY\n"
+                    "       ln [-sfinv] -t DIRECTORY TARGET...\n");
 }
 
 static bool is_directory(const char *path, bool follow) {
@@ -81,29 +80,38 @@ int main(int argc, char **argv) {
             break;
         }
         if (a[0] != '-' || a[1] == '\0') break;
-        if (strcmp(a, "--symbolic") == 0) o.symbolic = true;
+        if (strcmp(a, "--symbolic") == 0)
+            o.symbolic = true;
         else if (strcmp(a, "--force") == 0) {
             o.force = true;
             o.interactive = false;
         } else if (strcmp(a, "--interactive") == 0) {
             o.interactive = true;
             o.force = false;
-        } else if (strcmp(a, "--no-dereference") == 0) o.no_dereference = true;
-        else if (strcmp(a, "--no-target-directory") == 0) o.no_target_directory = true;
-        else if (strcmp(a, "--verbose") == 0) o.verbose = true;
-        else if (strncmp(a, "--target-directory=", 19) == 0) o.target_directory = a + 19;
+        } else if (strcmp(a, "--no-dereference") == 0)
+            o.no_dereference = true;
+        else if (strcmp(a, "--no-target-directory") == 0)
+            o.no_target_directory = true;
+        else if (strcmp(a, "--verbose") == 0)
+            o.verbose = true;
+        else if (strncmp(a, "--target-directory=", 19) == 0)
+            o.target_directory = a + 19;
         else {
             for (const char *p = a + 1; *p; p++) {
-                if (*p == 's') o.symbolic = true;
+                if (*p == 's')
+                    o.symbolic = true;
                 else if (*p == 'f') {
                     o.force = true;
                     o.interactive = false;
                 } else if (*p == 'i') {
                     o.interactive = true;
                     o.force = false;
-                } else if (*p == 'n') o.no_dereference = true;
-                else if (*p == 'T') o.no_target_directory = true;
-                else if (*p == 'v') o.verbose = true;
+                } else if (*p == 'n')
+                    o.no_dereference = true;
+                else if (*p == 'T')
+                    o.no_target_directory = true;
+                else if (*p == 'v')
+                    o.verbose = true;
                 else if (*p == 't') {
                     const char *value = p[1] ? p + 1 : (++i < argc ? argv[i] : NULL);
                     if (!value) {

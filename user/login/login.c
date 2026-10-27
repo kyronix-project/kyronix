@@ -161,9 +161,7 @@ int main(void) {
                 sleep(1);
                 continue;
             }
-            if (pwstate == 0) {
-                break;
-            }
+            if (pwstate == 0) { break; }
 
             read_line("Password: ", pass, sizeof(pass), -1);
 

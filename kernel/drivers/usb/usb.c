@@ -1,8 +1,8 @@
-#include "usb_glue.h"
 #include "usb.h"
-#include "xhci.h"
 #include "ehci.h"
 #include "uhci.h"
+#include "usb_glue.h"
+#include "xhci.h"
 
 void usb_init(void) {
 

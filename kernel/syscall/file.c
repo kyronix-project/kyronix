@@ -16,8 +16,7 @@
 
 static int64_t copy_fd_data(int outfd, uint64_t out_off, bool positional_out, int infd,
                             uint64_t in_off, uint64_t count) {
-    if (in_off > INT64_MAX || (positional_out && out_off > INT64_MAX))
-        return -(int64_t) EINVAL;
+    if (in_off > INT64_MAX || (positional_out && out_off > INT64_MAX)) return -(int64_t) EINVAL;
 
     uint8_t *buf = (uint8_t *) kmalloc(FILE_COPY_CHUNK);
     if (!buf) return -(int64_t) ENOMEM;
@@ -33,9 +32,9 @@ static int64_t copy_fd_data(int outfd, uint64_t out_off, bool positional_out, in
             result = (got < 0 && total == 0) ? got : (int64_t) total;
             break;
         }
-        int64_t wrote = positional_out
-                            ? fd_pwrite_kbuf(outfd, buf, (uint64_t) got, out_off + total)
-                            : fd_write_kbuf(outfd, buf, (uint64_t) got);
+        int64_t wrote = positional_out ?
+                            fd_pwrite_kbuf(outfd, buf, (uint64_t) got, out_off + total) :
+                            fd_write_kbuf(outfd, buf, (uint64_t) got);
         if (wrote <= 0) {
             result = (wrote < 0 && total == 0) ? wrote : (int64_t) total;
             break;

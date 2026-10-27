@@ -62,8 +62,10 @@ int main(int argc, char **argv) {
                 usage();
                 return 1;
             }
-            if (opt == 'f') format = value;
-            else separator = value;
+            if (opt == 'f')
+                format = value;
+            else
+                separator = value;
             continue;
         }
         if (a[0] == '-' && a[1] && !isdigit((unsigned char) a[1]) && a[1] != '.') {
@@ -112,8 +114,7 @@ int main(int argc, char **argv) {
     for (unsigned long long n = 0; n < 1000000000ULL; n++) {
         double value = first + (double) n * step;
         double tolerance = fabs(step) * 1e-12 + 1e-12;
-        if ((step > 0.0 && value > last + tolerance) ||
-            (step < 0.0 && value < last - tolerance))
+        if ((step > 0.0 && value > last + tolerance) || (step < 0.0 && value < last - tolerance))
             break;
         if (printed && fputs(separator, stdout) == EOF) return 1;
         if (format)

@@ -17,52 +17,84 @@ static const char *print_escape(const char *p, bool percent_b) {
     }
     p++;
     switch (*p) {
-        case 'a': c = '\a'; p++; break;
-        case 'b': c = '\b'; p++; break;
-        case 'c': stop_output = true; return p + 1;
-        case 'e': c = 27; p++; break;
-        case 'f': c = '\f'; p++; break;
-        case 'n': c = '\n'; p++; break;
-        case 'r': c = '\r'; p++; break;
-        case 't': c = '\t'; p++; break;
-        case 'v': c = '\v'; p++; break;
-        case '\\': c = '\\'; p++; break;
-        case '"': c = '"'; p++; break;
-        case 'x': {
+    case 'a':
+        c = '\a';
+        p++;
+        break;
+    case 'b':
+        c = '\b';
+        p++;
+        break;
+    case 'c':
+        stop_output = true;
+        return p + 1;
+    case 'e':
+        c = 27;
+        p++;
+        break;
+    case 'f':
+        c = '\f';
+        p++;
+        break;
+    case 'n':
+        c = '\n';
+        p++;
+        break;
+    case 'r':
+        c = '\r';
+        p++;
+        break;
+    case 't':
+        c = '\t';
+        p++;
+        break;
+    case 'v':
+        c = '\v';
+        p++;
+        break;
+    case '\\':
+        c = '\\';
+        p++;
+        break;
+    case '"':
+        c = '"';
+        p++;
+        break;
+    case 'x': {
+        p++;
+        int value = 0, digits = 0, h;
+        while (digits < 2 && (h = hex_value((unsigned char) *p)) >= 0) {
+            value = value * 16 + h;
             p++;
-            int value = 0, digits = 0, h;
-            while (digits < 2 && (h = hex_value((unsigned char) *p)) >= 0) {
-                value = value * 16 + h;
-                p++;
-                digits++;
-            }
-            c = digits ? (unsigned char) value : 'x';
-            break;
+            digits++;
         }
-        case '0': {
-            p++;
+        c = digits ? (unsigned char) value : 'x';
+        break;
+    }
+    case '0': {
+        p++;
+        int value = 0, digits = 0;
+        while (digits < 3 && *p >= '0' && *p <= '7') {
+            value = value * 8 + (*p++ - '0');
+            digits++;
+        }
+        c = (unsigned char) value;
+        break;
+    }
+    default:
+        if (percent_b && *p >= '0' && *p <= '7') {
             int value = 0, digits = 0;
             while (digits < 3 && *p >= '0' && *p <= '7') {
                 value = value * 8 + (*p++ - '0');
                 digits++;
             }
             c = (unsigned char) value;
-            break;
+        } else {
+            putchar('\\');
+            if (!*p) return p;
+            c = (unsigned char) *p++;
         }
-        default:
-            if (percent_b && *p >= '0' && *p <= '7') {
-                int value = 0, digits = 0;
-                while (digits < 3 && *p >= '0' && *p <= '7') {
-                    value = value * 8 + (*p++ - '0');
-                    digits++;
-                }
-                c = (unsigned char) value;
-            } else {
-                putchar('\\');
-                if (!*p) return p;
-                c = (unsigned char) *p++;
-            }
-            break;
+        break;
     }
     putchar(c);
     return p;
@@ -84,9 +116,7 @@ static long long signed_arg(const char *s) {
     return v;
 }
 
-static unsigned long long unsigned_arg(const char *s) {
-    return (unsigned long long) signed_arg(s);
-}
+static unsigned long long unsigned_arg(const char *s) { return (unsigned long long) signed_arg(s); }
 
 static double float_arg(const char *s) {
     char *end;
@@ -140,7 +170,8 @@ static int emit_format(const char *fmt, int argc, char **argv, int *argp) {
         if (conversion == 's' || conversion == 'c' || conversion == 'b') {
             spec[prefix] = conversion;
             spec[prefix + 1] = '\0';
-            if (conversion == 's') printf(spec, arg);
+            if (conversion == 's')
+                printf(spec, arg);
             else if (conversion == 'c') {
                 spec[prefix] = 'c';
                 printf(spec, *arg ? (unsigned char) *arg : 0);

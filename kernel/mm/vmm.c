@@ -60,8 +60,7 @@ int vmm_map(vmm_space_t *sp, uint64_t virt, uint64_t phys, uint64_t flags) {
 
     if (pt[PT_IDX(virt)] & VMM_PRESENT) return -1;
     pt[PT_IDX(virt)] = (phys & PTE_ADDR_MASK) | (flags & PTE_FLAGS_MASK) | VMM_PRESENT;
-    if (new_kernel_slot)
-        __atomic_add_fetch(&g_kernel_map_generation, 1, __ATOMIC_RELEASE);
+    if (new_kernel_slot) __atomic_add_fetch(&g_kernel_map_generation, 1, __ATOMIC_RELEASE);
 
     __asm__ volatile("invlpg (%0)" ::"r"(virt) : "memory");
     return 0;
@@ -138,8 +137,7 @@ bool vmm_user_range_fault_in(vmm_space_t *sp, uint64_t virt, uint64_t len, bool 
         if (pte & VMM_PRESENT) {
             if (!(pte & VMM_USER)) goto fail;
             if (write && !(pte & VMM_WRITE)) {
-                if (!(pte & VMM_COW) || vmm_handle_cow_fault(sp, pg) <= 0)
-                    goto fail;
+                if (!(pte & VMM_COW) || vmm_handle_cow_fault(sp, pg) <= 0) goto fail;
             }
         } else {
             /* not present: only ok if a vma covers it - then fault it in now */
@@ -199,8 +197,7 @@ bool vmm_space_mutation_begin(vmm_space_t *sp) {
 }
 
 void vmm_space_mutation_end(vmm_space_t *sp) {
-    if (sp && sp != &g_kernel_space)
-        __atomic_store_n(&sp->user_mutating, 0, __ATOMIC_RELEASE);
+    if (sp && sp != &g_kernel_space) __atomic_store_n(&sp->user_mutating, 0, __ATOMIC_RELEASE);
 }
 
 int vmm_protect(vmm_space_t *sp, uint64_t virt, uint64_t flags) {
@@ -391,19 +388,17 @@ int vmm_fork_user_cow(vmm_space_t *dst, vmm_space_t *src) {
                     uint64_t flags = pte & PTE_FLAGS_MASK;
                     uint32_t map_flags = 0;
                     bool owned = false;
-                    bool tracked =
-                        vma_range_info(src, va, PAGE_SIZE, NULL, &map_flags, &owned);
+                    bool tracked = vma_range_info(src, va, PAGE_SIZE, NULL, &map_flags, &owned);
 
                     /*
                      * Device mappings and legacy untracked mappings may not use
                      * PMM-managed frames. Preserve the old eager-copy behavior.
                      */
-                    if (!tracked || !owned ||
-                        !pmm_retain((void *) pte_addr(pte))) {
+                    if (!tracked || !owned || !pmm_retain((void *) pte_addr(pte))) {
                         void *new_phys = pmm_alloc();
                         if (!new_phys) return -1;
-                        memcpy(phys_to_virt((uint64_t) new_phys),
-                               phys_to_virt(pte_addr(pte)), PAGE_SIZE);
+                        memcpy(phys_to_virt((uint64_t) new_phys), phys_to_virt(pte_addr(pte)),
+                               PAGE_SIZE);
                         if (vmm_map(dst, va, (uint64_t) new_phys, flags) < 0) {
                             pmm_free(new_phys);
                             return -1;
@@ -411,8 +406,7 @@ int vmm_fork_user_cow(vmm_space_t *dst, vmm_space_t *src) {
                         continue;
                     }
 
-                    bool private_write =
-                        (flags & VMM_WRITE) && !(map_flags & VMA_MAP_SHARED);
+                    bool private_write = (flags & VMM_WRITE) && !(map_flags & VMA_MAP_SHARED);
                     uint64_t child_flags = flags;
                     if (private_write) {
                         child_flags &= ~(uint64_t) VMM_WRITE;
@@ -424,7 +418,7 @@ int vmm_fork_user_cow(vmm_space_t *dst, vmm_space_t *src) {
                     }
                     if (private_write) {
                         src_pt[l] = pte_addr(pte) | child_flags | VMM_PRESENT;
-                        __asm__ volatile("invlpg (%0)" :: "r"(va) : "memory");
+                        __asm__ volatile("invlpg (%0)" ::"r"(va) : "memory");
                     }
                 }
             }
@@ -452,7 +446,7 @@ int vmm_handle_cow_fault(vmm_space_t *sp, uint64_t virt) {
     uint64_t *pt = (uint64_t *) phys_to_virt(pte_addr(pd[PD_IDX(virt)]));
     pt[PT_IDX(virt)] = (uint64_t) new_phys | (flags & PTE_FLAGS_MASK) | VMM_PRESENT;
     pmm_free((void *) pte_addr(pte));
-    __asm__ volatile("invlpg (%0)" :: "r"(virt & PAGE_MASK) : "memory");
+    __asm__ volatile("invlpg (%0)" ::"r"(virt & PAGE_MASK) : "memory");
     return 1;
 }
 

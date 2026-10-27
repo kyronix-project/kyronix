@@ -22,8 +22,7 @@ static void irq_handler(int irq, void *arg) {
     uio->irq_count++;
     pic_mask_irq((uint8_t) irq); // driver re-enables via write()
     proc_t *w = uio->waiter;
-    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
-        proc_set_ready(w);
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
     uio->waiter = NULL;
     spin_unlock_irqrestore(&uio->lock);
 }

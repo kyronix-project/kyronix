@@ -5,12 +5,11 @@
 #include <stdint.h>
 
 #ifndef offsetof
-#define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
+#define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *) 0)->MEMBER)
 #endif
 
 #ifndef container_of
-#define container_of(ptr, type, member) \
-    ((type *)((char *)(ptr) - offsetof(type, member)))
+#define container_of(ptr, type, member) ((type *) ((char *) (ptr) - offsetof(type, member)))
 #endif
 
 #define I2C_NAME_SIZE 20
@@ -54,17 +53,12 @@
 #define I2C_FUNC_SMBUS_WRITE_I2C_BLOCK 0x08000000
 #define I2C_FUNC_SMBUS_HOST_NOTIFY 0x10000000
 
-#define I2C_FUNC_SMBUS_EMUL (I2C_FUNC_SMBUS_QUICK | \
-                             I2C_FUNC_SMBUS_READ_BYTE | \
-                             I2C_FUNC_SMBUS_WRITE_BYTE | \
-                             I2C_FUNC_SMBUS_READ_BYTE_DATA | \
-                             I2C_FUNC_SMBUS_WRITE_BYTE_DATA | \
-                             I2C_FUNC_SMBUS_READ_WORD_DATA | \
-                             I2C_FUNC_SMBUS_WRITE_WORD_DATA | \
-                             I2C_FUNC_SMBUS_PROC_CALL | \
-                             I2C_FUNC_SMBUS_WRITE_BLOCK_DATA | \
-                             I2C_FUNC_SMBUS_READ_I2C_BLOCK | \
-                             I2C_FUNC_SMBUS_WRITE_I2C_BLOCK)
+#define I2C_FUNC_SMBUS_EMUL                                                                        \
+    (I2C_FUNC_SMBUS_QUICK | I2C_FUNC_SMBUS_READ_BYTE | I2C_FUNC_SMBUS_WRITE_BYTE |                 \
+     I2C_FUNC_SMBUS_READ_BYTE_DATA | I2C_FUNC_SMBUS_WRITE_BYTE_DATA |                              \
+     I2C_FUNC_SMBUS_READ_WORD_DATA | I2C_FUNC_SMBUS_WRITE_WORD_DATA | I2C_FUNC_SMBUS_PROC_CALL |   \
+     I2C_FUNC_SMBUS_WRITE_BLOCK_DATA | I2C_FUNC_SMBUS_READ_I2C_BLOCK |                             \
+     I2C_FUNC_SMBUS_WRITE_I2C_BLOCK)
 
 #define I2C_SMBUS_READ 1
 #define I2C_SMBUS_WRITE 0
@@ -286,7 +280,8 @@ struct i2c_adapter *i2c_get_adapter(int id);
 int i2c_register_driver(void *owner, struct i2c_driver *driver);
 void i2c_del_driver(struct i2c_driver *driver);
 
-struct i2c_client *i2c_new_client_device(struct i2c_adapter *adap, struct i2c_board_info const *info);
+struct i2c_client *i2c_new_client_device(struct i2c_adapter *adap,
+                                         struct i2c_board_info const *info);
 void i2c_unregister_device(struct i2c_client *client);
 
 int i2c_transfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num);
@@ -299,24 +294,20 @@ int i2c_smbus_read_word_data(const struct i2c_client *client, uint8_t command, u
 int i2c_smbus_write_word_data(const struct i2c_client *client, uint8_t command, uint16_t val);
 int i2c_smbus_read_word_swapped(const struct i2c_client *client, uint8_t command, uint16_t *val);
 int i2c_smbus_write_word_swapped(const struct i2c_client *client, uint8_t command, uint16_t val);
-int i2c_smbus_read_i2c_block_data(const struct i2c_client *client, uint8_t command, uint8_t length, uint8_t *values);
-int i2c_smbus_write_i2c_block_data(const struct i2c_client *client, uint8_t command, uint8_t length, const uint8_t *values);
+int i2c_smbus_read_i2c_block_data(const struct i2c_client *client, uint8_t command, uint8_t length,
+                                  uint8_t *values);
+int i2c_smbus_write_i2c_block_data(const struct i2c_client *client, uint8_t command, uint8_t length,
+                                   const uint8_t *values);
 
-static inline void *i2c_get_clientdata(const struct i2c_client *dev) {
-    return dev->driver_data;
-}
+static inline void *i2c_get_clientdata(const struct i2c_client *dev) { return dev->driver_data; }
 
 static inline void i2c_set_clientdata(struct i2c_client *dev, void *data) {
     dev->driver_data = data;
 }
 
-static inline void *i2c_get_adapdata(const struct i2c_adapter *dev) {
-    return dev->algo_data;
-}
+static inline void *i2c_get_adapdata(const struct i2c_adapter *dev) { return dev->algo_data; }
 
-static inline void i2c_set_adapdata(struct i2c_adapter *dev, void *data) {
-    dev->algo_data = data;
-}
+static inline void i2c_set_adapdata(struct i2c_adapter *dev, void *data) { dev->algo_data = data; }
 
 int i2c_stub_create_adapter(int id);
 int i2c_stub_set_word(uint8_t addr, uint8_t reg, uint16_t val);

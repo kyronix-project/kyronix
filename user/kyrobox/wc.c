@@ -56,7 +56,7 @@ static void print_counts(const counts_t *count, const wc_options_t *o, const cha
 
 int main(int argc, char **argv) {
     kx_prog = "wc";
-    wc_options_t o = {0};
+    wc_options_t o = { 0 };
     bool selected = false;
     int first = 1;
 
@@ -74,18 +74,29 @@ int main(int argc, char **argv) {
         for (const char *p = arg + 1; *p; p++) {
             selected = true;
             switch (*p) {
-            case 'c': o.bytes = true; break;
-            case 'l': o.lines = true; break;
-            case 'm': o.chars = true; break;
-            case 'w': o.words = true; break;
-            case 'L': o.max_line = true; break;
-            default: kx_die("invalid option");
+            case 'c':
+                o.bytes = true;
+                break;
+            case 'l':
+                o.lines = true;
+                break;
+            case 'm':
+                o.chars = true;
+                break;
+            case 'w':
+                o.words = true;
+                break;
+            case 'L':
+                o.max_line = true;
+                break;
+            default:
+                kx_die("invalid option");
             }
         }
     }
     if (!selected) o.lines = o.words = o.bytes = true;
 
-    counts_t total = {0};
+    counts_t total = { 0 };
     int files = argc - first;
     int streams = files ? files : 1;
     int rc = 0;
@@ -97,7 +108,7 @@ int main(int argc, char **argv) {
             rc = 1;
             continue;
         }
-        counts_t count = {0};
+        counts_t count = { 0 };
         if (count_stream(file, &count) < 0) {
             kx_warn(name ? name : "stdin");
             rc = 1;

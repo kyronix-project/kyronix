@@ -4,8 +4,7 @@
 
 #include "clock.h"
 
-static gboolean update_clock(gpointer data)
-{
+static gboolean update_clock(gpointer data) {
     GtkLabel *label = GTK_LABEL(data);
     time_t now = time(NULL);
     struct tm tm;
@@ -18,8 +17,7 @@ static gboolean update_clock(gpointer data)
     return G_SOURCE_CONTINUE;
 }
 
-GtkWidget *clock_label_new(void)
-{
+GtkWidget *clock_label_new(void) {
     GtkWidget *label = gtk_label_new("");
     gtk_widget_set_name(label, "clock-label");
     update_clock(label);

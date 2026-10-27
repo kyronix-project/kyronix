@@ -12,10 +12,9 @@ _Static_assert(sizeof(siginfo_t) == 128, "siginfo_t must be 128 bytes");
 _Static_assert(sizeof(ucontext_t) == 304, "ucontext_t must be 304 bytes");
 _Static_assert(sizeof(rt_sigframe_t) == 440, "rt_sigframe_t must be 440 bytes");
 
-#define SIG_BIT(sig)    (1ULL << ((sig) - 1))
+#define SIG_BIT(sig) (1ULL << ((sig) - 1))
 #define SIG_UNBLOCKABLE (SIG_BIT(SIGKILL) | SIG_BIT(SIGSTOP))
-#define SIG_STOP_MASK \
-    (SIG_BIT(SIGSTOP) | SIG_BIT(SIGTSTP) | SIG_BIT(SIGTTIN) | SIG_BIT(SIGTTOU))
+#define SIG_STOP_MASK (SIG_BIT(SIGSTOP) | SIG_BIT(SIGTSTP) | SIG_BIT(SIGTTIN) | SIG_BIT(SIGTTOU))
 
 static int sig_default_fatal(int sig) {
     switch (sig) {
@@ -44,9 +43,7 @@ uint64_t proc_blocking_sig_mask(proc_t *p) {
     return actionable;
 }
 
-static int sig_default_stop(int sig) {
-    return (SIG_BIT(sig) & SIG_STOP_MASK) != 0;
-}
+static int sig_default_stop(int sig) { return (SIG_BIT(sig) & SIG_STOP_MASK) != 0; }
 
 void proc_send_signal(struct proc *p, int sig) {
     if (sig < 1 || sig >= NSIG) return;

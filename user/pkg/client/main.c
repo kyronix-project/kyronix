@@ -25,46 +25,36 @@ static const char *first_nonflag(int argc, char **argv) {
 
 static void usage(void) {
     fprintf(stderr,
-        "%skx-pkg%s - package manager for kyronix. %sv" PKG_VERSION "%s\n\n"
+            "%skx-pkg%s - package manager for kyronix. %sv" PKG_VERSION "%s\n\n"
 
-        "%sUsage:%s\n"
-        "  %spkg install%s <package>       Install a package\n"
-        "  %spkg remove%s <package>        Uninstall a package\n"
-        "  %spkg autoremove%s              Remove orphaned dependencies\n"
-        "  %spkg list%s                    List installed packages\n"
-        "\n"
-        "%sRepository:%s\n"
-        "  %spkg repo show%s               Show configured repositories\n"
-        "  %spkg repo add%s <name> <url>   Add or update a repository\n"
-        "  %spkg repo remove%s <name>      Remove a repository\n"
-        "  %spkg repo ping%s               Check repository availability\n"
-        "\n"
-        "%sOptions:%s\n"
-        "  %s-y, --yes%s                 Assume \"yes\" to all prompts\n"
-        "  %s-v, --verbose%s               Verbose output\n"
-        "  %s-h, --help%s                  Show this help\n"
-        "\n",
+            "%sUsage:%s\n"
+            "  %spkg install%s <package>       Install a package\n"
+            "  %spkg remove%s <package>        Uninstall a package\n"
+            "  %spkg autoremove%s              Remove orphaned dependencies\n"
+            "  %spkg list%s                    List installed packages\n"
+            "\n"
+            "%sRepository:%s\n"
+            "  %spkg repo show%s               Show configured repositories\n"
+            "  %spkg repo add%s <name> <url>   Add or update a repository\n"
+            "  %spkg repo remove%s <name>      Remove a repository\n"
+            "  %spkg repo ping%s               Check repository availability\n"
+            "\n"
+            "%sOptions:%s\n"
+            "  %s-y, --yes%s                 Assume \"yes\" to all prompts\n"
+            "  %s-v, --verbose%s               Verbose output\n"
+            "  %s-h, --help%s                  Show this help\n"
+            "\n",
 
-        ANSI_CYAN, ANSI_RESET,
-        ANSI_DIM, ANSI_RESET,
+            ANSI_CYAN, ANSI_RESET, ANSI_DIM, ANSI_RESET,
 
-        ANSI_BOLD, ANSI_RESET,
-        ANSI_CYAN, ANSI_RESET,
-        ANSI_CYAN, ANSI_RESET,
-        ANSI_CYAN, ANSI_RESET,
-        ANSI_CYAN, ANSI_RESET,
+            ANSI_BOLD, ANSI_RESET, ANSI_CYAN, ANSI_RESET, ANSI_CYAN, ANSI_RESET, ANSI_CYAN,
+            ANSI_RESET, ANSI_CYAN, ANSI_RESET,
 
-        ANSI_BOLD, ANSI_RESET,
-        ANSI_CYAN, ANSI_RESET,
-        ANSI_CYAN, ANSI_RESET,
-        ANSI_CYAN, ANSI_RESET,
-        ANSI_CYAN, ANSI_RESET,
+            ANSI_BOLD, ANSI_RESET, ANSI_CYAN, ANSI_RESET, ANSI_CYAN, ANSI_RESET, ANSI_CYAN,
+            ANSI_RESET, ANSI_CYAN, ANSI_RESET,
 
-        ANSI_BOLD, ANSI_RESET,
-        ANSI_CYAN, ANSI_RESET,
-        ANSI_CYAN, ANSI_RESET,
-        ANSI_CYAN, ANSI_RESET
-    );
+            ANSI_BOLD, ANSI_RESET, ANSI_CYAN, ANSI_RESET, ANSI_CYAN, ANSI_RESET, ANSI_CYAN,
+            ANSI_RESET);
 }
 
 int main(int argc, char **argv) {
@@ -74,7 +64,8 @@ int main(int argc, char **argv) {
     }
 
     const char *cmd = argv[1];
-    verbose_mode = has_flag(argc - 2, argv + 2, "-verbose") || has_flag(argc - 2, argv + 2, "--verbose");
+    verbose_mode =
+        has_flag(argc - 2, argv + 2, "-verbose") || has_flag(argc - 2, argv + 2, "--verbose");
     yes_mode = has_flag(argc - 2, argv + 2, "-y") || has_flag(argc - 2, argv + 2, "--yes");
 
     if (strcmp(cmd, "repo") == 0) {
@@ -88,8 +79,7 @@ int main(int argc, char **argv) {
                 if (argv[i][0] == '-') continue;
                 size_t len = strlen(argv[i]);
                 size_t extra = len + (used ? 1 : 0);
-                if (extra >= sizeof(argbuf) - used)
-                    dief("repository arguments are too long");
+                if (extra >= sizeof(argbuf) - used) dief("repository arguments are too long");
                 if (used) argbuf[used++] = ' ';
                 memcpy(argbuf + used, argv[i], len + 1);
                 used += len;
@@ -108,7 +98,8 @@ int main(int argc, char **argv) {
     if (strcmp(cmd, "install") == 0 || strcmp(cmd, "get") == 0) {
         const char *pkg = first_nonflag(argc - 2, argv + 2);
         if (!pkg) {
-            fprintf(stderr, "%s%serror:%s package name required\n", ANSI_RED, ANSI_BOLD, ANSI_RESET);
+            fprintf(stderr, "%s%serror:%s package name required\n", ANSI_RED, ANSI_BOLD,
+                    ANSI_RESET);
             return 1;
         }
         if (!valid_pkg_name(pkg)) dief("invalid package name");
@@ -120,7 +111,8 @@ int main(int argc, char **argv) {
     if (strcmp(cmd, "remove") == 0 || strcmp(cmd, "rm") == 0 || strcmp(cmd, "uninstall") == 0) {
         const char *pkg = first_nonflag(argc - 2, argv + 2);
         if (!pkg) {
-            fprintf(stderr, "%s%serror:%s package name required\n", ANSI_RED, ANSI_BOLD, ANSI_RESET);
+            fprintf(stderr, "%s%serror:%s package name required\n", ANSI_RED, ANSI_BOLD,
+                    ANSI_RESET);
             return 1;
         }
         if (!valid_pkg_name(pkg)) dief("invalid package name");

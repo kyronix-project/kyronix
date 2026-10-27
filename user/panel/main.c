@@ -11,12 +11,11 @@
 #include "style.h"
 
 #define SOCKET_WAIT_MS 30000
-#define POLL_STEP_MS   250
+#define POLL_STEP_MS 250
 
 /* Set the Wayland environment for this process. The panel is started by
  * init as a standalone service, so it must provide its own display env. */
-static void ensure_wayland_env(void)
-{
+static void ensure_wayland_env(void) {
     setenv("GDK_BACKEND", "wayland", 1);
     setenv("XDG_RUNTIME_DIR", "/run/user/0", 0);
     setenv("WAYLAND_DISPLAY", "wayland-0", 0);
@@ -24,12 +23,10 @@ static void ensure_wayland_env(void)
 
 /* Wait until weston's wayland socket exists. Returns 0 on success, -1 on
  * timeout so the caller can report and exit. */
-static int wait_for_display(void)
-{
+static int wait_for_display(void) {
     const char *dir = getenv("XDG_RUNTIME_DIR");
     const char *display = getenv("WAYLAND_DISPLAY");
-    if (!dir || !display)
-        return -1;
+    if (!dir || !display) return -1;
 
     char path[512];
     snprintf(path, sizeof(path), "%s/%s", dir, display);
@@ -37,19 +34,16 @@ static int wait_for_display(void)
     clock_t start = clock();
     for (;;) {
         struct stat st;
-        if (stat(path, &st) == 0 && S_ISSOCK(st.st_mode))
-            return 0;
+        if (stat(path, &st) == 0 && S_ISSOCK(st.st_mode)) return 0;
 
         long elapsed_ms = (clock() - start) * 1000 / CLOCKS_PER_SEC;
-        if (elapsed_ms >= SOCKET_WAIT_MS)
-            return -1;
+        if (elapsed_ms >= SOCKET_WAIT_MS) return -1;
 
         usleep(POLL_STEP_MS * 1000);
     }
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     ensure_wayland_env();
 
     if (wait_for_display() != 0) {

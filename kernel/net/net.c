@@ -6,9 +6,9 @@
 #include "../mm/heap.h"
 #include "../proc/proc.h"
 
-#include "lwip/dns.h"
-#include "lwip/dhcp.h"
 #include "lwip/def.h"
+#include "lwip/dhcp.h"
+#include "lwip/dns.h"
 #include "lwip/etharp.h"
 #include "lwip/init.h"
 #include "lwip/ip4_addr.h"
@@ -133,9 +133,9 @@ bool net_driver_register(const net_driver_ops_t *ops) {
         dns_init();
         g_lwip_initialized = true;
     }
-    ip4_addr_t ip = {0};
-    ip4_addr_t mask = {0};
-    ip4_addr_t gw = {0};
+    ip4_addr_t ip = { 0 };
+    ip4_addr_t mask = { 0 };
+    ip4_addr_t gw = { 0 };
 
     if (!netif_add(&g_netif, &ip, &mask, &gw, NULL, kyronix_netif_init, ethernet_input)) {
         spin_lock_irqsave(&g_driver_lock);
@@ -208,9 +208,7 @@ void net_receive(const uint8_t *eth_frame, uint16_t len) {
         kyronix_netif_input(&g_netif, eth_frame, len);
 }
 
-void net_poll(void) {
-    net_schedule_poll();
-}
+void net_poll(void) { net_schedule_poll(); }
 
 void net_schedule_poll(void) {
     __atomic_store_n(&g_poll_pending, 1, __ATOMIC_RELEASE);

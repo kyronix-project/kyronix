@@ -5,8 +5,8 @@
 #include "../lib/printf.h"
 #include "../lib/string.h"
 #include "../proc/proc.h"
-#include "../syscall/syscall.h"
 #include "../syscall/poll.h"
+#include "../syscall/syscall.h"
 #include "kbd.h"
 #include <stdbool.h>
 
@@ -84,8 +84,7 @@ void input_push(int dev, uint16_t type, uint16_t code, int32_t value) {
     e->count++;
     bool notify = e->count == 1;
     proc_t *w = e->waiter;
-    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
-        proc_set_ready(w);
+    if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY)) proc_set_ready(w);
     e->waiter = NULL;
     spin_unlock_irqrestore(&e->lock);
     if (notify) poll_notify();
@@ -100,46 +99,86 @@ static void kbd_evdev_push(uint16_t key, int value) {
  * WD_REMIND_TICKS). IRQ context: lock-free/IRQ-safe only; never kills. */
 static const char *walk_syscall_name(int64_t nr) {
     switch (nr) {
-    case 0: return "read";
-    case 1: return "write";
-    case 2: return "open";
-    case 3: return "close";
-    case 16: return "ioctl";
-    case 23: return "nanosleep";
-    case 34: return "mkdir";
-    case 35: return "unlink";
-    case 39: return "getpid";
-    case 41: return "socket";
-    case 42: return "connect";
-    case 43: return "accept";
-    case 44: return "sendmsg";
-    case 45: return "recvfrom";
-    case 46: return "sendto";
-    case 47: return "recvmsg";
-    case 48: return "shutdown";
-    case 49: return "bind";
-    case 50: return "listen";
-    case 51: return "getsockname";
-    case 52: return "getpeername";
-    case 53: return "socketpair";
-    case 54: return "setsockopt";
-    case 55: return "getsockopt";
-    case 56: return "clone";
-    case 57: return "fork";
-    case 60: return "exit";
-    case 62: return "kill";
-    case 63: return "uname";
-    case 72: return "fcntl";
-    case 80: return "fstat";
-    case 90: return "mmap";
-    case 91: return "munmap";
-    case 93: return "futex";
-    case 191: return "getrlimit";
-    case 202: return "futex_time64";
-    case 213: return "mmap2";
-    case 218: return "mincore";
-    case 288: return "accept4";
-    default: return "?";
+    case 0:
+        return "read";
+    case 1:
+        return "write";
+    case 2:
+        return "open";
+    case 3:
+        return "close";
+    case 16:
+        return "ioctl";
+    case 23:
+        return "nanosleep";
+    case 34:
+        return "mkdir";
+    case 35:
+        return "unlink";
+    case 39:
+        return "getpid";
+    case 41:
+        return "socket";
+    case 42:
+        return "connect";
+    case 43:
+        return "accept";
+    case 44:
+        return "sendmsg";
+    case 45:
+        return "recvfrom";
+    case 46:
+        return "sendto";
+    case 47:
+        return "recvmsg";
+    case 48:
+        return "shutdown";
+    case 49:
+        return "bind";
+    case 50:
+        return "listen";
+    case 51:
+        return "getsockname";
+    case 52:
+        return "getpeername";
+    case 53:
+        return "socketpair";
+    case 54:
+        return "setsockopt";
+    case 55:
+        return "getsockopt";
+    case 56:
+        return "clone";
+    case 57:
+        return "fork";
+    case 60:
+        return "exit";
+    case 62:
+        return "kill";
+    case 63:
+        return "uname";
+    case 72:
+        return "fcntl";
+    case 80:
+        return "fstat";
+    case 90:
+        return "mmap";
+    case 91:
+        return "munmap";
+    case 93:
+        return "futex";
+    case 191:
+        return "getrlimit";
+    case 202:
+        return "futex_time64";
+    case 213:
+        return "mmap2";
+    case 218:
+        return "mincore";
+    case 288:
+        return "accept4";
+    default:
+        return "?";
     }
 }
 
@@ -164,7 +203,8 @@ void input_watchdog(void) {
             int st = __atomic_load_n(&p->state, __ATOMIC_RELAXED);
             int64_t cs = __atomic_load_n(&p->cur_syscall, __ATOMIC_RELAXED);
             int64_t arg0 = __atomic_load_n(&p->cur_syscall_arg0, __ATOMIC_RELAXED);
-            log_warn("INPUT: wedged evdev dev=%d reader %s(pid=%u) state=%d cur_syscall=%ld(%s,arg0=%ld) "
+            log_warn("INPUT: wedged evdev dev=%d reader %s(pid=%u) state=%d "
+                     "cur_syscall=%ld(%s,arg0=%ld) "
                      "reads=%llu dropped=%u count=%u unread=%llu ms",
                      dev, e->rd_name, e->rd_pid, st, (long) cs, walk_syscall_name(cs), (long) arg0,
                      (unsigned long long) e->reads, e->dropped, e->count,
@@ -207,8 +247,9 @@ static int64_t evdev_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) 
             if (ev.type == EV_SYN && ev.code == SYN_DROPPED) {
                 e->syncs++;
                 if (evdev_log_gate(&e->last_sync_log, 1000))
-                    log_warn("INPUT: evdev dev=%d reader consumed SYN_DROPPED (reads=%llu syncs=%llu)",
-                             dev, (unsigned long long) e->reads, (unsigned long long) e->syncs);
+                    log_warn(
+                        "INPUT: evdev dev=%d reader consumed SYN_DROPPED (reads=%llu syncs=%llu)",
+                        dev, (unsigned long long) e->reads, (unsigned long long) e->syncs);
             }
             __builtin_memcpy(out + written, &ev, sizeof(input_event_t));
             e->tail = (e->tail + 1) % EVBUF;

@@ -12,8 +12,8 @@ GtkWidget *taskbar_new(void);
 
 /* Register a just-launched process so an icon appears. The icon is removed
  * automatically when the process exits. */
-void taskbar_track(GtkWidget *taskbar, pid_t pid, const char *app_id,
-                   const char *name, const char *icon_path);
+void taskbar_track(GtkWidget *taskbar, pid_t pid, const char *app_id, const char *name,
+                   const char *icon_path);
 
 /* Remove the icon for a PID (process exited / no longer relevant). */
 void taskbar_untrack(GtkWidget *taskbar, pid_t pid);

@@ -7,7 +7,7 @@
 #include "../mm/heap.h"
 
 #define MBR_SIGNATURE_OFFSET 510
-#define MBR_SIGNATURE_MAGIC   0xAA55
+#define MBR_SIGNATURE_MAGIC 0xAA55
 #define MBR_PARTITION_ENTRIES_OFFSET 446
 #define MBR_PARTITION_ENTRY_SIZE 16
 #define MBR_NUM_PARTITIONS 4
@@ -97,8 +97,8 @@ static void scan_disk(struct block_device *bd) {
 
         block_register(pd);
 
-        log_info("partition: %s  type=0x%02x  lba=%u  sectors=%u", pd->name,
-                 e->type, e->lba_first, e->sector_count);
+        log_info("partition: %s  type=0x%02x  lba=%u  sectors=%u", pd->name, e->type, e->lba_first,
+                 e->sector_count);
     }
 
     kfree(sector);

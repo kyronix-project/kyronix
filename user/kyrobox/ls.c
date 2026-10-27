@@ -17,10 +17,19 @@ static void mode_string(mode_t m, char out[11]) {
     out[10] = 0;
 }
 static void human_size(off_t size, char *buf, size_t sz) {
-    if (size < 1024) { snprintf(buf, sz, "%ldB", (long)size); return; }
-    if (size < 1024*1024) { snprintf(buf, sz, "%.1fK", size/1024.0); return; }
-    if (size < 1024*1024*1024) { snprintf(buf, sz, "%.1fM", size/(1024.0*1024)); return; }
-    snprintf(buf, sz, "%.1fG", size/(1024.0*1024*1024));
+    if (size < 1024) {
+        snprintf(buf, sz, "%ldB", (long) size);
+        return;
+    }
+    if (size < 1024 * 1024) {
+        snprintf(buf, sz, "%.1fK", size / 1024.0);
+        return;
+    }
+    if (size < 1024 * 1024 * 1024) {
+        snprintf(buf, sz, "%.1fM", size / (1024.0 * 1024));
+        return;
+    }
+    snprintf(buf, sz, "%.1fG", size / (1024.0 * 1024 * 1024));
 }
 static int list_one(const char *path, bool longfmt, bool head, bool showall, bool hsize) {
     struct stat st;
@@ -60,7 +69,7 @@ static int list_one(const char *path, bool longfmt, bool head, bool showall, boo
                 char m[11];
                 mode_string(st.st_mode, m);
                 if (hsize) {
-                char hs[32];
+                    char hs[32];
                     human_size(st.st_size, hs, sizeof(hs));
                     printf("%s %6s %s\n", m, hs, de->d_name);
                 } else {
@@ -123,15 +132,28 @@ int main(int argc, char **argv) {
     bool hsize = false;
     int first = 1;
     for (int i = 1; i < argc && argv[i][0] == '-'; i++) {
-        if (strcmp(argv[i], "-l") == 0) longfmt = true;
-        else if (strcmp(argv[i], "-a") == 0) showall = true;
-        else if (strcmp(argv[i], "-h") == 0) hsize = true;
-        else if (strcmp(argv[i], "-la") == 0 || strcmp(argv[i], "-al") == 0) { longfmt = true; showall = true; }
-        else if (strcmp(argv[i], "-lh") == 0 || strcmp(argv[i], "-hl") == 0) { longfmt = true; hsize = true; }
-        else if (strcmp(argv[i], "-lah") == 0 || strcmp(argv[i], "-alh") == 0 ||
-                 strcmp(argv[i], "-lha") == 0 || strcmp(argv[i], "-hal") == 0 ||
-                 strcmp(argv[i], "-ah") == 0 || strcmp(argv[i], "-ha") == 0) { longfmt = true; showall = true; hsize = true; }
-        else { fprintf(stderr, "ls: unknown option: %s\n", argv[i]); return 1; }
+        if (strcmp(argv[i], "-l") == 0)
+            longfmt = true;
+        else if (strcmp(argv[i], "-a") == 0)
+            showall = true;
+        else if (strcmp(argv[i], "-h") == 0)
+            hsize = true;
+        else if (strcmp(argv[i], "-la") == 0 || strcmp(argv[i], "-al") == 0) {
+            longfmt = true;
+            showall = true;
+        } else if (strcmp(argv[i], "-lh") == 0 || strcmp(argv[i], "-hl") == 0) {
+            longfmt = true;
+            hsize = true;
+        } else if (strcmp(argv[i], "-lah") == 0 || strcmp(argv[i], "-alh") == 0 ||
+                   strcmp(argv[i], "-lha") == 0 || strcmp(argv[i], "-hal") == 0 ||
+                   strcmp(argv[i], "-ah") == 0 || strcmp(argv[i], "-ha") == 0) {
+            longfmt = true;
+            showall = true;
+            hsize = true;
+        } else {
+            fprintf(stderr, "ls: unknown option: %s\n", argv[i]);
+            return 1;
+        }
         first = i + 1;
     }
     if (first == argc) return list_one(".", longfmt, false, showall, hsize);
