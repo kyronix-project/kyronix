@@ -3,6 +3,7 @@
 
 #include "usb_hid.h"
 #include "xhci.h"
+#include "../arch/x86_64/spinlock.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
