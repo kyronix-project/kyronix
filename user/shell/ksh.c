@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809
 #include <ctype.h>
 #include <dirent.h>

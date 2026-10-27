@@ -7,7 +7,7 @@
 # pkg-config resolves gtk+-3.0 (headers/libs) provided by gtk+3.0-dev in the
 # build container (Alpine 3.20), which matches the runtime in gtk/.
 
-CC      := musl-gcc
+CC      := gcc
 PKGCONF ?= pkg-config
 
 PKGS    := gtk+-3.0
@@ -30,7 +30,7 @@ include ../../mk/output.mk
 all: check-musl check-pkgconf $(OUT)
 
 check-musl:
-	@command -v $(CC) >/dev/null 2>&1 || { echo "musl-gcc not found"; exit 1; }
+	@command -v $(CC) >/dev/null 2>&1 || { echo "clang not found"; exit 1; }
 
 check-pkgconf:
 	@$(PKGCONF) --exists $(PKGS) || { \
