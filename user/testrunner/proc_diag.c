@@ -6,8 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 struct linux_dirent64 {
     uint64_t d_ino;
@@ -17,10 +17,7 @@ struct linux_dirent64 {
     char d_name[];
 } __attribute__((packed));
 
-static int getdents64_raw(int fd, void *buf, size_t count) {
-    return syscall(217, fd, buf, count);
-}
-
+static int getdents64_raw(int fd, void *buf, size_t count) { return syscall(217, fd, buf, count); }
 
 enum { DIAG_BUF = 2048 };
 
@@ -49,7 +46,7 @@ static int getdents_loop(int fd, int maxcalls) {
         int pos = 0, entries = 0, pids = 0;
         char names[128][24];
         while (pos < r) {
-            struct linux_dirent64 *d = (struct linux_dirent64 *)(buf + pos);
+            struct linux_dirent64 *d = (struct linux_dirent64 *) (buf + pos);
             if (d->d_reclen == 0) break;
             if (entries < 128) snprintf(names[entries], sizeof(names[0]), "%s", d->d_name);
             if (d->d_name[0] >= '1' && d->d_name[0] <= '9') {
@@ -57,9 +54,12 @@ static int getdents_loop(int fd, int maxcalls) {
                 int p = atoi(d->d_name);
                 if (np < 256) {
                     int isdup = 0;
-                    for (int k = 0; k < np; k++) if (pids_seen[k] == p) isdup = 1;
-                    if (isdup) dupes++;
-                    else pids_seen[np++] = p;
+                    for (int k = 0; k < np; k++)
+                        if (pids_seen[k] == p) isdup = 1;
+                    if (isdup)
+                        dupes++;
+                    else
+                        pids_seen[np++] = p;
                 }
             }
             entries++;
@@ -94,8 +94,14 @@ static long fast_atol(const char **loc) {
     long v = 0;
     while (*p == ' ') p++;
     int neg = 0;
-    if (*p == '-') { neg = 1; p++; }
-    while (*p >= '0' && *p <= '9') { v = v * 10 + (*p - '0'); p++; }
+    if (*p == '-') {
+        neg = 1;
+        p++;
+    }
+    while (*p >= '0' && *p <= '9') {
+        v = v * 10 + (*p - '0');
+        p++;
+    }
     while (*p == ' ') p++;
     *loc = p;
     return neg ? -v : v;
@@ -105,7 +111,10 @@ static unsigned long long fast_atoull(const char **loc) {
     const char *p = *loc;
     unsigned long long v = 0;
     while (*p == ' ') p++;
-    while (*p >= '0' && *p <= '9') { v = v * 10 + (*p - '0'); p++; }
+    while (*p >= '0' && *p <= '9') {
+        v = v * 10 + (*p - '0');
+        p++;
+    }
     while (*p == ' ') p++;
     *loc = p;
     return v;
@@ -127,14 +136,26 @@ static int htop_parse_stat(char *buf, unsigned long expect_pid) {
         return 0;
     }
     char *space = strchr(buf, ' ');
-    if (!space || !space[0] || !space[1]) { fprintf(stderr, "    stat: no comm\n"); return 0; }
+    if (!space || !space[0] || !space[1]) {
+        fprintf(stderr, "    stat: no comm\n");
+        return 0;
+    }
     location = space + 2;
     char *end = strrchr(location, ')');
-    if (!end || end < location) { fprintf(stderr, "    stat: no )\n"); return 0; }
-    if (!end[0] || !end[1]) { fprintf(stderr, "    stat: no state\n"); return 0; }
-    location = end + 2;                        /* state char, like htop */
-    if (!location[0] || !location[1]) { fprintf(stderr, "    stat: state empty\n"); return 0; }
-    location += 2;                             /* skip state and the space like htop */
+    if (!end || end < location) {
+        fprintf(stderr, "    stat: no )\n");
+        return 0;
+    }
+    if (!end[0] || !end[1]) {
+        fprintf(stderr, "    stat: no state\n");
+        return 0;
+    }
+    location = end + 2; /* state char, like htop */
+    if (!location[0] || !location[1]) {
+        fprintf(stderr, "    stat: state empty\n");
+        return 0;
+    }
+    location += 2; /* skip state and the space like htop */
     long ppid = fast_atol(&location);
     long pgrp = fast_atol(&location);
     long session = fast_atol(&location);
@@ -153,21 +174,30 @@ static int htop_parse_stat(char *buf, unsigned long expect_pid) {
     long nice = fast_atol(&location);
     long nlwp = fast_atol(&location);
     /* skip (21) itrealvalue */
-    if (!advance_to_next(&location)) { fprintf(stderr, "    stat: no 21\n"); return 0; }
+    if (!advance_to_next(&location)) {
+        fprintf(stderr, "    stat: no 21\n");
+        return 0;
+    }
     /* (22) starttime */
     unsigned long long starttime = fast_atoull(&location);
-    if (!advance_to_next(&location)) { fprintf(stderr, "    stat: no 22\n"); return 0; }
+    if (!advance_to_next(&location)) {
+        fprintf(stderr, "    stat: no 22\n");
+        return 0;
+    }
     /* skip (23)-(38) */
     for (int i = 0; i < 16; i++) {
-        if (!advance_to_next(&location)) { fprintf(stderr, "    stat: no 23-38 at %d\n", i); return 0; }
+        if (!advance_to_next(&location)) {
+            fprintf(stderr, "    stat: no 23-38 at %d\n", i);
+            return 0;
+        }
     }
     long processor = fast_atol(&location);
     fprintf(stderr,
             "    stat parse OK: ppid=%ld pgrp=%ld sess=%ld tty=%lu tpgid=%ld flags=%lu "
             "minflt=%llu minflt_c=%llu majflt=%llu majflt_c=%llu utime=%llu stime=%llu "
             "cutime=%llu cstime=%llu prio=%ld nice=%ld nthreads=%ld start=%llu cpu=%ld\n",
-            ppid, pgrp, session, tty_nr, tpgid, flags, minflt, cminflt, majflt, cmajflt,
-            utime, stime, cutime, cstime, priority, nice, nlwp, starttime, processor);
+            ppid, pgrp, session, tty_nr, tpgid, flags, minflt, cminflt, majflt, cmajflt, utime,
+            stime, cutime, cstime, priority, nice, nlwp, starttime, processor);
     return 1;
 }
 
@@ -175,28 +205,36 @@ static void probe_per_pid(void) {
     fprintf(stderr, "=== Probe 2: per-pid openat/statm/stat/fstat (htop order) ===\n");
 
     int rawFd = open("/proc", O_RDONLY | O_DIRECTORY);
-    if (rawFd >= 0) { getdents_loop(rawFd, 2); close(rawFd); }
+    if (rawFd >= 0) {
+        getdents_loop(rawFd, 2);
+        close(rawFd);
+    }
 
     int procFd = open("/proc", O_RDONLY | O_DIRECTORY);
-    if (procFd < 0) { fprintf(stderr, "  open /proc FAILED\n"); return; }
+    if (procFd < 0) {
+        fprintf(stderr, "  open /proc FAILED\n");
+        return;
+    }
 
     DIR *dp = opendir("/proc");
-    if (!dp) { fprintf(stderr, "  opendir /proc FAILED\n"); return; }
+    if (!dp) {
+        fprintf(stderr, "  opendir /proc FAILED\n");
+        return;
+    }
 
     int seen = 0, opened = 0, statm_ok = 0, fstat_ok = 0, stat_ok = 0, allseen = 0;
     struct dirent *de;
     while ((de = readdir(dp)) != NULL) {
         allseen++;
-        if (allseen < 60)
-            fprintf(stderr, "    [de %2d] '%s'\n", allseen, de->d_name);
+        if (allseen < 60) fprintf(stderr, "    [de %2d] '%s'\n", allseen, de->d_name);
         if (de->d_name[0] < '1' || de->d_name[0] > '9') continue;
         if (!numeric(de->d_name)) continue;
         seen++;
 
         int pidFd = openat(procFd, de->d_name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
         if (pidFd < 0) {
-            fprintf(stderr, "  PID %s: openat(O_DIRECTORY|O_NOFOLLOW) FAILED: %s\n",
-                    de->d_name, strerror(errno));
+            fprintf(stderr, "  PID %s: openat(O_DIRECTORY|O_NOFOLLOW) FAILED: %s\n", de->d_name,
+                    strerror(errno));
             continue;
         }
         opened++;
@@ -210,7 +248,7 @@ static void probe_per_pid(void) {
             fprintf(stderr, "  PID %s: fstat FAILED: %s\n", de->d_name, strerror(errno));
         }
 
-        char statmdata[128] = {0};
+        char statmdata[128] = { 0 };
         ssize_t r = 0;
         int statmFd = openat(pidFd, "statm", O_RDONLY);
         if (statmFd >= 0) {
@@ -218,12 +256,13 @@ static void probe_per_pid(void) {
             close(statmFd);
         }
         long virt, res, share, trs, at, drs, dt;
-        int n7 = sscanf(statmdata, "%ld %ld %ld %ld %ld %ld %ld",
-                        &virt, &res, &share, &trs, &at, &drs, &dt);
-        if (statmFd >= 0 && r >= 1 && n7 == 7) statm_ok++;
+        int n7 = sscanf(statmdata, "%ld %ld %ld %ld %ld %ld %ld", &virt, &res, &share, &trs, &at,
+                        &drs, &dt);
+        if (statmFd >= 0 && r >= 1 && n7 == 7)
+            statm_ok++;
         else
-            fprintf(stderr, "  PID %s: statm read=%zd sscanf=%d [%s]\n",
-                    de->d_name, r, n7, statmdata);
+            fprintf(stderr, "  PID %s: statm read=%zd sscanf=%d [%s]\n", de->d_name, r, n7,
+                    statmdata);
 
         char sbuf[1024];
         int statFd = openat(pidFd, "stat", O_RDONLY);
@@ -244,21 +283,32 @@ static void probe_per_pid(void) {
     }
     closedir(dp);
     close(procFd);
-    fprintf(stderr, "  probe2 summary: seen=%d allseen=%d opened=%d fstat_ok=%d statm_ok=%d stat_ok=%d\n\n",
+    fprintf(stderr,
+            "  probe2 summary: seen=%d allseen=%d opened=%d fstat_ok=%d statm_ok=%d stat_ok=%d\n\n",
             seen, allseen, opened, fstat_ok, statm_ok, stat_ok);
 }
 
 static void probe_smallbuf_walk(void) {
     fprintf(stderr, "=== Probe 3: 64-byte getdents64 walk + openat per pid (htop test) ===\n");
     int fd = open("/proc", O_RDONLY | O_DIRECTORY);
-    if (fd < 0) { fprintf(stderr, "  open /proc FAILED\n"); return; }
+    if (fd < 0) {
+        fprintf(stderr, "  open /proc FAILED\n");
+        return;
+    }
     char raw[64];
     int calls = 0, entries = 0, pids = 0;
-    size_t seen[512]; int n = 0;
+    size_t seen[512];
+    int n = 0;
     for (;;) {
         ssize_t r = syscall(217, fd, raw, sizeof(raw));
-        if (r < 0) { fprintf(stderr, "  call %d FAILED: %s\n", calls, strerror(errno)); break; }
-        if (r == 0) { fprintf(stderr, "  call %d: EOF\n", calls); break; }
+        if (r < 0) {
+            fprintf(stderr, "  call %d FAILED: %s\n", calls, strerror(errno));
+            break;
+        }
+        if (r == 0) {
+            fprintf(stderr, "  call %d: EOF\n", calls);
+            break;
+        }
         calls++;
         fprintf(stderr, "  call %d: %zd bytes", calls - 1, r);
         ssize_t off = 0;
@@ -271,8 +321,10 @@ static void probe_smallbuf_walk(void) {
                 pids++;
                 if (n < 512) seen[n++] = (size_t) atoi(d->d_name);
                 int pfd = openat(fd, d->d_name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
-                if (pfd < 0) fprintf(stderr, "[open %s fail: %s]", d->d_name, strerror(errno));
-                else close(pfd);
+                if (pfd < 0)
+                    fprintf(stderr, "[open %s fail: %s]", d->d_name, strerror(errno));
+                else
+                    close(pfd);
             }
             off += (int) d->d_reclen;
         }
@@ -283,15 +335,17 @@ static void probe_smallbuf_walk(void) {
     for (int i = 0; i < n; i++)
         for (int j = i + 1; j < n; j++)
             if (seen[i] == seen[j]) dups++;
-    fprintf(stderr, "  smallbuf: calls=%d entries=%d pids=%d unique=%d dup_hits=%d\n\n",
-            calls, entries, pids, n, dups);
+    fprintf(stderr, "  smallbuf: calls=%d entries=%d pids=%d unique=%d dup_hits=%d\n\n", calls,
+            entries, pids, n, dups);
 }
 
 int main(void) {
     fprintf(stderr, "=== Stress: forking 140 sleepers to exceed 2048B dir listing ===\n");
     for (int i = 0; i < 140; i++) {
         pid_t p = fork();
-        if (p == 0) { for (;;) sleep(1000); }
+        if (p == 0) {
+            for (;;) sleep(1000);
+        }
     }
     sleep(2);
     probe_getdents_stability();

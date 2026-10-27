@@ -76,7 +76,7 @@ bool jail_is_descendant(uint32_t a, uint32_t b);
 bool jail_can_see(const struct proc *observer, const struct proc *target);
 bool jail_host_priv(const struct proc *p); // euid==0 and not confined by JAILF_PRIV
 
-const char *jail_root_current(void);  // "" if host / no JAILF_FS
+const char *jail_root_current(void);                   // "" if host / no JAILF_FS
 void path_canon(const char *in, char *out, size_t sz); // clamp ".." at "/"
 void jail_canon_clamp(char *path, size_t sz, const char *root);
 void jail_strip_root(char *abs, size_t sz); // host->jail-relative for getcwd

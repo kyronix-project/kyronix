@@ -1,5 +1,5 @@
-#ifndef	_SYS_STAT_H
-#define	_SYS_STAT_H
+#ifndef _SYS_STAT_H
+#define _SYS_STAT_H
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -33,7 +33,7 @@ extern "C" {
 #define st_mtime st_mtim.tv_sec
 #define st_ctime st_ctim.tv_sec
 
-#define S_IFMT  0170000
+#define S_IFMT 0170000
 
 #define S_IFDIR 0040000
 #define S_IFCHR 0020000
@@ -43,17 +43,17 @@ extern "C" {
 #define S_IFLNK 0120000
 #define S_IFSOCK 0140000
 
-#define S_TYPEISMQ(buf)  0
+#define S_TYPEISMQ(buf) 0
 #define S_TYPEISSEM(buf) 0
 #define S_TYPEISSHM(buf) 0
 #define S_TYPEISTMO(buf) 0
 
-#define S_ISDIR(mode)  (((mode) & S_IFMT) == S_IFDIR)
-#define S_ISCHR(mode)  (((mode) & S_IFMT) == S_IFCHR)
-#define S_ISBLK(mode)  (((mode) & S_IFMT) == S_IFBLK)
-#define S_ISREG(mode)  (((mode) & S_IFMT) == S_IFREG)
+#define S_ISDIR(mode) (((mode) & S_IFMT) == S_IFDIR)
+#define S_ISCHR(mode) (((mode) & S_IFMT) == S_IFCHR)
+#define S_ISBLK(mode) (((mode) & S_IFMT) == S_IFBLK)
+#define S_ISREG(mode) (((mode) & S_IFMT) == S_IFREG)
 #define S_ISFIFO(mode) (((mode) & S_IFMT) == S_IFIFO)
-#define S_ISLNK(mode)  (((mode) & S_IFMT) == S_IFLNK)
+#define S_ISLNK(mode) (((mode) & S_IFMT) == S_IFLNK)
 #define S_ISSOCK(mode) (((mode) & S_IFMT) == S_IFSOCK)
 
 #ifndef S_IRUSR
@@ -74,7 +74,7 @@ extern "C" {
 #define S_IRWXO 0007
 #endif
 
-#define UTIME_NOW  0x3fffffff
+#define UTIME_NOW 0x3fffffff
 #define UTIME_OMIT 0x3ffffffe
 
 int stat(const char *__restrict, struct stat *__restrict);
@@ -95,8 +95,8 @@ int mknod(const char *, mode_t, dev_t);
 int mknodat(int, const char *, mode_t, dev_t);
 #endif
 
-int futimens(int, const struct timespec [2]);
-int utimensat(int, const char *, const struct timespec [2], int);
+int futimens(int, const struct timespec[2]);
+int utimensat(int, const char *, const struct timespec[2], int);
 
 #if defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
 int lchmod(const char *, mode_t);
@@ -138,41 +138,40 @@ int lchmod(const char *, mode_t);
 #define STATX_ATTR_WRITE_ATOMIC 0x400000
 
 struct statx_timestamp {
-	int64_t tv_sec;
-	uint32_t tv_nsec, __pad;
+    int64_t tv_sec;
+    uint32_t tv_nsec, __pad;
 };
 
 struct statx {
-	uint32_t stx_mask;
-	uint32_t stx_blksize;
-	uint64_t stx_attributes;
-	uint32_t stx_nlink;
-	uint32_t stx_uid;
-	uint32_t stx_gid;
-	uint16_t stx_mode;
-	uint16_t __pad0[1];
-	uint64_t stx_ino;
-	uint64_t stx_size;
-	uint64_t stx_blocks;
-	uint64_t stx_attributes_mask;
-	struct statx_timestamp stx_atime;
-	struct statx_timestamp stx_btime;
-	struct statx_timestamp stx_ctime;
-	struct statx_timestamp stx_mtime;
-	uint32_t stx_rdev_major;
-	uint32_t stx_rdev_minor;
-	uint32_t stx_dev_major;
-	uint32_t stx_dev_minor;
-	uint64_t stx_mnt_id;
-	uint32_t stx_dio_mem_align;
-	uint32_t stx_dio_offset_align;
-	uint64_t stx_subvol;
-	uint32_t stx_atomic_write_unit_min;
-	uint32_t stx_atomic_write_unit_max;
-	uint32_t stx_atomic_write_segments_max;
-	uint32_t __pad1[1];
-	uint64_t __pad2[9];
-
+    uint32_t stx_mask;
+    uint32_t stx_blksize;
+    uint64_t stx_attributes;
+    uint32_t stx_nlink;
+    uint32_t stx_uid;
+    uint32_t stx_gid;
+    uint16_t stx_mode;
+    uint16_t __pad0[1];
+    uint64_t stx_ino;
+    uint64_t stx_size;
+    uint64_t stx_blocks;
+    uint64_t stx_attributes_mask;
+    struct statx_timestamp stx_atime;
+    struct statx_timestamp stx_btime;
+    struct statx_timestamp stx_ctime;
+    struct statx_timestamp stx_mtime;
+    uint32_t stx_rdev_major;
+    uint32_t stx_rdev_minor;
+    uint32_t stx_dev_major;
+    uint32_t stx_dev_minor;
+    uint64_t stx_mnt_id;
+    uint32_t stx_dio_mem_align;
+    uint32_t stx_dio_offset_align;
+    uint64_t stx_subvol;
+    uint32_t stx_atomic_write_unit_min;
+    uint32_t stx_atomic_write_unit_max;
+    uint32_t stx_atomic_write_segments_max;
+    uint32_t __pad1[1];
+    uint64_t __pad2[9];
 };
 
 int statx(int, const char *__restrict, int, unsigned, struct statx *__restrict);
@@ -203,5 +202,3 @@ __REDIR(utimensat, __utimensat_time64);
 }
 #endif
 #endif
-
-

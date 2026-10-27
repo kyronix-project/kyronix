@@ -1,4 +1,4 @@
-#ifndef	_ERRNO_H
+#ifndef _ERRNO_H
 #define _ERRNO_H
 
 #ifdef __cplusplus
@@ -24,4 +24,3 @@ extern char *program_invocation_short_name, *program_invocation_name;
 #endif
 
 #endif
-

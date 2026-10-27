@@ -4,11 +4,11 @@ int test_basename(void) {
     char buf[128];
     ASSERT_EQ(0, capture_cmd((char *[]) { "basename", "/foo/bar", NULL }, buf, sizeof(buf)));
     ASSERT_STREQ("bar\n", buf);
-    ASSERT_EQ(0, capture_cmd((char *[]) { "basename", "-s", ".c", "/foo/main.c", NULL },
-                             buf, sizeof(buf)));
+    ASSERT_EQ(0, capture_cmd((char *[]) { "basename", "-s", ".c", "/foo/main.c", NULL }, buf,
+                             sizeof(buf)));
     ASSERT_STREQ("main\n", buf);
-    ASSERT_EQ(0, capture_cmd((char *[]) { "basename", "-a", "/a/one", "/b/two", NULL },
-                             buf, sizeof(buf)));
+    ASSERT_EQ(0, capture_cmd((char *[]) { "basename", "-a", "/a/one", "/b/two", NULL }, buf,
+                             sizeof(buf)));
     ASSERT_STREQ("one\ntwo\n", buf);
     return 1;
 }
@@ -146,8 +146,8 @@ int test_cut(void) {
     int ret = capture_cmd((char *[]) { "cut", "-f1", path, NULL }, buf, sizeof(buf));
     ASSERT_EQ(0, ret);
     ASSERT_STREQ("abc\n", buf);
-    ASSERT_EQ(0, capture_cmd((char *[]) { "cut", "-d", "\t", "-f2", path, NULL }, buf,
-                             sizeof(buf)));
+    ASSERT_EQ(0,
+              capture_cmd((char *[]) { "cut", "-d", "\t", "-f2", path, NULL }, buf, sizeof(buf)));
     ASSERT_STREQ("def\n", buf);
     unlink(path);
     return 1;
@@ -156,8 +156,8 @@ REGISTER_TEST(cut, "Phase 9: Utilities");
 
 int test_date(void) {
     char buf[128];
-    ASSERT_EQ(0, capture_cmd((char *[]) { "date", "-u", "-d", "@0", "+%s", NULL }, buf,
-                             sizeof(buf)));
+    ASSERT_EQ(0,
+              capture_cmd((char *[]) { "date", "-u", "-d", "@0", "+%s", NULL }, buf, sizeof(buf)));
     ASSERT_STREQ("0\n", buf);
     return 1;
 }
@@ -175,8 +175,8 @@ REGISTER_TEST(dd, "Phase 9: Utilities");
 
 int test_dirname(void) {
     char buf[128];
-    ASSERT_EQ(0, capture_cmd((char *[]) { "dirname", "/foo/bar/", "/one/two", NULL }, buf,
-                             sizeof(buf)));
+    ASSERT_EQ(
+        0, capture_cmd((char *[]) { "dirname", "/foo/bar/", "/one/two", NULL }, buf, sizeof(buf)));
     ASSERT_STREQ("/foo\n/one\n", buf);
     return 1;
 }
@@ -207,8 +207,9 @@ int test_env(void) {
     char buf[512];
     ASSERT_EQ(0, capture_cmd((char *[]) { "env", NULL }, buf, sizeof(buf)));
     ASSERT_GT(strlen(buf), 0);
-    ASSERT_EQ(0, capture_cmd((char *[]) { "env", "-i", "ANSWER=42", "/bin/printenv",
-                                         "ANSWER", NULL }, buf, sizeof(buf)));
+    ASSERT_EQ(0,
+              capture_cmd((char *[]) { "env", "-i", "ANSWER=42", "/bin/printenv", "ANSWER", NULL },
+                          buf, sizeof(buf)));
     ASSERT_STREQ("42\n", buf);
     return 1;
 }
@@ -349,8 +350,8 @@ int test_mktemp(void) {
     if (len > 0 && buf[len - 1] == '\n') buf[len - 1] = '\0';
     unlink(buf);
 
-    ASSERT_EQ(0, capture_cmd((char *[]) { "mktemp", "-d", "-p", tmpdir, "dir.XXXXXX", NULL },
-                             buf, sizeof(buf)));
+    ASSERT_EQ(0, capture_cmd((char *[]) { "mktemp", "-d", "-p", tmpdir, "dir.XXXXXX", NULL }, buf,
+                             sizeof(buf)));
     len = strlen(buf);
     if (len > 0 && buf[len - 1] == '\n') buf[len - 1] = '\0';
     struct stat st;
@@ -405,8 +406,8 @@ int test_printf(void) {
     char buf[128];
     ASSERT_EQ(0, capture_cmd((char *[]) { "printf", "hello %s", "world", NULL }, buf, sizeof(buf)));
     ASSERT_STREQ("hello world", buf);
-    ASSERT_EQ(0, capture_cmd((char *[]) { "printf", "%s:%02d\\n", "a", "2", "b", "7", NULL },
-                             buf, sizeof(buf)));
+    ASSERT_EQ(0, capture_cmd((char *[]) { "printf", "%s:%02d\\n", "a", "2", "b", "7", NULL }, buf,
+                             sizeof(buf)));
     ASSERT_STREQ("a:02\nb:07\n", buf);
     return 1;
 }
@@ -431,8 +432,8 @@ int test_readlink(void) {
     size_t len = strlen(buf);
     if (len > 0 && buf[len - 1] == '\n') buf[len - 1] = '\0';
     ASSERT_STREQ(target, buf);
-    ASSERT_EQ(0, capture_cmd((char *[]) { "readlink", "-m", "/tmp/a/../b", NULL }, buf,
-                             sizeof(buf)));
+    ASSERT_EQ(0,
+              capture_cmd((char *[]) { "readlink", "-m", "/tmp/a/../b", NULL }, buf, sizeof(buf)));
     ASSERT_STREQ("/tmp/b\n", buf);
     unlink(link);
     unlink(target);
@@ -476,8 +477,7 @@ int test_seq(void) {
     char buf[128];
     ASSERT_EQ(0, capture_cmd((char *[]) { "seq", "3", NULL }, buf, sizeof(buf)));
     ASSERT_STREQ("1\n2\n3\n", buf);
-    ASSERT_EQ(0, capture_cmd((char *[]) { "seq", "0.5", "0.5", "1.5", NULL }, buf,
-                             sizeof(buf)));
+    ASSERT_EQ(0, capture_cmd((char *[]) { "seq", "0.5", "0.5", "1.5", NULL }, buf, sizeof(buf)));
     ASSERT_STREQ("0.5\n1.0\n1.5\n", buf);
     return 1;
 }

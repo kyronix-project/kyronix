@@ -20,8 +20,8 @@
 
 #define HTTP_MAX_HEADER (64U * 1024U)
 
-static int parse_http_url(const char *url, char *host, size_t host_n, int *port,
-                          char *path, size_t path_n) {
+static int parse_http_url(const char *url, char *host, size_t host_n, int *port, char *path,
+                          size_t path_n) {
     if (!url || !starts_with(url, "http://")) return -1;
     const char *authority = url + 7;
     const char *slash = strchr(authority, '/');
@@ -98,14 +98,11 @@ static int connect_tcp(const char *host, int port) {
         if (connected != 0 && errno == EINPROGRESS) {
             struct pollfd pfd = { .fd = fd, .events = POLLOUT };
             int ready;
-            do {
-                ready = poll(&pfd, 1, 10000);
-            } while (ready < 0 && errno == EINTR);
+            do { ready = poll(&pfd, 1, 10000); } while (ready < 0 && errno == EINTR);
             if (ready > 0) {
                 int socket_error = 0;
                 socklen_t error_len = sizeof(socket_error);
-                if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &socket_error,
-                               &error_len) == 0 &&
+                if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &socket_error, &error_len) == 0 &&
                     socket_error == 0)
                     connected = 0;
             }
@@ -122,9 +119,7 @@ static int connect_tcp(const char *host, int port) {
 static ssize_t read_with_timeout(int fd, void *buf, size_t len) {
     struct pollfd pfd = { .fd = fd, .events = POLLIN };
     int ready;
-    do {
-        ready = poll(&pfd, 1, 30000);
-    } while (ready < 0 && errno == EINTR);
+    do { ready = poll(&pfd, 1, 30000); } while (ready < 0 && errno == EINTR);
     if (ready <= 0) {
         errno = ready == 0 ? ETIMEDOUT : errno;
         return -1;
@@ -184,7 +179,7 @@ unsigned char *http_get_body_raw(const char *url, int *status_code, size_t *body
 
     size_t cap = 65536;
     size_t len = 0;
-    unsigned char *buf = (unsigned char *)malloc(cap + 1);
+    unsigned char *buf = (unsigned char *) malloc(cap + 1);
     if (!buf) {
         close(fd);
         dief("out of memory");
@@ -199,9 +194,8 @@ unsigned char *http_get_body_raw(const char *url, int *status_code, size_t *body
                 return NULL;
             }
             cap *= 2;
-            if (cap > PKG_MAX_METADATA + HTTP_MAX_HEADER)
-                cap = PKG_MAX_METADATA + HTTP_MAX_HEADER;
-            unsigned char *nb = (unsigned char *)realloc(buf, cap + 1);
+            if (cap > PKG_MAX_METADATA + HTTP_MAX_HEADER) cap = PKG_MAX_METADATA + HTTP_MAX_HEADER;
+            unsigned char *nb = (unsigned char *) realloc(buf, cap + 1);
             if (!nb) {
                 free(buf);
                 close(fd);
@@ -217,15 +211,15 @@ unsigned char *http_get_body_raw(const char *url, int *status_code, size_t *body
             return NULL;
         }
         if (rd == 0) break;
-        len += (size_t)rd;
+        len += (size_t) rd;
     }
     close(fd);
     buf[len] = '\0';
 
     unsigned char *hdr_end = NULL;
-    hdr_end = (unsigned char *)strstr((char *)buf, "\r\n\r\n");
+    hdr_end = (unsigned char *) strstr((char *) buf, "\r\n\r\n");
     if (!hdr_end) {
-        hdr_end = (unsigned char *)strstr((char *)buf, "\n\n");
+        hdr_end = (unsigned char *) strstr((char *) buf, "\n\n");
         if (hdr_end) hdr_end += 1;
     }
     if (!hdr_end) {
@@ -235,9 +229,9 @@ unsigned char *http_get_body_raw(const char *url, int *status_code, size_t *body
         return NULL;
     }
 
-    unsigned char *status_line_end = (unsigned char *)strstr((char *)buf, "\r\n");
+    unsigned char *status_line_end = (unsigned char *) strstr((char *) buf, "\r\n");
     if (!status_line_end || status_line_end > hdr_end)
-        status_line_end = (unsigned char *)strstr((char *)buf, "\n");
+        status_line_end = (unsigned char *) strstr((char *) buf, "\n");
     if (!status_line_end) {
         free(buf);
         if (status_code) *status_code = 0;
@@ -245,7 +239,7 @@ unsigned char *http_get_body_raw(const char *url, int *status_code, size_t *body
         return NULL;
     }
     char status_line[128];
-    snprintf(status_line, sizeof(status_line), "%.*s", (int)(status_line_end - buf), buf);
+    snprintf(status_line, sizeof(status_line), "%.*s", (int) (status_line_end - buf), buf);
 
     int code = 0;
     {
@@ -253,12 +247,15 @@ unsigned char *http_get_body_raw(const char *url, int *status_code, size_t *body
         while (*sp && *sp != ' ') sp++;
         if (*sp == ' ') {
             sp++;
-            while (*sp >= '0' && *sp <= '9') { code = code * 10 + (*sp - '0'); sp++; }
+            while (*sp >= '0' && *sp <= '9') {
+                code = code * 10 + (*sp - '0');
+                sp++;
+            }
         }
     }
     if (status_code) *status_code = code;
 
-    size_t header_len = (size_t)(hdr_end - buf);
+    size_t header_len = (size_t) (hdr_end - buf);
     if (hdr_end[0] == '\r' && hdr_end[1] == '\n' && hdr_end[2] == '\r' && hdr_end[3] == '\n')
         header_len += 4;
     else
@@ -268,7 +265,7 @@ unsigned char *http_get_body_raw(const char *url, int *status_code, size_t *body
         free(buf);
         return NULL;
     }
-    unsigned char *body = (unsigned char *)malloc(raw_len + 1);
+    unsigned char *body = (unsigned char *) malloc(raw_len + 1);
     if (!body) {
         free(buf);
         dief("out of memory");
@@ -285,7 +282,7 @@ char *http_get_body(const char *url, int *status_code) {
     size_t body_len = 0;
     unsigned char *raw = http_get_body_raw(url, status_code, &body_len);
     if (!raw) return NULL;
-    char *text = (char *)malloc(body_len + 1);
+    char *text = (char *) malloc(body_len + 1);
     if (!text) {
         free(raw);
         dief("out of memory");
@@ -306,9 +303,7 @@ static long parse_content_length(const unsigned char *headers, size_t header_len
         if (line_len >= sizeof(name) - 1 &&
             strncasecmp((const char *) headers + offset, name, sizeof(name) - 1) == 0) {
             size_t pos = offset + sizeof(name) - 1;
-            while (pos < offset + line_len &&
-                   (headers[pos] == ' ' || headers[pos] == '\t'))
-                pos++;
+            while (pos < offset + line_len && (headers[pos] == ' ' || headers[pos] == '\t')) pos++;
             if (pos == offset + line_len) return -1;
             unsigned long value = 0;
             for (; pos < offset + line_len; pos++) {
@@ -335,8 +330,7 @@ static int header_has_chunked(const unsigned char *headers, size_t header_len) {
 long http_content_length(const char *url) {
     char host[256], path[1024];
     int port = 0;
-    if (parse_http_url(url, host, sizeof(host), &port, path, sizeof(path)) != 0)
-        return -1;
+    if (parse_http_url(url, host, sizeof(host), &port, path, sizeof(path)) != 0) return -1;
 
     int fd = connect_tcp(host, port);
     if (fd < 0) return -1;
@@ -355,8 +349,11 @@ long http_content_length(const char *url) {
 
     size_t cap = 8192;
     size_t len = 0;
-    unsigned char *buf = (unsigned char *)malloc(cap + 1);
-    if (!buf) { close(fd); return -1; }
+    unsigned char *buf = (unsigned char *) malloc(cap + 1);
+    if (!buf) {
+        close(fd);
+        return -1;
+    }
 
     unsigned char *hdr_end = NULL;
     while (!hdr_end) {
@@ -364,17 +361,21 @@ long http_content_length(const char *url) {
             if (cap >= HTTP_MAX_HEADER) break;
             cap *= 2;
             if (cap > HTTP_MAX_HEADER) cap = HTTP_MAX_HEADER;
-            unsigned char *nb = (unsigned char *)realloc(buf, cap + 1);
-            if (!nb) { free(buf); close(fd); return -1; }
+            unsigned char *nb = (unsigned char *) realloc(buf, cap + 1);
+            if (!nb) {
+                free(buf);
+                close(fd);
+                return -1;
+            }
             buf = nb;
         }
         ssize_t rd = read_with_timeout(fd, buf + len, cap - len);
         if (rd < 0 && errno == EINTR) continue;
         if (rd <= 0) break;
-        len += (size_t)rd;
+        len += (size_t) rd;
         buf[len] = '\0';
-        hdr_end = (unsigned char *)strstr((char *)buf, "\r\n\r\n");
-        if (!hdr_end) hdr_end = (unsigned char *)strstr((char *)buf, "\n\n");
+        hdr_end = (unsigned char *) strstr((char *) buf, "\r\n\r\n");
+        if (!hdr_end) hdr_end = (unsigned char *) strstr((char *) buf, "\n\n");
     }
     close(fd);
 
@@ -386,18 +387,21 @@ long http_content_length(const char *url) {
 
 static void render_bar(const char *label, size_t received, size_t total, int bar_w) {
     int pct = 0;
-    if (total > 0) pct = (int)((received * 100) / total);
+    if (total > 0) pct = (int) ((received * 100) / total);
     if (pct > 100) pct = 100;
 
     int filled = 0;
-    if (total > 0) filled = (int)((received * (size_t)bar_w) / total);
+    if (total > 0) filled = (int) ((received * (size_t) bar_w) / total);
     if (filled > bar_w) filled = bar_w;
 
     fprintf(stderr, "\r  %s%3d%%%s %s [", ANSI_BOLD, pct, ANSI_RESET, label);
     for (int i = 0; i < bar_w; i++) {
-        if (i < filled) fputc('=', stderr);
-        else if (i == filled) fputc('>', stderr);
-        else fputc(' ', stderr);
+        if (i < filled)
+            fputc('=', stderr);
+        else if (i == filled)
+            fputc('>', stderr);
+        else
+            fputc(' ', stderr);
     }
     fprintf(stderr, "]");
 
@@ -415,11 +419,13 @@ int http_download(const char *url, const char *dest, const char *label) {
     if (verbose_mode) log_info("download %s -> %s", url, dest);
     char host[256], path[1024];
     int port = 0;
-    if (parse_http_url(url, host, sizeof(host), &port, path, sizeof(path)) != 0)
-        return -1;
+    if (parse_http_url(url, host, sizeof(host), &port, path, sizeof(path)) != 0) return -1;
 
     int fd = connect_tcp(host, port);
-    if (fd < 0) { log_info("connect failed for %s", url); return -1; }
+    if (fd < 0) {
+        log_info("connect failed for %s", url);
+        return -1;
+    }
 
     char request[2048];
     int request_len = make_request(request, sizeof(request), path, host);
@@ -436,8 +442,11 @@ int http_download(const char *url, const char *dest, const char *label) {
 
     size_t hdr_cap = 8192;
     size_t hdr_len = 0;
-    unsigned char *hdr_buf = (unsigned char *)malloc(hdr_cap + 1);
-    if (!hdr_buf) { close(fd); return -1; }
+    unsigned char *hdr_buf = (unsigned char *) malloc(hdr_cap + 1);
+    if (!hdr_buf) {
+        close(fd);
+        return -1;
+    }
 
     unsigned char *hdr_end = NULL;
     while (!hdr_end) {
@@ -449,36 +458,46 @@ int http_download(const char *url, const char *dest, const char *label) {
             }
             hdr_cap *= 2;
             if (hdr_cap > HTTP_MAX_HEADER) hdr_cap = HTTP_MAX_HEADER;
-            unsigned char *nb = (unsigned char *)realloc(hdr_buf, hdr_cap + 1);
-            if (!nb) { free(hdr_buf); close(fd); return -1; }
+            unsigned char *nb = (unsigned char *) realloc(hdr_buf, hdr_cap + 1);
+            if (!nb) {
+                free(hdr_buf);
+                close(fd);
+                return -1;
+            }
             hdr_buf = nb;
         }
         ssize_t rd = read_with_timeout(fd, hdr_buf + hdr_len, hdr_cap - hdr_len);
         if (rd < 0 && errno == EINTR) continue;
-        if (rd <= 0) { log_info("header read failed for %s (n=%zd)", url, rd); free(hdr_buf); close(fd); return -1; }
-        hdr_len += (size_t)rd;
+        if (rd <= 0) {
+            log_info("header read failed for %s (n=%zd)", url, rd);
+            free(hdr_buf);
+            close(fd);
+            return -1;
+        }
+        hdr_len += (size_t) rd;
         hdr_buf[hdr_len] = '\0';
-        hdr_end = (unsigned char *)strstr((char *)hdr_buf, "\r\n\r\n");
-        if (!hdr_end)
-            hdr_end = (unsigned char *)strstr((char *)hdr_buf, "\n\n");
+        hdr_end = (unsigned char *) strstr((char *) hdr_buf, "\r\n\r\n");
+        if (!hdr_end) hdr_end = (unsigned char *) strstr((char *) hdr_buf, "\n\n");
     }
 
     int code = 0;
     {
-        unsigned char *sl = (unsigned char *)strstr((char *)hdr_buf, "\r\n");
-        if (!sl || sl > hdr_end)
-            sl = (unsigned char *)strstr((char *)hdr_buf, "\n");
+        unsigned char *sl = (unsigned char *) strstr((char *) hdr_buf, "\r\n");
+        if (!sl || sl > hdr_end) sl = (unsigned char *) strstr((char *) hdr_buf, "\n");
         if (sl) {
-            const char *sp = (const char *)hdr_buf;
+            const char *sp = (const char *) hdr_buf;
             while (*sp && *sp != ' ') sp++;
             if (*sp == ' ') {
                 sp++;
-                while (*sp >= '0' && *sp <= '9') { code = code * 10 + (*sp - '0'); sp++; }
+                while (*sp >= '0' && *sp <= '9') {
+                    code = code * 10 + (*sp - '0');
+                    sp++;
+                }
             }
         }
     }
 
-    size_t header_bytes = (size_t)(hdr_end - hdr_buf);
+    size_t header_bytes = (size_t) (hdr_end - hdr_buf);
     if (hdr_end[0] == '\r' && hdr_end[1] == '\n' && hdr_end[2] == '\r' && hdr_end[3] == '\n')
         header_bytes += 4;
     else
@@ -524,8 +543,12 @@ int http_download(const char *url, const char *dest, const char *label) {
     free(hdr_buf);
 
     size_t buf_cap = 65536;
-    unsigned char *buf = (unsigned char *)malloc(buf_cap);
-    if (!buf) { fclose(f); close(fd); return -1; }
+    unsigned char *buf = (unsigned char *) malloc(buf_cap);
+    if (!buf) {
+        fclose(f);
+        close(fd);
+        return -1;
+    }
 
     for (;;) {
         ssize_t rd = read_with_timeout(fd, buf, buf_cap);
@@ -540,7 +563,7 @@ int http_download(const char *url, const char *dest, const char *label) {
         }
         if (rd == 0) break;
 
-        size_t chunk = (size_t)rd;
+        size_t chunk = (size_t) rd;
         if (received > PKG_MAX_DOWNLOAD - chunk) {
             free(buf);
             fclose(f);
@@ -570,7 +593,7 @@ int http_download(const char *url, const char *dest, const char *label) {
     render_bar(label, received, expected, bar_w);
     fputc('\n', stderr);
 
-    if (content_length > 0 && received != (size_t)content_length) {
+    if (content_length > 0 && received != (size_t) content_length) {
         log_info("size mismatch for %s: expected %ld got %zu", url, content_length, received);
         unlink(dest);
         return -1;

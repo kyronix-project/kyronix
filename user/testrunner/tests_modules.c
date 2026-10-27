@@ -4,9 +4,7 @@
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
 
-static int delete_test_module(void) {
-    return (int) syscall(SYS_delete_module, "hello", 0);
-}
+static int delete_test_module(void) { return (int) syscall(SYS_delete_module, "hello", 0); }
 
 static int load_module_file(const char *path) {
     int fd = open(path, O_RDONLY);
@@ -26,15 +24,15 @@ int test_kernel_modules(void) {
     int fd = -1;
     unsigned char *image = NULL;
 
-#define MODULE_CHECK(condition)                                                                   \
-    do {                                                                                          \
-        if (!(condition)) {                                                                       \
-            if (failure_pipe[1] >= 0)                                                             \
-                dprintf(failure_pipe[1], "tests_modules.c:%d: %s (errno=%d)\n", __LINE__,         \
+#define MODULE_CHECK(condition)                                                                    \
+    do {                                                                                           \
+        if (!(condition)) {                                                                        \
+            if (failure_pipe[1] >= 0)                                                              \
+                dprintf(failure_pipe[1], "tests_modules.c:%d: %s (errno=%d)\n", __LINE__,          \
                         #condition, errno);                                                        \
-            ok = 0;                                                                               \
-            goto cleanup;                                                                         \
-        }                                                                                         \
+            ok = 0;                                                                                \
+            goto cleanup;                                                                          \
+        }                                                                                          \
     } while (0)
 
     syscall(SYS_delete_module, "hello_user", 0);
@@ -102,7 +100,7 @@ int test_kernel_modules(void) {
     free(image);
     image = NULL;
 
-    unsigned char invalid[16] = {0};
+    unsigned char invalid[16] = { 0 };
     MODULE_CHECK(syscall(SYS_init_module, invalid, sizeof(invalid), "") == -1);
     MODULE_CHECK(errno == ENOEXEC);
 

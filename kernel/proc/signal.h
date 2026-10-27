@@ -58,15 +58,15 @@ typedef struct {
 } siginfo_t;
 
 typedef struct {
-    uint64_t r8, r9, r10, r11, r12, r13, r14, r15;    // 64
-    uint64_t rdi, rsi, rbp, rbx, rdx, rax, rcx, rsp;  // 64
-    uint64_t rip;                                     //  8
-    uint64_t eflags;                                  //  8
-    uint16_t cs, gs, fs, ss;                          //  8
-    uint64_t err, trapno, oldmask, cr2;               // 32
-    uint64_t fpstate; // NULL = no FP state saved         8
-    uint64_t _reserved[8];                            // 64
-} mcontext_t;                                         // 256 bytes
+    uint64_t r8, r9, r10, r11, r12, r13, r14, r15;   // 64
+    uint64_t rdi, rsi, rbp, rbx, rdx, rax, rcx, rsp; // 64
+    uint64_t rip;                                    //  8
+    uint64_t eflags;                                 //  8
+    uint16_t cs, gs, fs, ss;                         //  8
+    uint64_t err, trapno, oldmask, cr2;              // 32
+    uint64_t fpstate;                                // NULL = no FP state saved         8
+    uint64_t _reserved[8];                           // 64
+} mcontext_t;                                        // 256 bytes
 
 typedef struct {
     uint64_t uc_flags;

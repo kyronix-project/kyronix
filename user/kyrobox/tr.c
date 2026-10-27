@@ -45,16 +45,37 @@ static unsigned char escaped_char(const char **sp) {
     }
     unsigned char c;
     switch (*s) {
-        case 'a': c = '\a'; break;
-        case 'b': c = '\b'; break;
-        case 'f': c = '\f'; break;
-        case 'n': c = '\n'; break;
-        case 'r': c = '\r'; break;
-        case 't': c = '\t'; break;
-        case 'v': c = '\v'; break;
-        case '\\': c = '\\'; break;
-        case '\0': c = '\\'; s--; break;
-        default: c = (unsigned char) *s; break;
+    case 'a':
+        c = '\a';
+        break;
+    case 'b':
+        c = '\b';
+        break;
+    case 'f':
+        c = '\f';
+        break;
+    case 'n':
+        c = '\n';
+        break;
+    case 'r':
+        c = '\r';
+        break;
+    case 't':
+        c = '\t';
+        break;
+    case 'v':
+        c = '\v';
+        break;
+    case '\\':
+        c = '\\';
+        break;
+    case '\0':
+        c = '\\';
+        s--;
+        break;
+    default:
+        c = (unsigned char) *s;
+        break;
     }
     if (*s) s++;
     *sp = s;
@@ -115,9 +136,7 @@ static void complement_set(byte_set_t *set) {
     *set = result;
 }
 
-static void usage(void) {
-    fprintf(stderr, "usage: tr [-cdst] SET1 [SET2]\n");
-}
+static void usage(void) { fprintf(stderr, "usage: tr [-cdst] SET1 [SET2]\n"); }
 
 int main(int argc, char **argv) {
     kx_prog = "tr";
@@ -131,10 +150,14 @@ int main(int argc, char **argv) {
         }
         if (a[0] != '-' || a[1] == '\0') break;
         for (const char *o = a + 1; *o; o++) {
-            if (*o == 'c' || *o == 'C') complement = true;
-            else if (*o == 'd') delete = true;
-            else if (*o == 's') squeeze = true;
-            else if (*o == 't') truncate = true;
+            if (*o == 'c' || *o == 'C')
+                complement = true;
+            else if (*o == 'd')
+                delete = true;
+            else if (*o == 's')
+                squeeze = true;
+            else if (*o == 't')
+                truncate = true;
             else {
                 usage();
                 return 1;
@@ -161,8 +184,7 @@ int main(int argc, char **argv) {
         for (size_t n = 0; n < set1.n; n++) remove[set1.v[n]] = true;
     } else if (operands == 2) {
         size_t nmap = truncate && set1.n > set2.n ? set2.n : set1.n;
-        for (size_t n = 0; n < nmap; n++)
-            map[set1.v[n]] = set2.v[n < set2.n ? n : set2.n - 1];
+        for (size_t n = 0; n < nmap; n++) map[set1.v[n]] = set2.v[n < set2.n ? n : set2.n - 1];
     }
     if (squeeze) {
         byte_set_t *sq = (!delete && operands == 2) ? &set2 : &set1;

@@ -1,4 +1,4 @@
-CC := musl-gcc
+CC := gcc
 ROOTFS := ../../rootfs
 OUT_DIR := ../../build/bin
 INSTALLER := $(OUT_DIR)/installer
@@ -20,16 +20,16 @@ $(OUT_DIR):
 
 $(INSTALLER): installer.c $(NCURSES_LIB) | $(OUT_DIR)
 	@$(call step,CC $<)
-	@$(CC) $(CFLAGS) $(NCURSES_CFLAGS) -no-pie \
+	@$(CC) $(CFLAGS) $(NCURSES_CFLAGS)  \
 	    -Wl,--allow-shlib-undefined -o $@ $< $(NCURSES_LIB)
 
 $(MKFS): mkfs_ext2.c | $(OUT_DIR)
 	@$(call step,CC $<)
-	@$(CC) $(CFLAGS) -static -no-pie -o $@ $<
+	@$(CC) $(CFLAGS) -static  -o $@ $<
 
 $(LIMINE_INSTALL): ../../limine/limine.c | $(OUT_DIR)
 	@$(call step,CC $<)
-	@$(CC) -std=c11 -O2 -static -no-pie -o $@ $<
+	@$(CC) -std=c11 -O2 -static  -o $@ $<
 
 clean:
 	rm -f $(INSTALLER) $(MKFS) $(LIMINE_INSTALL)

@@ -46,7 +46,6 @@ all:
 ifneq ($(WAYLAND),0)
 	@$(MAKE) --no-print-directory -C extras/blobs/wayland install
 	@$(MAKE) --no-print-directory -C extras/blobs/gtk
-	@$(MAKE) --no-print-directory -C panel install
 endif
 
 clean:
@@ -62,7 +61,6 @@ clean:
 	@$(MAKE) --no-print-directory -C installer clean
 	@$(MAKE) --no-print-directory -C extras clean
 	@$(MAKE) --no-print-directory -C libudev clean
-	@$(MAKE) --no-print-directory -C panel clean
 	@$(MAKE) --no-print-directory -C extras/blobs/wayland clean
 	@rm -f $(ROOTFS)/bin/*
 	@rm -f $(ROOTFS)/usr/libexec/limine-install

@@ -15,9 +15,8 @@ extern "C" {
 #define __NEED_struct__IO_FILE
 #endif
 
-#if defined(_POSIX_SOURCE) || defined(_POSIX_C_SOURCE) \
- || defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) \
- || defined(_BSD_SOURCE)
+#if defined(_POSIX_SOURCE) || defined(_POSIX_C_SOURCE) || defined(_XOPEN_SOURCE) ||                \
+    defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
 #define __NEED_ssize_t
 #define __NEED_off_t
 #define __NEED_va_list
@@ -30,7 +29,7 @@ extern "C" {
 #elif defined(__cplusplus)
 #define NULL 0L
 #else
-#define NULL ((void*)0)
+#define NULL ((void *) 0)
 #endif
 
 #undef EOF
@@ -54,16 +53,16 @@ extern "C" {
 #define L_tmpnam 20
 
 typedef union _G_fpos64_t {
-	char __opaque[16];
-	long long __lldata;
-	double __align;
+    char __opaque[16];
+    long long __lldata;
+    double __align;
 } fpos_t;
 
 extern FILE *const stdin;
 extern FILE *const stdout;
 extern FILE *const stderr;
 
-#define stdin  (stdin)
+#define stdin (stdin)
 #define stdout (stdout)
 #define stderr (stderr)
 
@@ -131,9 +130,8 @@ void setbuf(FILE *__restrict, char *__restrict);
 char *tmpnam(char *);
 FILE *tmpfile(void);
 
-#if defined(_POSIX_SOURCE) || defined(_POSIX_C_SOURCE) \
- || defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) \
- || defined(_BSD_SOURCE)
+#if defined(_POSIX_SOURCE) || defined(_POSIX_C_SOURCE) || defined(_XOPEN_SOURCE) ||                \
+    defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
 FILE *fmemopen(void *__restrict, size_t, const char *__restrict);
 FILE *open_memstream(char **, size_t *);
 FILE *fdopen(int, const char *);
@@ -160,14 +158,13 @@ char *ctermid(char *);
 
 #if defined(_GNU_SOURCE)
 #define RENAME_NOREPLACE (1 << 0)
-#define RENAME_EXCHANGE  (1 << 1)
-#define RENAME_WHITEOUT  (1 << 2)
+#define RENAME_EXCHANGE (1 << 1)
+#define RENAME_WHITEOUT (1 << 2)
 
 int renameat2(int, const char *, int, const char *, unsigned);
 #endif
 
-#if defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) \
- || defined(_BSD_SOURCE)
+#if defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
 #define P_tmpdir "/tmp"
 char *tempnam(const char *, const char *);
 #endif
@@ -197,16 +194,16 @@ int vasprintf(char **, const char *, __isoc_va_list);
 char *fgets_unlocked(char *, int, FILE *);
 int fputs_unlocked(const char *, FILE *);
 
-typedef ssize_t (cookie_read_function_t)(void *, char *, size_t);
-typedef ssize_t (cookie_write_function_t)(void *, const char *, size_t);
-typedef int (cookie_seek_function_t)(void *, off_t *, int);
-typedef int (cookie_close_function_t)(void *);
+typedef ssize_t(cookie_read_function_t)(void *, char *, size_t);
+typedef ssize_t(cookie_write_function_t)(void *, const char *, size_t);
+typedef int(cookie_seek_function_t)(void *, off_t *, int);
+typedef int(cookie_close_function_t)(void *);
 
 typedef struct _IO_cookie_io_functions_t {
-	cookie_read_function_t *read;
-	cookie_write_function_t *write;
-	cookie_seek_function_t *seek;
-	cookie_close_function_t *close;
+    cookie_read_function_t *read;
+    cookie_write_function_t *write;
+    cookie_seek_function_t *seek;
+    cookie_close_function_t *close;
 } cookie_io_functions_t;
 
 FILE *fopencookie(void *, const char *, cookie_io_functions_t);

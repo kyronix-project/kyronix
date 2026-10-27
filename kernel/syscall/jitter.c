@@ -19,8 +19,7 @@ int64_t sys_anti_toctou(uint32_t action, void *out) {
         anti_toctou_reset();
         return anti_toctou_enabled() ? 1 : 0;
     case ANTI_TOCTOU_CTL_STATS: {
-        if (!out || !uptr_ok_w(out, sizeof(anti_toctou_stats_t)))
-            return -(int64_t) EFAULT;
+        if (!out || !uptr_ok_w(out, sizeof(anti_toctou_stats_t))) return -(int64_t) EFAULT;
         anti_toctou_stats_t stats;
         anti_toctou_get_stats(&stats);
         memcpy(out, &stats, sizeof(stats));

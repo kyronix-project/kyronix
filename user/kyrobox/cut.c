@@ -46,8 +46,10 @@ static int parse_list(const char *list) {
             }
         }
         ranges[nranges++] = (range_t) { first, last };
-        if (*p == ',') p++;
-        else if (*p) return -1;
+        if (*p == ',')
+            p++;
+        else if (*p)
+            return -1;
     }
     return nranges ? 0 : -1;
 }

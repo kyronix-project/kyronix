@@ -15,14 +15,14 @@
 #define ENOMEM 12
 #define ENOSPC 28
 
-#define BLKGETSIZE   0x1260
+#define BLKGETSIZE 0x1260
 #define BLKGETSIZE64_COMPAT 0x1262
 #define BLKGETSIZE64 0x80081272
-#define BLKSSZGET    0x1268
+#define BLKSSZGET 0x1268
 #define BLKSSZGET_COMPAT 0x1276
-#define BLKFLSBUF    0x1261
-#define BLKDISCARD   0x127F
-#define BLKRRPART    0x125F
+#define BLKFLSBUF 0x1261
+#define BLKDISCARD 0x127F
+#define BLKRRPART 0x125F
 
 #define BLK_IO_MAX (16ULL * 1024 * 1024)
 
@@ -116,8 +116,7 @@ static int64_t blk_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
 
     switch (req) {
     case BLKGETSIZE: {
-        if (bd->sector_size && bd->sectors > UINT64_MAX / bd->sector_size)
-            return -(int64_t) EINVAL;
+        if (bd->sector_size && bd->sectors > UINT64_MAX / bd->sector_size) return -(int64_t) EINVAL;
         uint64_t size = (uint64_t) bd->sectors * bd->sector_size;
         if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(uint64_t))) return -(int64_t) EFAULT;
         *(uint64_t *) (uintptr_t) arg = size;
@@ -125,8 +124,7 @@ static int64_t blk_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
     }
     case BLKGETSIZE64:
     case BLKGETSIZE64_COMPAT: {
-        if (bd->sector_size && bd->sectors > UINT64_MAX / bd->sector_size)
-            return -(int64_t) EINVAL;
+        if (bd->sector_size && bd->sectors > UINT64_MAX / bd->sector_size) return -(int64_t) EINVAL;
         uint64_t size = (uint64_t) bd->sectors * bd->sector_size;
         if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(uint64_t))) return -(int64_t) EFAULT;
         *(uint64_t *) (uintptr_t) arg = size;
@@ -134,8 +132,7 @@ static int64_t blk_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
     }
     case BLKSSZGET:
     case BLKSSZGET_COMPAT: {
-        if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(int)))
-            return -(int64_t) EFAULT;
+        if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(int))) return -(int64_t) EFAULT;
         *(int *) (uintptr_t) arg = (int) bd->sector_size;
         return 0;
     }
@@ -163,9 +160,9 @@ void blockdev_create_node(struct block_device *bd) {
     n->mode = S_IFCHR | 0600;
     n->chr_ioctl = blk_ioctl;
     n->fs_private = bd;
-    n->size = (bd->sector_size && bd->sectors <= UINT64_MAX / bd->sector_size)
-                  ? (uint64_t) bd->sectors * bd->sector_size
-                  : 0;
+    n->size = (bd->sector_size && bd->sectors <= UINT64_MAX / bd->sector_size) ?
+                  (uint64_t) bd->sectors * bd->sector_size :
+                  0;
 
     log_info("blockdev: %s  %lu sectors  (%lu MiB)", path, bd->sectors, bd->sectors / 2048);
 }
@@ -177,9 +174,7 @@ void blockdev_remove_node(struct block_device *bd) {
     vfs_unlink(path);
 }
 
-void blockdev_init(void) {
-    vfs_mkdir_p("/dev", 0755);
-}
+void blockdev_init(void) { vfs_mkdir_p("/dev", 0755); }
 
 void blockdev_create_all(void) {
     for (int i = 0; i < block_count(); i++) {

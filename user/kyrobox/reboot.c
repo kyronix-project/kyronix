@@ -4,9 +4,12 @@
 
 static int sig_for_cmd(int cmd) {
     switch (cmd) {
-    case RB_POWER_OFF:  return SIGUSR2;
-    case RB_HALT_SYSTEM: return SIGTERM;
-    default:            return SIGUSR1;
+    case RB_POWER_OFF:
+        return SIGUSR2;
+    case RB_HALT_SYSTEM:
+        return SIGTERM;
+    default:
+        return SIGUSR1;
     }
 }
 

@@ -36,8 +36,8 @@ typedef uintptr_t mem_ptr_t;
 #define PACK_STRUCT_FLD_8(x) x
 #define PACK_STRUCT_FLD_S(x) x
 
-#include "../../lib/log.h"
 #include "../../crypto/chacha20.h"
+#include "../../lib/log.h"
 #define LWIP_PLATFORM_DIAG(x)                                                                      \
     do { log_debug x; } while (0)
 #define LWIP_PLATFORM_ASSERT(x)                                                                    \

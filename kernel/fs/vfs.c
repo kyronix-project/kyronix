@@ -3,7 +3,6 @@
 #include "devfs.h"
 #include "drivers/tty/tty.h"
 #include "eventfd.h"
-#include "signalfd.h"
 #include "inet_socket.h"
 #include "lib/log.h"
 #include "lib/printf.h"
@@ -15,6 +14,7 @@
 #include "procfs.h"
 #include "security/anti_toctou.h"
 #include "security/phantom.h"
+#include "signalfd.h"
 #include "syscall/epoll.h"
 #include "syscall/syscall.h"
 #include "unix_socket.h"
@@ -361,11 +361,9 @@ static vfs_node_t *lookup_internal(const char *path, bool follow_last, int depth
                 const char *root = jail_root_current();
                 if (root[0]) {
                     if (*p)
-                        snprintf(resolved, sizeof(resolved), "%s%s/%s", root,
-                                 child->symlink, p);
+                        snprintf(resolved, sizeof(resolved), "%s%s/%s", root, child->symlink, p);
                     else
-                        snprintf(resolved, sizeof(resolved), "%s%s", root,
-                                 child->symlink);
+                        snprintf(resolved, sizeof(resolved), "%s%s", root, child->symlink);
                 } else if (*p) {
                     snprintf(resolved, sizeof(resolved), "%s/%s", child->symlink, p);
                 } else {
@@ -790,8 +788,7 @@ static vfs_file_t *fd_get(int fd) {
         return NULL;
     }
     bool borrow = g_current_proc && g_current_proc->fd_borrow_active;
-    if (borrow)
-        __atomic_add_fetch(&f->refs, 1, __ATOMIC_ACQ_REL);
+    if (borrow) __atomic_add_fetch(&f->refs, 1, __ATOMIC_ACQ_REL);
     spin_unlock(&g_fdtable_lock);
     if (borrow && !borrow_register(f)) return NULL;
     return f;
@@ -1013,17 +1010,22 @@ int fd_poll_objects(int fd, void **objects, int max_objects) {
     /* an epoll handle has no object of its own: the caller falls back to a
        wildcard wait, since the members of the nested set are not tracked */
     if (epoll_fd_is_handle(fd)) return 0;
-    if (f->efd) objects[0] = f->efd;
-    else if (f->tfd) objects[0] = f->tfd;
-    else if (f->sfd) objects[0] = f->sfd;
-    else if (f->inet) objects[0] = f->inet;
+    if (f->efd)
+        objects[0] = f->efd;
+    else if (f->tfd)
+        objects[0] = f->tfd;
+    else if (f->sfd)
+        objects[0] = f->sfd;
+    else if (f->inet)
+        objects[0] = f->inet;
     else if (f->wpipe) {
         objects[0] = f->pipe;
         if (max_objects > 1 && f->wpipe != f->pipe) {
             objects[1] = f->wpipe;
             return 2;
         }
-    } else if (f->pipe) objects[0] = f->pipe;
+    } else if (f->pipe)
+        objects[0] = f->pipe;
     else if (f->node && f->node->type == VFS_TYPE_SOCK) {
         /* wake on the shared socket state, which is what connect() notifies */
         void *sock = unix_socket_wait_object(f->node);
@@ -1033,13 +1035,12 @@ int fd_poll_objects(int fd, void **objects, int max_objects) {
             objects[0] = f->node->chr_pollobj(f->node);
         else
             objects[0] = f->node;
-    } else return 0;
+    } else
+        return 0;
     return 1;
 }
 
-static void pipe_drop_write(pipe_t *p) {
-    pipe_unref_write(p);
-}
+static void pipe_drop_write(pipe_t *p) { pipe_unref_write(p); }
 
 void vfs_pipe_drop_read(pipe_t *p) { pipe_unref_read(p); }
 void vfs_pipe_drop_write(pipe_t *p) { pipe_drop_write(p); }
@@ -1100,8 +1101,8 @@ static void file_close(vfs_file_t *f) {
     if (!f) return;
     uint32_t refs = __atomic_load_n(&f->refs, __ATOMIC_ACQUIRE);
     while (refs) {
-        if (__atomic_compare_exchange_n(&f->refs, &refs, refs - 1, false,
-                                        __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        if (__atomic_compare_exchange_n(&f->refs, &refs, refs - 1, false, __ATOMIC_ACQ_REL,
+                                        __ATOMIC_ACQUIRE)) {
             if (refs == 1) file_destroy(f);
             return;
         }
@@ -1411,12 +1412,10 @@ static int fd_open_impl(const char *path, int flags, int mode, bool reroot, bool
             return -(int) EEXIST;
         }
     }
-    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
-                            ANTI_TOCTOU_VFS_USE |
-                                (((flags & O_ACCMODE) != O_RDONLY ||
-                                  (flags & O_TRUNC))
-                                     ? ANTI_TOCTOU_VFS_WRITE
-                                     : 0u));
+    anti_toctou_observe_vfs(
+        (uint64_t) (uintptr_t) n,
+        ANTI_TOCTOU_VFS_USE |
+            (((flags & O_ACCMODE) != O_RDONLY || (flags & O_TRUNC)) ? ANTI_TOCTOU_VFS_WRITE : 0u));
     if (n->type == VFS_TYPE_CHR && n->chr_open) {
         int r = n->chr_open(n, flags);
         node_unref(n); /* chr_open created its own fd with its own ref */
@@ -1538,8 +1537,7 @@ int64_t fd_read_ex(int fd, void *buf, uint64_t len, bool force_nonblock) {
     }
 
     vfs_node_t *n = f->node;
-    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
-                            ANTI_TOCTOU_VFS_USE);
+    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n, ANTI_TOCTOU_VFS_USE);
     if (n->type == VFS_TYPE_CHR) {
         if (!n->chr_read) return 0;
         if ((f->flags & O_NONBLOCK) && n->chr_pollin && !n->chr_pollin(n)) return -(int64_t) EAGAIN;
@@ -1614,9 +1612,7 @@ static int64_t fd_write_dispatch(vfs_file_t *f, const void *buf, uint64_t len) {
     }
 
     vfs_node_t *n = f->node;
-    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
-                            ANTI_TOCTOU_VFS_USE |
-                                ANTI_TOCTOU_VFS_WRITE);
+    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n, ANTI_TOCTOU_VFS_USE | ANTI_TOCTOU_VFS_WRITE);
     if (n->type == VFS_TYPE_CHR) {
         if (!n->chr_write) return (int64_t) len;
         int64_t r = n->chr_write(n, (const char *) buf, len, f->pos);
@@ -1638,8 +1634,7 @@ static int64_t fd_write_dispatch(vfs_file_t *f, const void *buf, uint64_t len) {
             if (r > 0) f->pos += (uint64_t) r;
             return r;
         }
-        if (f->pos > INT64_MAX || len > (uint64_t) INT64_MAX - f->pos)
-            return -(int64_t) EFBIG;
+        if (f->pos > INT64_MAX || len > (uint64_t) INT64_MAX - f->pos) return -(int64_t) EFBIG;
         uint64_t end = f->pos + len;
         if (end > n->capacity) {
             if (end > UINT64_MAX - 4095) return -(int64_t) EFBIG;
@@ -1736,8 +1731,7 @@ int fd_fstat(int fd, struct linux_stat *st) {
         st->st_blksize = PIPE_BUFSZ;
         return 0;
     }
-    anti_toctou_observe_vfs((uint64_t) (uintptr_t) f->node,
-                            ANTI_TOCTOU_VFS_CHECK);
+    anti_toctou_observe_vfs((uint64_t) (uintptr_t) f->node, ANTI_TOCTOU_VFS_CHECK);
     fill_stat(f->node, st);
     return 0;
 }
@@ -1755,8 +1749,7 @@ int fd_fstatat(int dirfd, const char *path, struct linux_stat *st, int flags) {
     vfs_node_t *n =
         (flags & AT_SYMLINK_NOFOLLOW) ? vfs_lookup_nofollow(abspath) : vfs_lookup(abspath);
     if (!n) return -(int) ENOENT;
-    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
-                            ANTI_TOCTOU_VFS_CHECK);
+    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n, ANTI_TOCTOU_VFS_CHECK);
     fill_stat(n, st);
     node_unref(n);
     return 0;
@@ -1769,8 +1762,7 @@ int fd_stat(const char *path, struct linux_stat *st) {
     if (!(path = vfs_copy_user_path(path, _pbuf))) return -(int) EFAULT;
     vfs_node_t *n = vfs_lookup(path);
     if (!n) return -(int) ENOENT;
-    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
-                            ANTI_TOCTOU_VFS_CHECK);
+    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n, ANTI_TOCTOU_VFS_CHECK);
     fill_stat(n, st);
     node_unref(n);
     return 0;
@@ -1783,8 +1775,7 @@ int fd_lstat(const char *path, struct linux_stat *st) {
     if (!(path = vfs_copy_user_path(path, _pbuf))) return -(int) EFAULT;
     vfs_node_t *n = vfs_lookup_nofollow(path);
     if (!n) return -(int) ENOENT;
-    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
-                            ANTI_TOCTOU_VFS_CHECK);
+    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n, ANTI_TOCTOU_VFS_CHECK);
     fill_stat(n, st);
     node_unref(n);
     return 0;
@@ -2099,22 +2090,19 @@ int vfs_access(const char *path, int mode) {
         phantom_record(PHANTOM_EVENT_ACCESS, (uint32_t) mode, 0, 0, "VFS lookup denied");
         return -(int) ENOENT;
     }
-    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n,
-                            ANTI_TOCTOU_VFS_CHECK);
+    anti_toctou_observe_vfs((uint64_t) (uintptr_t) n, ANTI_TOCTOU_VFS_CHECK);
     if (mode == 0) {
         node_unref(n);
         return 0;
     }
     if ((mode & 1) && !(n->mode & 0111U)) {
-        phantom_record(PHANTOM_EVENT_ACCESS, (uint32_t) mode, n->ino, 0,
-                       "VFS execute denied");
+        phantom_record(PHANTOM_EVENT_ACCESS, (uint32_t) mode, n->ino, 0, "VFS execute denied");
         node_unref(n);
         return -(int) EACCES;
     }
     int r = may_access(n, (uint32_t) mode) ? 0 : -(int) EACCES;
     if (r < 0)
-        phantom_record(PHANTOM_EVENT_ACCESS, (uint32_t) mode, n->ino, 0,
-                       "VFS permission denied");
+        phantom_record(PHANTOM_EVENT_ACCESS, (uint32_t) mode, n->ino, 0, "VFS permission denied");
     node_unref(n);
     return r;
 }

@@ -3,11 +3,11 @@
 #include "../lib/log.h"
 #include "../lib/string.h"
 #include "../mm/heap.h"
-#include "../proc/proc.h"
 #include "../proc/jail.h"
-#include "security/phantom.h"
+#include "../proc/proc.h"
 #include "../syscall/poll.h"
 #include "../syscall/syscall.h"
+#include "security/phantom.h"
 #include "vfs.h"
 #include "vfs_internal.h"
 
@@ -442,8 +442,7 @@ bool inet_poll_out(net_conn_t *c) {
     if (!c) return false;
     if (c->type == SOCK_DGRAM) return c->upcb != NULL;
     if (c->type == SOCK_RAW) return c->rpcb != NULL;
-    return c->phantom_fake || c->error ||
-           (c->pcb && c->pcb->state == ESTABLISHED);
+    return c->phantom_fake || c->error || (c->pcb && c->pcb->state == ESTABLISHED);
 }
 
 int inet_get_type(net_conn_t *c) { return c ? c->type : 1; }

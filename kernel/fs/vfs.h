@@ -177,8 +177,8 @@ typedef struct {
     eventfd_state_t *efd;
     timerfd_state_t *tfd;
     sigfd_state_t *sfd;
-    void *epoll; /* non-null for epoll handles; survives dup() (see syscall/epoll.c) */
-    struct net_conn *inet; /* non-null for AF_INET sockets */
+    void *epoll;            /* non-null for epoll handles; survives dup() (see syscall/epoll.c) */
+    struct net_conn *inet;  /* non-null for AF_INET sockets */
     volatile uint32_t refs; /* descriptor ownership plus in-flight syscall borrows */
 
 } vfs_file_t;

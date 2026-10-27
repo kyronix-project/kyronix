@@ -19,18 +19,18 @@
 #include "drivers/ata/ahci.h"
 #include "drivers/block/block.h"
 #include "drivers/block/blockdev.h"
-#include "drivers/video/fbdev.h"
+#include "drivers/bus/pci/pci.h"
+#include "drivers/bus/spi/spi.h"
+#include "drivers/char/serial.h"
+#include "drivers/char/uio.h"
+#include "drivers/hwmon/tmp117.h"
 #include "drivers/input/input.h"
 #include "drivers/input/kbd.h"
-#include "drivers/bus/pci/pci.h"
 #include "drivers/input/ps2mouse.h"
-#include "drivers/char/serial.h"
-#include "drivers/bus/spi/spi.h"
-#include "drivers/hwmon/tmp117.h"
-#include "drivers/usb/usb.h"
 #include "drivers/tty/tty.h"
-#include "drivers/char/uio.h"
 #include "drivers/tty/vt.h"
+#include "drivers/usb/usb.h"
+#include "drivers/video/fbdev.h"
 #include "exec/process.h"
 #include "fs/cpio.h"
 #include "fs/ext2.h"
@@ -578,21 +578,15 @@ void kmain(void) {
 
     {
         int result = module_load_path("/lib/modules/virtio_net.ko");
-        if (result == 0) {
-            kstatus("Loading virtio-net module", true);
-        }
+        if (result == 0) { kstatus("Loading virtio-net module", true); }
     }
     {
         int result = module_load_path("/lib/modules/e1000.ko");
-        if (result == 0) {
-            kstatus("Loading e1000 module", true);
-        }
+        if (result == 0) { kstatus("Loading e1000 module", true); }
     }
     {
         int result = module_load_path("/lib/modules/rtl8168.ko");
-        if (result == 0) {
-            kstatus("Loading RTL8168 module", true);
-        }
+        if (result == 0) { kstatus("Loading RTL8168 module", true); }
     }
 
     {

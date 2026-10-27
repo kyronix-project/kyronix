@@ -1,9 +1,7 @@
 #include "common.h"
 #include <sys/mount.h>
 
-static void usage(void) {
-    fprintf(stderr, "usage: %s [-f] [-l] mountpoint\n", kx_prog);
-}
+static void usage(void) { fprintf(stderr, "usage: %s [-f] [-l] mountpoint\n", kx_prog); }
 
 int main(int argc, char **argv) {
     kx_prog = kx_base(argv[0]);

@@ -91,8 +91,8 @@ static int parse_unified(lines_t *p, int *pi, filepatch_t *fp) {
 
     while (i < p->n && strncmp(p->lines[i], "@@ ", 3) == 0) {
         hunk_t *h = fp_new_hunk(fp);
-        int got = sscanf(p->lines[i], "@@ -%d,%d +%d,%d @@", &h->a_start, &h->a_count,
-                          &h->b_start, &h->b_count);
+        int got = sscanf(p->lines[i], "@@ -%d,%d +%d,%d @@", &h->a_start, &h->a_count, &h->b_start,
+                         &h->b_count);
         if (got < 4) {
             h->a_count = h->b_count = 1;
             sscanf(p->lines[i], "@@ -%d +%d @@", &h->a_start, &h->b_start);
@@ -237,9 +237,7 @@ static int parse_normal(lines_t *p, int *pi, filepatch_t *fp) {
         const char *s = p->lines[i];
         char *comma1;
         as = (int) strtol(s, &comma1, 10);
-        if (*comma1 == ',') {
-            ac = (int) strtol(comma1 + 1, &comma1, 10) - as + 1;
-        }
+        if (*comma1 == ',') { ac = (int) strtol(comma1 + 1, &comma1, 10) - as + 1; }
         cmd = *comma1;
         bs = (int) strtol(comma1 + 1, &comma1, 10);
         if (*comma1 == ',') bc = (int) strtol(comma1 + 1, &comma1, 10) - bs + 1;
@@ -549,7 +547,7 @@ static void free_filepatch(filepatch_t *fp) {
 
 static void usage(void) {
     kx_die("usage: patch [-p N] [-R] [-b] [-f] [-l] [-s] [-E] [-N] [-F N] [-i FILE] [-o FILE] "
-          "[-d DIR] [-r FILE] [--dry-run] [FILE]");
+           "[-d DIR] [-r FILE] [--dry-run] [FILE]");
 }
 
 int main(int argc, char **argv) {
@@ -597,14 +595,14 @@ int main(int argc, char **argv) {
         } else if (strcmp(a, "-l") == 0 || strcmp(a, "--ignore-whitespace") == 0) {
             o.ignore_ws = 1;
         } else if (strcmp(a, "-s") == 0 || strcmp(a, "--quiet") == 0 ||
-                  strcmp(a, "--silent") == 0) {
+                   strcmp(a, "--silent") == 0) {
             o.quiet = 1;
         } else if (strcmp(a, "-N") == 0 || strcmp(a, "--forward") == 0) {
             o.skip_applied = 1;
         } else if (strcmp(a, "--dry-run") == 0) {
             o.dry_run = 1;
         } else if (strcmp(a, "-t") == 0 || strcmp(a, "-u") == 0 || strcmp(a, "-c") == 0 ||
-                  strcmp(a, "-n") == 0) {
+                   strcmp(a, "-n") == 0) {
         } else if (a[0] == '-' && a[1] != 0) {
             usage();
         } else {
@@ -634,7 +632,7 @@ int main(int argc, char **argv) {
             strncmp(patch.lines[pi + 1], "+++ ", 4) == 0) {
             parse_unified(&patch, &pi, &fp);
         } else if (strncmp(patch.lines[pi], "*** ", 4) == 0 && pi + 1 < patch.n &&
-                  strncmp(patch.lines[pi + 1], "--- ", 4) == 0) {
+                   strncmp(patch.lines[pi + 1], "--- ", 4) == 0) {
             parse_context(&patch, &pi, &fp);
         } else if (looks_like_normal_hdr(patch.lines[pi])) {
             if (!o.target) {

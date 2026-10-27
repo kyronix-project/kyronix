@@ -13,9 +13,16 @@ static int remove_from_file(const char *path, const char *key, int field) {
     snprintf(tmp, sizeof(tmp), "%s.tmp", path);
 
     FILE *fin = fopen(path, "r");
-    if (!fin) { kx_warn(path); return 1; }
+    if (!fin) {
+        kx_warn(path);
+        return 1;
+    }
     FILE *fout = fopen(tmp, "w");
-    if (!fout) { fclose(fin); kx_warn(tmp); return 1; }
+    if (!fout) {
+        fclose(fin);
+        kx_warn(tmp);
+        return 1;
+    }
 
     char line[512];
     int found = 0;
@@ -30,7 +37,10 @@ static int remove_from_file(const char *path, const char *key, int field) {
         char *save = NULL;
         char *tok = strtok_r(copy, ":", &save);
         int f = 0;
-        while (tok && f < field) { tok = strtok_r(NULL, ":", &save); f++; }
+        while (tok && f < field) {
+            tok = strtok_r(NULL, ":", &save);
+            f++;
+        }
 
         if (tok && strcmp(tok, key) == 0) {
             found = 1;
@@ -54,7 +64,10 @@ static int remove_from_group_members(const char *login) {
     FILE *fin = fopen("/etc/group", "r");
     if (!fin) return 1;
     FILE *fout = fopen(tmp, "w");
-    if (!fout) { fclose(fin); return 1; }
+    if (!fout) {
+        fclose(fin);
+        return 1;
+    }
 
     char line[512];
     int modified = 0;
@@ -89,8 +102,8 @@ static int remove_from_group_members(const char *login) {
                 }
                 tok = strtok_r(NULL, ",", &save);
             }
-            fprintf(fout, "%s:%s:%s:%s\n", name, pass ? pass : "x",
-                    gid_s ? gid_s : "0", newmembers);
+            fprintf(fout, "%s:%s:%s:%s\n", name, pass ? pass : "x", gid_s ? gid_s : "0",
+                    newmembers);
         } else {
             fprintf(fout, "%s\n", line);
         }
@@ -122,8 +135,10 @@ int main(int argc, char **argv) {
     int i = 1;
 
     for (; i < argc && argv[i][0] == '-'; i++) {
-        if (strcmp(argv[i], "-r") == 0) remove_home = 1;
-        else usage();
+        if (strcmp(argv[i], "-r") == 0)
+            remove_home = 1;
+        else
+            usage();
     }
 
     if (i >= argc) usage();
@@ -154,8 +169,7 @@ int main(int argc, char **argv) {
 
     remove_from_group_members(login);
 
-    if (remove_home && homedir && homedir[0] == '/')
-        remove_dir(homedir);
+    if (remove_home && homedir && homedir[0] == '/') remove_dir(homedir);
 
     free(homedir);
     printf("userdel: user '%s' removed\n", login);

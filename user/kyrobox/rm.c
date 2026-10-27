@@ -19,8 +19,7 @@ static int rm_dir_contents(const char *dirpath, bool force) {
         char child[PATH_MAX];
         snprintf(child, sizeof(child), "%s/%s", dirpath, ent->d_name);
 
-        if (rm_recursive(child, force) < 0)
-            rc = 1;
+        if (rm_recursive(child, force) < 0) rc = 1;
     }
     closedir(d);
     return rc;
@@ -61,9 +60,14 @@ int main(int argc, char **argv) {
         if (argv[i][0] != '-') break;
         const char *opt = argv[i] + 1;
         while (*opt) {
-            if (*opt == 'f') force = true;
-            else if (*opt == 'r' || *opt == 'R') recursive = true;
-            else { fprintf(stderr, "rm: unknown option '-%c'\n", *opt); return 1; }
+            if (*opt == 'f')
+                force = true;
+            else if (*opt == 'r' || *opt == 'R')
+                recursive = true;
+            else {
+                fprintf(stderr, "rm: unknown option '-%c'\n", *opt);
+                return 1;
+            }
             opt++;
         }
         first = i + 1;

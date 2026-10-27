@@ -157,7 +157,7 @@ int test_jail_create_unpriv(void) {
         strncpy(c.root, "/", sizeof(c.root) - 1);
         c.flags = JAILF_FS;
         errno = 0;
-        if (jc(&c) >= 0) _exit(12);  /* jail creation must be denied without privilege */
+        if (jc(&c) >= 0) _exit(12); /* jail creation must be denied without privilege */
         if (errno != EPERM) _exit(13);
         _exit(0);
     }

@@ -10,10 +10,18 @@ static int parse_symbolic(const char *mode_str, mode_t current_mode) {
         while (*p == 'u' || *p == 'g' || *p == 'o' || *p == 'a') {
             got_who = true;
             switch (*p) {
-                case 'u': who |= 0700; break;
-                case 'g': who |= 0070; break;
-                case 'o': who |= 0007; break;
-                case 'a': who |= 0777; break;
+            case 'u':
+                who |= 0700;
+                break;
+            case 'g':
+                who |= 0070;
+                break;
+            case 'o':
+                who |= 0007;
+                break;
+            case 'a':
+                who |= 0777;
+                break;
             }
             p++;
         }
@@ -25,9 +33,12 @@ static int parse_symbolic(const char *mode_str, mode_t current_mode) {
         mode_t add = 0, remove = 0;
 
         if (!*p || *p == ',' || *p == '+' || *p == '-' || *p == '=') {
-            if (op == '+') new_mode |= who;
-            else if (op == '-') new_mode &= ~who;
-            else if (op == '=') new_mode = (new_mode & ~07777U) | (who & 0777U);
+            if (op == '+')
+                new_mode |= who;
+            else if (op == '-')
+                new_mode &= ~who;
+            else if (op == '=')
+                new_mode = (new_mode & ~07777U) | (who & 0777U);
             if (*p == ',') p++;
             continue;
         }
@@ -35,19 +46,31 @@ static int parse_symbolic(const char *mode_str, mode_t current_mode) {
         while (*p && *p != ',' && *p != '+' && *p != '-' && *p != '=') {
             mode_t bit = 0;
             switch (*p) {
-                case 'r': bit = 0444; break;
-                case 'w': bit = 0222; break;
-                case 'x': bit = 0111; break;
-                case 's':
-                    if (who & 0700) bit |= 04000;
-                    if (who & 0070) bit |= 02000;
-                    break;
-                case 't': bit = 01000; break;
-                default: return -1;
+            case 'r':
+                bit = 0444;
+                break;
+            case 'w':
+                bit = 0222;
+                break;
+            case 'x':
+                bit = 0111;
+                break;
+            case 's':
+                if (who & 0700) bit |= 04000;
+                if (who & 0070) bit |= 02000;
+                break;
+            case 't':
+                bit = 01000;
+                break;
+            default:
+                return -1;
             }
-            if (op == '+') add |= (bit & (who ? who : 07777U));
-            else if (op == '-') remove |= (bit & (who ? who : 07777U));
-            else if (op == '=') add |= (bit & (who ? who : 07777U));
+            if (op == '+')
+                add |= (bit & (who ? who : 07777U));
+            else if (op == '-')
+                remove |= (bit & (who ? who : 07777U));
+            else if (op == '=')
+                add |= (bit & (who ? who : 07777U));
             p++;
         }
 

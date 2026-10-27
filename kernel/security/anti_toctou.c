@@ -94,10 +94,8 @@ static uint64_t detect_cycles_per_us(void) {
 static void pending_delay_max(proc_t *p, uint32_t delay_us) {
     uint32_t old = __atomic_load_n(&p->anti_toctou_pending_us, __ATOMIC_RELAXED);
     while (old < delay_us &&
-           !__atomic_compare_exchange_n(&p->anti_toctou_pending_us, &old,
-                                        delay_us, false, __ATOMIC_RELEASE,
-                                        __ATOMIC_RELAXED)) {
-    }
+           !__atomic_compare_exchange_n(&p->anti_toctou_pending_us, &old, delay_us, false,
+                                        __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {}
 }
 
 static void observe(uint64_t resource, uint32_t operation, uint8_t kind) {
@@ -117,12 +115,9 @@ static void observe(uint64_t resource, uint32_t operation, uint8_t kind) {
     uint32_t delay_us = 0;
 
     spin_lock(&g_detector_lock);
-    detector_entry_t *e =
-        &g_detector[key & (ANTI_TOCTOU_DETECTOR_SLOTS - 1u)];
-    if (e->key != key || e->kind != kind ||
-        now - e->window_start > window) {
-        uint64_t last_detection =
-            (e->key == key && e->kind == kind) ? e->last_detection : 0;
+    detector_entry_t *e = &g_detector[key & (ANTI_TOCTOU_DETECTOR_SLOTS - 1u)];
+    if (e->key != key || e->kind != kind || now - e->window_start > window) {
+        uint64_t last_detection = (e->key == key && e->kind == kind) ? e->last_detection : 0;
         memset(e, 0, sizeof(*e));
         e->key = key;
         e->kind = kind;
@@ -142,23 +137,16 @@ static void observe(uint64_t resource, uint32_t operation, uint8_t kind) {
         e->operations |= (uint8_t) operation;
 
         bool multi_actor = (e->actors & (e->actors - 1u)) != 0;
-        bool vfs_check_use =
-            kind != ANTI_TOCTOU_KIND_VFS ||
-            ((e->operations & ANTI_TOCTOU_VFS_CHECK) &&
-             (e->operations &
-              (ANTI_TOCTOU_VFS_USE | ANTI_TOCTOU_VFS_WRITE)));
-        bool cooled =
-            !e->last_detection || now - e->last_detection >= cooldown;
-        if (multi_actor && vfs_check_use &&
-            e->accesses >= ANTI_TOCTOU_ACCESS_THRESHOLD &&
+        bool vfs_check_use = kind != ANTI_TOCTOU_KIND_VFS ||
+                             ((e->operations & ANTI_TOCTOU_VFS_CHECK) &&
+                              (e->operations & (ANTI_TOCTOU_VFS_USE | ANTI_TOCTOU_VFS_WRITE)));
+        bool cooled = !e->last_detection || now - e->last_detection >= cooldown;
+        if (multi_actor && vfs_check_use && e->accesses >= ANTI_TOCTOU_ACCESS_THRESHOLD &&
             e->switches >= ANTI_TOCTOU_SWITCH_THRESHOLD && cooled) {
             uint64_t sequence = ++g_detection_sequence;
-            uint64_t random = mix64(key ^ ((uint64_t) p->pid << 32) ^
-                                    sequence);
-            uint32_t span =
-                ANTI_TOCTOU_MAX_DELAY_US - ANTI_TOCTOU_MIN_DELAY_US + 1u;
-            delay_us =
-                ANTI_TOCTOU_MIN_DELAY_US + (uint32_t) (random % span);
+            uint64_t random = mix64(key ^ ((uint64_t) p->pid << 32) ^ sequence);
+            uint32_t span = ANTI_TOCTOU_MAX_DELAY_US - ANTI_TOCTOU_MIN_DELAY_US + 1u;
+            delay_us = ANTI_TOCTOU_MIN_DELAY_US + (uint32_t) (random % span);
             e->last_detection = now;
             e->window_start = now;
             e->accesses = 0;
@@ -178,8 +166,7 @@ static void observe(uint64_t resource, uint32_t operation, uint8_t kind) {
 }
 
 void anti_toctou_observe_vfs(uint64_t resource, uint32_t operation) {
-    if (resource)
-        observe(resource, operation & 0xffu, ANTI_TOCTOU_KIND_VFS);
+    if (resource) observe(resource, operation & 0xffu, ANTI_TOCTOU_KIND_VFS);
 }
 
 void anti_toctou_observe_memory(uint64_t address, uint32_t operation) {
@@ -202,13 +189,11 @@ static bool delay_enqueue(proc_t *p, uint32_t delay_us) {
         proc_ref(p);
         g_delays[i].proc = p;
         g_delays[i].delay_us = delay_us;
-        g_delays[i].deadline =
-            anti_toctou_rdtsc() + cycles_from_us(delay_us);
+        g_delays[i].deadline = anti_toctou_rdtsc() + cycles_from_us(delay_us);
         p->state = PROC_WAITING;
         proc_clear_ready(p);
         if (g_delay_worker &&
-            __sync_bool_compare_and_swap(&g_delay_worker->state,
-                                         PROC_WAITING, PROC_READY))
+            __sync_bool_compare_and_swap(&g_delay_worker->state, PROC_WAITING, PROC_READY))
             proc_set_ready(g_delay_worker);
         queued = true;
         break;
@@ -221,12 +206,10 @@ void anti_toctou_safe_point(void) {
     proc_t *p = g_current_proc;
     if (!p || p->space == &g_kernel_space) return;
     if (!anti_toctou_enabled()) {
-        __atomic_store_n(&p->anti_toctou_pending_us, 0,
-                         __ATOMIC_RELEASE);
+        __atomic_store_n(&p->anti_toctou_pending_us, 0, __ATOMIC_RELEASE);
         return;
     }
-    uint32_t delay_us =
-        __atomic_exchange_n(&p->anti_toctou_pending_us, 0, __ATOMIC_ACQ_REL);
+    uint32_t delay_us = __atomic_exchange_n(&p->anti_toctou_pending_us, 0, __ATOMIC_ACQ_REL);
     if (!delay_us) return;
     if (!delay_enqueue(p, delay_us)) {
         __atomic_fetch_add(&g_queue_drops, 1, __ATOMIC_RELAXED);
@@ -275,32 +258,25 @@ static void __attribute__((noreturn)) anti_toctou_worker(void) {
         }
         if (deadline) {
             sti();
-            while ((int64_t) (anti_toctou_rdtsc() - deadline) < 0)
-                cpu_relax();
+            while ((int64_t) (anti_toctou_rdtsc() - deadline) < 0) cpu_relax();
             cli();
             continue;
         }
 
         proc_t *p = job.proc;
-        if (__sync_bool_compare_and_swap(&p->state, PROC_WAITING,
-                                         PROC_READY))
-            proc_set_ready(p);
+        if (__sync_bool_compare_and_swap(&p->state, PROC_WAITING, PROC_READY)) proc_set_ready(p);
         __atomic_fetch_add(&g_delays_applied, 1, __ATOMIC_RELAXED);
-        __atomic_fetch_add(&g_total_delay_us, job.delay_us,
-                           __ATOMIC_RELAXED);
+        __atomic_fetch_add(&g_total_delay_us, job.delay_us, __ATOMIC_RELAXED);
         __atomic_store_n(&g_last_delay_us, job.delay_us, __ATOMIC_RELAXED);
         proc_unref(p);
     }
 }
 
 void anti_toctou_set_enabled(bool enabled) {
-    __atomic_store_n(&g_enabled, enabled && g_delay_worker ? 1u : 0u,
-                     __ATOMIC_RELEASE);
+    __atomic_store_n(&g_enabled, enabled && g_delay_worker ? 1u : 0u, __ATOMIC_RELEASE);
 }
 
-bool anti_toctou_enabled(void) {
-    return __atomic_load_n(&g_enabled, __ATOMIC_ACQUIRE) != 0;
-}
+bool anti_toctou_enabled(void) { return __atomic_load_n(&g_enabled, __ATOMIC_ACQUIRE) != 0; }
 
 void anti_toctou_reset(void) {
     spin_lock(&g_detector_lock);
@@ -324,39 +300,29 @@ void anti_toctou_get_stats(anti_toctou_stats_t *out) {
     out->min_delay_us = ANTI_TOCTOU_MIN_DELAY_US;
     out->max_delay_us = ANTI_TOCTOU_MAX_DELAY_US;
     out->queue_capacity = ANTI_TOCTOU_DELAY_SLOTS;
-    out->vfs_observations =
-        __atomic_load_n(&g_vfs_observations, __ATOMIC_RELAXED);
-    out->memory_observations =
-        __atomic_load_n(&g_memory_observations, __ATOMIC_RELAXED);
-    out->vfs_detections =
-        __atomic_load_n(&g_vfs_detections, __ATOMIC_RELAXED);
-    out->memory_detections =
-        __atomic_load_n(&g_memory_detections, __ATOMIC_RELAXED);
-    out->delays_queued =
-        __atomic_load_n(&g_delays_queued, __ATOMIC_RELAXED);
-    out->delays_applied =
-        __atomic_load_n(&g_delays_applied, __ATOMIC_RELAXED);
+    out->vfs_observations = __atomic_load_n(&g_vfs_observations, __ATOMIC_RELAXED);
+    out->memory_observations = __atomic_load_n(&g_memory_observations, __ATOMIC_RELAXED);
+    out->vfs_detections = __atomic_load_n(&g_vfs_detections, __ATOMIC_RELAXED);
+    out->memory_detections = __atomic_load_n(&g_memory_detections, __ATOMIC_RELAXED);
+    out->delays_queued = __atomic_load_n(&g_delays_queued, __ATOMIC_RELAXED);
+    out->delays_applied = __atomic_load_n(&g_delays_applied, __ATOMIC_RELAXED);
     out->queue_drops = __atomic_load_n(&g_queue_drops, __ATOMIC_RELAXED);
-    out->total_delay_us =
-        __atomic_load_n(&g_total_delay_us, __ATOMIC_RELAXED);
-    out->last_delay_us =
-        __atomic_load_n(&g_last_delay_us, __ATOMIC_RELAXED);
+    out->total_delay_us = __atomic_load_n(&g_total_delay_us, __ATOMIC_RELAXED);
+    out->last_delay_us = __atomic_load_n(&g_last_delay_us, __ATOMIC_RELAXED);
 }
 
 bool anti_toctou_init(void) {
     if (g_delay_worker) return true;
     g_cycles_per_us = detect_cycles_per_us();
     anti_toctou_reset();
-    g_delay_worker =
-        proc_create_kernel("[jitter-worker]", anti_toctou_worker);
+    g_delay_worker = proc_create_kernel("[jitter-worker]", anti_toctou_worker);
     if (!g_delay_worker) {
         log_error("ANTI-TOCTOU: could not create jitter worker");
         anti_toctou_set_enabled(false);
         return false;
     }
     anti_toctou_set_enabled(true);
-    log_info("ANTI-TOCTOU: worker pid=%u tsc=%lu cycles/us delay=%u..%u us",
-             g_delay_worker->pid, g_cycles_per_us,
-             ANTI_TOCTOU_MIN_DELAY_US, ANTI_TOCTOU_MAX_DELAY_US);
+    log_info("ANTI-TOCTOU: worker pid=%u tsc=%lu cycles/us delay=%u..%u us", g_delay_worker->pid,
+             g_cycles_per_us, ANTI_TOCTOU_MIN_DELAY_US, ANTI_TOCTOU_MAX_DELAY_US);
     return true;
 }

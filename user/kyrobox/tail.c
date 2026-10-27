@@ -143,9 +143,12 @@ int main(int argc, char **argv) {
             continue;
         }
         for (const char *p = a + 1; *p; p++) {
-            if (*p == 'f' || *p == 'F') o.follow = true;
-            else if (*p == 'q') o.quiet = true;
-            else if (*p == 'v') o.verbose = true;
+            if (*p == 'f' || *p == 'F')
+                o.follow = true;
+            else if (*p == 'q')
+                o.quiet = true;
+            else if (*p == 'v')
+                o.verbose = true;
             else {
                 usage();
                 return 1;

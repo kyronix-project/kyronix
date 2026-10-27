@@ -19,7 +19,7 @@ static int copy_file_to_stdout(const char *path) {
         char *p = buf;
         ssize_t left = n;
         while (left > 0) {
-            ssize_t written = write(STDOUT_FILENO, p, (size_t)left);
+            ssize_t written = write(STDOUT_FILENO, p, (size_t) left);
             if (written < 0) {
                 if (errno == EINTR) continue;
                 kx_warn("stdout");
@@ -36,7 +36,7 @@ static int copy_file_to_stdout(const char *path) {
 
 int main(int argc, char **argv) {
     kx_prog = "lspci";
-    (void)argv;
+    (void) argv;
     if (argc != 1) {
         fprintf(stderr, "usage: lspci\n");
         return 2;

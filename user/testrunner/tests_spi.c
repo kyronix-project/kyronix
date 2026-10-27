@@ -18,7 +18,7 @@
 #define SPI_IOC_WR_BITS_PER_WORD 0x40016B03
 #define SPI_IOC_RD_MAX_SPEED_HZ 0x80046B04
 #define SPI_IOC_WR_MAX_SPEED_HZ 0x40046B04
-#define SPI_IOC_MESSAGE(N) (0x40006B00 | ((uint32_t)(N * sizeof(struct spi_ioc_transfer)) << 16))
+#define SPI_IOC_MESSAGE(N) (0x40006B00 | ((uint32_t) (N * sizeof(struct spi_ioc_transfer)) << 16))
 
 struct spi_ioc_transfer {
     uint64_t tx_buf;
@@ -118,8 +118,8 @@ int test_spi_transfer_loopback(void) {
 
     struct spi_ioc_transfer xfer;
     memset(&xfer, 0, sizeof(xfer));
-    xfer.tx_buf = (uint64_t)(uintptr_t) tx;
-    xfer.rx_buf = (uint64_t)(uintptr_t) rx;
+    xfer.tx_buf = (uint64_t) (uintptr_t) tx;
+    xfer.rx_buf = (uint64_t) (uintptr_t) rx;
     xfer.len = sizeof(tx);
     xfer.speed_hz = 1000000;
     xfer.bits_per_word = 8;

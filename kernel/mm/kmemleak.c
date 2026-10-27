@@ -53,8 +53,7 @@ static void kmemleak_hash_build(void) {
     for (int i = 0; i < KMEMLEAK_HASH_SIZE; i++) g_hash[i] = 0;
     for (int i = 0; i < KMEMLEAK_MAX; i++) {
         if (!g_entries[i].used) continue;
-        uint32_t h = kmemleak_hash_of((uint64_t) g_entries[i].ptr) &
-                     (KMEMLEAK_HASH_SIZE - 1);
+        uint32_t h = kmemleak_hash_of((uint64_t) g_entries[i].ptr) & (KMEMLEAK_HASH_SIZE - 1);
         while (g_hash[h]) h = (h + 1) & (KMEMLEAK_HASH_SIZE - 1);
         g_hash[h] = i + 1;
     }
@@ -65,8 +64,7 @@ static int kmemleak_hash_find(uint64_t v) {
     uint32_t h = kmemleak_hash_of(v) & (KMEMLEAK_HASH_SIZE - 1);
     while (g_hash[h]) {
         int idx = g_hash[h] - 1;
-        if ((uint64_t) g_entries[idx].ptr == v && g_entries[idx].used)
-            return idx;
+        if ((uint64_t) g_entries[idx].ptr == v && g_entries[idx].used) return idx;
         h = (h + 1) & (KMEMLEAK_HASH_SIZE - 1);
     }
     return -1;

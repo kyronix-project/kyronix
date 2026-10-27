@@ -66,8 +66,7 @@ void usb_udelay(uint64_t us) {
     while (rdtsc() < end) cpu_relax();
 }
 
-int usb_pci_for_each(uint8_t class_, uint8_t subclass, int prog_if,
-                     usb_pci_probe_fn probe) {
+int usb_pci_for_each(uint8_t class_, uint8_t subclass, int prog_if, usb_pci_probe_fn probe) {
     int n = 0;
     for (int i = 0; i < g_pci_ndevs; i++) {
         pci_dev_t *d = &g_pci_devs[i];
@@ -80,7 +79,7 @@ int usb_pci_for_each(uint8_t class_, uint8_t subclass, int prog_if,
 }
 
 #define USB_MMIO_VBASE 0xffff950000000000ULL
-#define USB_MMIO_SLOT  (64ULL * 1024 * 1024)
+#define USB_MMIO_SLOT (64ULL * 1024 * 1024)
 #define USB_MMIO_SLOTS 16
 
 static spinlock_t g_mmio_lock = SPINLOCK_INIT;
@@ -103,8 +102,7 @@ volatile void *usb_mmio_map_region(uintptr_t phys, size_t size) {
     }
     uint64_t vbase = USB_MMIO_VBASE + (uint64_t) next_slot * USB_MMIO_SLOT;
     for (uint64_t i = 0; i < pages; i++) {
-        if (vmm_map(&g_kernel_space, vbase + i * PAGE_SIZE,
-                    base + i * PAGE_SIZE,
+        if (vmm_map(&g_kernel_space, vbase + i * PAGE_SIZE, base + i * PAGE_SIZE,
                     VMM_PRESENT | VMM_WRITE | VMM_NX | VMM_PCD) != 0) {
             spin_unlock(&g_mmio_lock);
             irq_restore(flags);
@@ -150,7 +148,7 @@ static bool low_chunk_add(void) {
     void *phys = pmm_dma32_reserve_alloc(LOW_ARENA_CHUNK_PAGES);
     if (!phys) return false;
     low_chunk_t *c = &g_low_chunks[g_low_nchunks++];
-    c->phys = (uintptr_t)phys;
+    c->phys = (uintptr_t) phys;
     c->pages = LOW_ARENA_CHUNK_PAGES;
     c->free_off = 0;
     c->next = NULL;
@@ -262,9 +260,8 @@ void usb_input_report_key(uint8_t set1_scancode, bool ext, int pressed) {
     input_push(INPUT_DEV_KBD, EV_SYN, SYN_REPORT, 0);
 }
 
-void usb_mouse_inject_rel(int32_t dx, int32_t dy, bool btn_left, bool btn_right,
-                          bool btn_middle, int32_t wheel)
-{
+void usb_mouse_inject_rel(int32_t dx, int32_t dy, bool btn_left, bool btn_right, bool btn_middle,
+                          int32_t wheel) {
     if (dx) input_push(INPUT_DEV_MOUSE, EV_REL, REL_X, dx);
     if (dy) input_push(INPUT_DEV_MOUSE, EV_REL, REL_Y, dy);
     if (wheel) input_push(INPUT_DEV_MOUSE, EV_REL, REL_WHEEL, wheel);
@@ -275,7 +272,9 @@ void usb_mouse_inject_rel(int32_t dx, int32_t dy, bool btn_left, bool btn_right,
         if (btns[i] != btns_prev[i])
             input_push(INPUT_DEV_MOUSE, EV_KEY, BTN_LEFT + i, btns[i] ? 1 : 0);
     }
-    btns_prev[0] = btn_left; btns_prev[1] = btn_right; btns_prev[2] = btn_middle;
+    btns_prev[0] = btn_left;
+    btns_prev[1] = btn_right;
+    btns_prev[2] = btn_middle;
 
     input_push(INPUT_DEV_MOUSE, EV_SYN, SYN_REPORT, 0);
 }

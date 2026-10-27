@@ -45,8 +45,7 @@ static inline volatile void *mmio_map(uintptr_t phys, size_t size) {
 #include "../bus/pci/pci.h"
 
 typedef void (*usb_pci_probe_fn)(pci_dev_t *dev);
-int usb_pci_for_each(uint8_t class_, uint8_t subclass, int prog_if,
-                     usb_pci_probe_fn probe);
+int usb_pci_for_each(uint8_t class_, uint8_t subclass, int prog_if, usb_pci_probe_fn probe);
 
 static inline uint32_t pci_read_dword(pci_dev_t *d, uint8_t reg) {
     return pci_read32(d->bus, d->dev, d->fn, reg);
@@ -57,7 +56,7 @@ static inline void pci_write_dword(pci_dev_t *d, uint8_t reg, uint32_t val) {
 
 #include "../proc/proc.h"
 
-#define task_create(name, fn, arg) proc_create_kernel((name), (void (*)(void)) (fn))
+#define task_create(name, fn, arg) proc_create_kernel((name), (void (*)(void))(fn))
 
 #include "../input/input.h"
 #include "../input/kbd.h"
@@ -66,5 +65,5 @@ void usb_input_report_key(uint8_t set1_scancode, bool ext, int pressed);
 
 void tty_usb_input_char(uint8_t c);
 
-void usb_mouse_inject_rel(int32_t dx, int32_t dy, bool btn_left, bool btn_right,
-                          bool btn_middle, int32_t wheel);
+void usb_mouse_inject_rel(int32_t dx, int32_t dy, bool btn_left, bool btn_right, bool btn_middle,
+                          int32_t wheel);

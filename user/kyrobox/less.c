@@ -108,21 +108,24 @@ static void print_line(const char *s, size_t lineno, bool highlight) {
     if (highlight) fputs("\033[7m", stdout);
     int w = max_lineno > 0 ? snprintf(NULL, 0, "%zu", lineno) : 0;
     if (max_lineno > 0) printf(" %*zu ", w, lineno + 1);
-    size_t vpos = max_lineno > 0 ? (size_t)w + 3 : 0;
-    for (; *s && vpos < (size_t)cols; s++) {
-        unsigned char c = (unsigned char)*s;
+    size_t vpos = max_lineno > 0 ? (size_t) w + 3 : 0;
+    for (; *s && vpos < (size_t) cols; s++) {
+        unsigned char c = (unsigned char) *s;
         if (c == '\t') {
             int stop = TAB_WIDTH - (vpos % TAB_WIDTH);
-            if (vpos + stop > (size_t)cols) stop = (int)((size_t)cols - vpos);
-            fputs("        " + (TAB_WIDTH - stop), stdout);
+            if (vpos + stop > (size_t) cols) stop = (int) ((size_t) cols - vpos);
+            {
+                static const char sp[] = "        ";
+                fputs(sp + (TAB_WIDTH - stop), stdout);
+            }
             vpos += stop;
         } else if (c < 32) {
-            if (vpos + 2 > (size_t)cols) break;
+            if (vpos + 2 > (size_t) cols) break;
             putchar('^');
             putchar('@' + c);
             vpos += 2;
         } else if (c == 127) {
-            if (vpos + 2 > (size_t)cols) break;
+            if (vpos + 2 > (size_t) cols) break;
             fputs("^?", stdout);
             vpos += 2;
         } else {
@@ -134,13 +137,9 @@ static void print_line(const char *s, size_t lineno, bool highlight) {
     putchar('\n');
 }
 
-static void clear_screen(void) {
-    fputs("\033[H\033[J", stdout);
-}
+static void clear_screen(void) { fputs("\033[H\033[J", stdout); }
 
-static void move_to(int r, int c) {
-    printf("\033[%d;%dH", r + 1, c + 1);
-}
+static void move_to(int r, int c) { printf("\033[%d;%dH", r + 1, c + 1); }
 
 static void status_line(const char *fmt, ...) {
     char buf[256];
@@ -152,7 +151,7 @@ static void status_line(const char *fmt, ...) {
     move_to(rows - 1, 0);
     fputs("\033[K", stdout);
     size_t slen = strlen(buf);
-    if (slen > (size_t)cols) buf[cols] = 0;
+    if (slen > (size_t) cols) buf[cols] = 0;
     fputs(buf, stdout);
     fputs("\033[27m", stdout);
 }
@@ -162,7 +161,7 @@ static void update_status(void) {
         status_line("%s (END)", fname ? fname : "[no file]");
         return;
     }
-    size_t page = (size_t)rows - 1;
+    size_t page = (size_t) rows - 1;
     size_t total = lines.count;
     size_t bot = top + page;
     if (bot > total) bot = total;
@@ -185,7 +184,7 @@ static void display(void) {
         print_line(lines.data[i], i, hl);
     }
     size_t shown = end - top;
-    for (size_t i = shown; i < (size_t)page; i++) fputs("~\n", stdout);
+    for (size_t i = shown; i < (size_t) page; i++) fputs("~\n", stdout);
     update_status();
     move_to(cur - top, 0);
 }
@@ -194,7 +193,7 @@ static void scroll_to(size_t t) {
     if (t >= lines.count) t = lines.count > 0 ? lines.count - 1 : 0;
     cur = t;
     int page = rows - 1;
-    if (lines.count <= (size_t)page) {
+    if (lines.count <= (size_t) page) {
         top = 0;
     } else if (cur < top) {
         top = cur;
@@ -208,7 +207,7 @@ static void scroll_to(size_t t) {
 static char read_key(void) {
     unsigned char c;
     if (read(STDIN_FILENO, &c, 1) != 1) return 0;
-    return (char)c;
+    return (char) c;
 }
 
 static int read_escape_seq(void) {
@@ -226,21 +225,31 @@ static int read_escape_seq(void) {
             return 0;
         }
         switch (c) {
-        case 'A': return -1; /* up */
-        case 'B': return -2; /* down */
-        case 'C': return -3; /* right */
-        case 'D': return -4; /* left */
-        case 'H': return -5; /* home */
-        case 'F': return -6; /* end */
-        default:  return 0;
+        case 'A':
+            return -1; /* up */
+        case 'B':
+            return -2; /* down */
+        case 'C':
+            return -3; /* right */
+        case 'D':
+            return -4; /* left */
+        case 'H':
+            return -5; /* home */
+        case 'F':
+            return -6; /* end */
+        default:
+            return 0;
         }
     }
     if (c == 'O') {
         c = read_key();
         switch (c) {
-        case 'H': return -5; /* home */
-        case 'F': return -6; /* end */
-        default:  return 0;
+        case 'H':
+            return -5; /* home */
+        case 'F':
+            return -6; /* end */
+        default:
+            return 0;
         }
     }
     return 0;
@@ -253,7 +262,7 @@ static int read_key_press(void) {
         if (seq) return seq;
         return '\033';
     }
-    return (unsigned char)c;
+    return (unsigned char) c;
 }
 
 static size_t find_next(const char *pat, size_t start) {
@@ -277,7 +286,7 @@ static int search_prompt(const char *prompt) {
     char buf[256];
     size_t pos = 0;
     for (;;) {
-        move_to(rows - 1, (int)strlen(prompt) + (int)pos);
+        move_to(rows - 1, (int) strlen(prompt) + (int) pos);
         int c = read_key_press();
         if (c == '\n' || c == '\r') {
             buf[pos] = 0;
@@ -293,7 +302,7 @@ static int search_prompt(const char *prompt) {
             break;
         }
         if (pos < sizeof(buf) - 1 && c >= 32 && c < 127) {
-            buf[pos++] = (char)c;
+            buf[pos++] = (char) c;
             putc(c, stderr);
         }
     }
@@ -333,7 +342,7 @@ int main(int argc, char **argv) {
         read_stdin();
     }
     if (lines.count == 0) return 0;
-    max_lineno = (int)snprintf(NULL, 0, "%zu", lines.count);
+    max_lineno = (int) snprintf(NULL, 0, "%zu", lines.count);
     if (!isatty(STDOUT_FILENO)) {
         for (size_t i = 0; i < lines.count; i++) puts(lines.data[i]);
         for (size_t i = 0; i < lines.count; i++) free(lines.data[i]);
@@ -377,7 +386,7 @@ int main(int argc, char **argv) {
             scroll_to(cur + page);
             break;
         case 'b':
-            if (cur > (size_t)page)
+            if (cur > (size_t) page)
                 scroll_to(cur - page);
             else
                 scroll_to(0);
@@ -386,7 +395,7 @@ int main(int argc, char **argv) {
             scroll_to(cur + page / 2);
             break;
         case 'u':
-            if (cur > (size_t)(page / 2))
+            if (cur > (size_t) (page / 2))
                 scroll_to(cur - page / 2);
             else
                 scroll_to(0);

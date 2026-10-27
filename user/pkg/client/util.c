@@ -14,10 +14,10 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
-#include <termios.h>
-#include <time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "pkg.h"
@@ -81,12 +81,12 @@ char *read_file(const char *path, size_t *len_out) {
         return NULL;
     }
     rewind(f);
-    char *buf = (char *)malloc((size_t)sz + 1);
+    char *buf = (char *) malloc((size_t) sz + 1);
     if (!buf) {
         fclose(f);
         return NULL;
     }
-    size_t rd = fread(buf, 1, (size_t)sz, f);
+    size_t rd = fread(buf, 1, (size_t) sz, f);
     fclose(f);
     buf[rd] = '\0';
     if (len_out) *len_out = rd;
@@ -102,9 +102,7 @@ int write_text_file(const char *path, const char *text) {
     return ok ? 0 : -1;
 }
 
-int starts_with(const char *s, const char *p) {
-    return strncmp(s, p, strlen(p)) == 0;
-}
+int starts_with(const char *s, const char *p) { return strncmp(s, p, strlen(p)) == 0; }
 
 void trim_crlf(char *s) {
     size_t n = strlen(s);
@@ -112,19 +110,14 @@ void trim_crlf(char *s) {
 }
 
 void ensure_dir(const char *path) {
-    if (mkdir(path, 0755) != 0 && errno != EEXIST) {
-        dief("mkdir failed: %s", path);
-    }
+    if (mkdir(path, 0755) != 0 && errno != EEXIST) { dief("mkdir failed: %s", path); }
 }
 
 void ensure_dir_mode(const char *path, unsigned mode) {
-    if (mkdir(path, (mode_t) mode) != 0 && errno != EEXIST)
-        dief("mkdir failed: %s", path);
+    if (mkdir(path, (mode_t) mode) != 0 && errno != EEXIST) dief("mkdir failed: %s", path);
     struct stat st;
-    if (lstat(path, &st) != 0 || !S_ISDIR(st.st_mode))
-        dief("unsafe directory path: %s", path);
-    if (chmod(path, (mode_t) mode) != 0)
-        dief("chmod failed: %s", path);
+    if (lstat(path, &st) != 0 || !S_ISDIR(st.st_mode)) dief("unsafe directory path: %s", path);
+    if (chmod(path, (mode_t) mode) != 0) dief("chmod failed: %s", path);
 }
 
 int valid_pkg_name(const char *name) {
@@ -141,8 +134,7 @@ int valid_pkg_name(const char *name) {
 int valid_repo_name(const char *name) {
     if (!name || !name[0] || strlen(name) > 127) return 0;
     for (const unsigned char *p = (const unsigned char *) name; *p; p++)
-        if (*p < 0x20 || *p == 0x7f || *p == '[' || *p == ']' || *p == '=')
-            return 0;
+        if (*p < 0x20 || *p == 0x7f || *p == '[' || *p == ']' || *p == '=') return 0;
     return 1;
 }
 
@@ -160,8 +152,7 @@ static int path_has_dot_component(const char *path) {
         const char *start = p;
         while (*p && *p != '/') p++;
         size_t len = (size_t) (p - start);
-        if ((len == 1 && start[0] == '.') ||
-            (len == 2 && start[0] == '.' && start[1] == '.'))
+        if ((len == 1 && start[0] == '.') || (len == 2 && start[0] == '.' && start[1] == '.'))
             return 1;
     }
     return 0;
@@ -191,9 +182,7 @@ int remove_tree(const char *path) {
         char name[256] = "";
         struct dirent *entry;
         while ((entry = readdir(dir)) != NULL) {
-            if (strcmp(entry->d_name, ".") == 0 ||
-                strcmp(entry->d_name, "..") == 0)
-                continue;
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
             size_t name_len = strlen(entry->d_name);
             if (name_len >= sizeof(name)) {
                 closedir(dir);
@@ -207,8 +196,7 @@ int remove_tree(const char *path) {
 
         char child[1024];
         int n = snprintf(child, sizeof(child), "%s/%s", path, name);
-        if (n < 0 || (size_t) n >= sizeof(child) || remove_tree(child) != 0)
-            return -1;
+        if (n < 0 || (size_t) n >= sizeof(child) || remove_tree(child) != 0) return -1;
     }
     return rmdir(path);
 }
@@ -308,9 +296,8 @@ int run_cmd_input_file(const char *input_path, char *const argv[]) {
     return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : -1;
 }
 
-int run_pipeline_file_in(const char *dir, const char *input_path,
-                         char *const producer[], char *const consumer[],
-                         size_t max_output) {
+int run_pipeline_file_in(const char *dir, const char *input_path, char *const producer[],
+                         char *const consumer[], size_t max_output) {
     int input_fd = open(input_path, O_RDONLY);
     if (input_fd < 0) return -1;
     int producer_pipe[2], consumer_pipe[2];
@@ -398,8 +385,7 @@ int run_pipeline_file_in(const char *dir, const char *input_path,
         total += (size_t) got;
         size_t offset = 0;
         while (offset < (size_t) got) {
-            ssize_t sent = write(consumer_pipe[1], buffer + offset,
-                                 (size_t) got - offset);
+            ssize_t sent = write(consumer_pipe[1], buffer + offset, (size_t) got - offset);
             if (sent < 0 && errno == EINTR) continue;
             if (sent <= 0) {
                 relay_ok = 0;
@@ -411,17 +397,14 @@ int run_pipeline_file_in(const char *dir, const char *input_path,
     }
     close(producer_pipe[0]);
     close(consumer_pipe[1]);
-    if (old_sigpipe != SIG_ERR)
-        signal(SIGPIPE, old_sigpipe);
+    if (old_sigpipe != SIG_ERR) signal(SIGPIPE, old_sigpipe);
     int producer_status = 0;
     int consumer_status = 0;
-    if (waitpid(producer_pid, &producer_status, 0) < 0)
-        producer_status = -1;
-    if (waitpid(consumer_pid, &consumer_status, 0) < 0)
-        consumer_status = -1;
-    return relay_ok && producer_status >= 0 && consumer_status >= 0 &&
-                   WIFEXITED(producer_status) && WEXITSTATUS(producer_status) == 0 &&
-                   WIFEXITED(consumer_status) && WEXITSTATUS(consumer_status) == 0 ?
+    if (waitpid(producer_pid, &producer_status, 0) < 0) producer_status = -1;
+    if (waitpid(consumer_pid, &consumer_status, 0) < 0) consumer_status = -1;
+    return relay_ok && producer_status >= 0 && consumer_status >= 0 && WIFEXITED(producer_status) &&
+                   WEXITSTATUS(producer_status) == 0 && WIFEXITED(consumer_status) &&
+                   WEXITSTATUS(consumer_status) == 0 ?
                0 :
                -1;
 }
@@ -443,7 +426,7 @@ int read_repos(RepoConfig *repos, int max) {
         if (!*line) break;
 
         char *eol = strchr(line, '\n');
-        size_t llen = eol ? (size_t)(eol - line) : strlen(line);
+        size_t llen = eol ? (size_t) (eol - line) : strlen(line);
         char lbuf[1024];
         if (llen >= sizeof(lbuf)) llen = sizeof(lbuf) - 1;
         memcpy(lbuf, line, llen);
@@ -451,7 +434,8 @@ int read_repos(RepoConfig *repos, int max) {
         line = eol ? eol + 1 : line + llen;
 
         size_t n = strlen(lbuf);
-        while (n > 0 && (lbuf[n-1] == ' ' || lbuf[n-1] == '\t' || lbuf[n-1] == '\r')) lbuf[--n] = '\0';
+        while (n > 0 && (lbuf[n - 1] == ' ' || lbuf[n - 1] == '\t' || lbuf[n - 1] == '\r'))
+            lbuf[--n] = '\0';
         char *s = lbuf;
         while (*s == ' ' || *s == '\t') s++;
 
@@ -472,7 +456,7 @@ int read_repos(RepoConfig *repos, int max) {
 
             char *end = strchr(s, ']');
             if (end) {
-                size_t nlen = (size_t)(end - s - 1);
+                size_t nlen = (size_t) (end - s - 1);
                 if (nlen >= sizeof(current_name)) nlen = sizeof(current_name) - 1;
                 memcpy(current_name, s + 1, nlen);
                 current_name[nlen] = '\0';
@@ -489,27 +473,29 @@ int read_repos(RepoConfig *repos, int max) {
         char *val = eq + 1;
 
         size_t klen = strlen(key);
-        while (klen > 0 && (key[klen-1] == ' ' || key[klen-1] == '\t')) key[--klen] = '\0';
+        while (klen > 0 && (key[klen - 1] == ' ' || key[klen - 1] == '\t')) key[--klen] = '\0';
 
         /* trim value + strip quotes */
         while (*val == ' ' || *val == '\t') val++;
         size_t vlen = strlen(val);
-        while (vlen > 0 && (val[vlen-1] == ' ' || val[vlen-1] == '\t')) val[--vlen] = '\0';
+        while (vlen > 0 && (val[vlen - 1] == ' ' || val[vlen - 1] == '\t')) val[--vlen] = '\0';
         {
             char *hash = strchr(val, '#');
             char *semi = strchr(val, ';');
             char *comment = NULL;
-            if (hash && semi) comment = hash < semi ? hash : semi;
-            else comment = hash ? hash : semi;
+            if (hash && semi)
+                comment = hash < semi ? hash : semi;
+            else
+                comment = hash ? hash : semi;
             if (comment) {
-                vlen = (size_t)(comment - val);
+                vlen = (size_t) (comment - val);
                 val[vlen] = '\0';
-                while (vlen > 0 && (val[vlen-1] == ' ' || val[vlen-1] == '\t')) val[--vlen] = '\0';
+                while (vlen > 0 && (val[vlen - 1] == ' ' || val[vlen - 1] == '\t'))
+                    val[--vlen] = '\0';
             }
         }
-        if (vlen >= 2 &&
-            ((val[0] == '"' && val[vlen-1] == '"') ||
-             (val[0] == '\'' && val[vlen-1] == '\''))) {
+        if (vlen >= 2 && ((val[0] == '"' && val[vlen - 1] == '"') ||
+                          (val[0] == '\'' && val[vlen - 1] == '\''))) {
             val++;
             vlen -= 2;
             val[vlen] = '\0';
@@ -521,13 +507,15 @@ int read_repos(RepoConfig *repos, int max) {
             unsigned v = 0;
             int neg = 1;
             const char *p = val;
-            if (*p == '-') { neg = -1; p++; }
+            if (*p == '-') {
+                neg = -1;
+                p++;
+            }
             if (!isdigit((unsigned char) *p)) continue;
             int valid = 1;
             while (*p >= '0' && *p <= '9') {
                 unsigned digit = (unsigned) (*p - '0');
-                unsigned limit = neg < 0 ? (unsigned) INT_MAX + 1U :
-                                           (unsigned) INT_MAX;
+                unsigned limit = neg < 0 ? (unsigned) INT_MAX + 1U : (unsigned) INT_MAX;
                 if (v > (limit - digit) / 10U) {
                     valid = 0;
                     break;
@@ -537,14 +525,13 @@ int read_repos(RepoConfig *repos, int max) {
             }
             if (*p != '\0') valid = 0;
             if (valid)
-                current_priority = neg < 0 && v == (unsigned) INT_MAX + 1U ?
-                                       INT_MIN :
-                                       (int) v * neg;
+                current_priority =
+                    neg < 0 && v == (unsigned) INT_MAX + 1U ? INT_MIN : (int) v * neg;
         }
     }
 
-    if (has_section && current_url[0] && count < max &&
-        valid_repo_name(current_name) && valid_repo_url(current_url)) {
+    if (has_section && current_url[0] && count < max && valid_repo_name(current_name) &&
+        valid_repo_url(current_url)) {
         snprintf(repos[count].name, sizeof(repos[count].name), "%s", current_name);
         snprintf(repos[count].url, sizeof(repos[count].url), "%s", current_url);
         repos[count].priority = current_priority;
@@ -577,8 +564,7 @@ void write_repos(const RepoConfig *repos, int count) {
         if (i < count - 1) fputc('\n', f);
     }
     if (fclose(f) != 0) dief("cannot save %s", REPO_SOURCES_PATH);
-    if (chmod(REPO_SOURCES_PATH, 0600) != 0)
-        dief("cannot protect %s", REPO_SOURCES_PATH);
+    if (chmod(REPO_SOURCES_PATH, 0600) != 0) dief("cannot protect %s", REPO_SOURCES_PATH);
 }
 
 void add_repo(const char *name, const char *url, int priority) {
@@ -617,8 +603,7 @@ void remove_repo(const char *name) {
     for (int i = 0; i < count; i++) {
         if (strcmp(repos[i].name, name) == 0) {
             found = 1;
-            for (int j = i; j < count - 1; j++)
-                repos[j] = repos[j + 1];
+            for (int j = i; j < count - 1; j++) repos[j] = repos[j + 1];
             count--;
             break;
         }
@@ -633,7 +618,7 @@ void remove_repo(const char *name) {
 long disk_available(const char *path) {
     struct statvfs vfs;
     if (statvfs(path, &vfs) != 0) return -1;
-    return (long)(vfs.f_bavail * vfs.f_frsize);
+    return (long) (vfs.f_bavail * vfs.f_frsize);
 }
 
 pid_t spinner_start(void) {

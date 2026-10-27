@@ -2,9 +2,7 @@
 #include <math.h>
 #include <regex.h>
 
-typedef enum {
-    V_NUM, V_STR, V_STRNUM
-} ValType;
+typedef enum { V_NUM, V_STR, V_STRNUM } ValType;
 
 typedef struct {
     ValType type;
@@ -13,9 +11,27 @@ typedef struct {
 } Value;
 
 typedef enum {
-    E_NUM, E_STR, E_ERE, E_FIELD, E_VAR, E_ASSIGN, E_OPASSIGN,
-    E_BINOP, E_NEG, E_POS, E_NOT, E_AND, E_OR, E_MATCH, E_CONCAT,
-    E_TERNARY, E_PREINC, E_PREDEC, E_POSTINC, E_POSTDEC, E_CALL
+    E_NUM,
+    E_STR,
+    E_ERE,
+    E_FIELD,
+    E_VAR,
+    E_ASSIGN,
+    E_OPASSIGN,
+    E_BINOP,
+    E_NEG,
+    E_POS,
+    E_NOT,
+    E_AND,
+    E_OR,
+    E_MATCH,
+    E_CONCAT,
+    E_TERNARY,
+    E_PREINC,
+    E_PREDEC,
+    E_POSTINC,
+    E_POSTDEC,
+    E_CALL
 } ExprKind;
 
 typedef struct ExprList {
@@ -34,8 +50,17 @@ typedef struct Expr {
 } Expr;
 
 typedef enum {
-    S_EXPR, S_PRINT, S_PRINTF, S_IF, S_WHILE, S_FOR, S_BLOCK,
-    S_NEXT, S_EXIT, S_BREAK, S_CONTINUE
+    S_EXPR,
+    S_PRINT,
+    S_PRINTF,
+    S_IF,
+    S_WHILE,
+    S_FOR,
+    S_BLOCK,
+    S_NEXT,
+    S_EXIT,
+    S_BREAK,
+    S_CONTINUE
 } StmtKind;
 
 typedef struct Stmt {
@@ -56,14 +81,57 @@ typedef struct Item {
 } Item;
 
 typedef enum {
-    T_EOF, T_NUM, T_STR, T_ERE, T_IDENT,
-    T_LBRACE, T_RBRACE, T_LPAREN, T_RPAREN, T_SEMI, T_COMMA,
-    T_DOLLAR, T_ASSIGN, T_ADDA, T_SUBA, T_MULA, T_DIVA, T_MODA,
-    T_OROR, T_ANDAND, T_NOT, T_LT, T_LE, T_GT, T_GE, T_EQ, T_NE,
-    T_MATCH, T_NOTMATCH, T_PLUS, T_MINUS, T_STAR, T_SLASH, T_PERCENT,
-    T_CARET, T_INC, T_DEC, T_QMARK, T_COLON,
-    T_BEGIN, T_END, T_IF, T_ELSE, T_WHILE, T_FOR, T_PRINT, T_PRINTF,
-    T_NEXT, T_EXIT, T_BREAK, T_CONTINUE
+    T_EOF,
+    T_NUM,
+    T_STR,
+    T_ERE,
+    T_IDENT,
+    T_LBRACE,
+    T_RBRACE,
+    T_LPAREN,
+    T_RPAREN,
+    T_SEMI,
+    T_COMMA,
+    T_DOLLAR,
+    T_ASSIGN,
+    T_ADDA,
+    T_SUBA,
+    T_MULA,
+    T_DIVA,
+    T_MODA,
+    T_OROR,
+    T_ANDAND,
+    T_NOT,
+    T_LT,
+    T_LE,
+    T_GT,
+    T_GE,
+    T_EQ,
+    T_NE,
+    T_MATCH,
+    T_NOTMATCH,
+    T_PLUS,
+    T_MINUS,
+    T_STAR,
+    T_SLASH,
+    T_PERCENT,
+    T_CARET,
+    T_INC,
+    T_DEC,
+    T_QMARK,
+    T_COLON,
+    T_BEGIN,
+    T_END,
+    T_IF,
+    T_ELSE,
+    T_WHILE,
+    T_FOR,
+    T_PRINT,
+    T_PRINTF,
+    T_NEXT,
+    T_EXIT,
+    T_BREAK,
+    T_CONTINUE
 } TokType;
 
 typedef struct {
@@ -83,11 +151,13 @@ static void lex_error(const char *msg) {
 }
 
 static int kw_lookup(const char *s, TokType *t) {
-    static const struct { const char *name; TokType t; } kws[] = {
-        {"BEGIN", T_BEGIN}, {"END", T_END}, {"if", T_IF}, {"else", T_ELSE},
-        {"while", T_WHILE}, {"for", T_FOR}, {"print", T_PRINT},
-        {"printf", T_PRINTF}, {"next", T_NEXT}, {"exit", T_EXIT},
-        {"break", T_BREAK}, {"continue", T_CONTINUE},
+    static const struct {
+        const char *name;
+        TokType t;
+    } kws[] = {
+        { "BEGIN", T_BEGIN }, { "END", T_END },   { "if", T_IF },       { "else", T_ELSE },
+        { "while", T_WHILE }, { "for", T_FOR },   { "print", T_PRINT }, { "printf", T_PRINTF },
+        { "next", T_NEXT },   { "exit", T_EXIT }, { "break", T_BREAK }, { "continue", T_CONTINUE },
     };
     for (size_t i = 0; i < sizeof(kws) / sizeof(kws[0]); i++)
         if (strcmp(s, kws[i].name) == 0) {
@@ -138,13 +208,27 @@ static void lex_next(void) {
             if (ch == '\\' && L.src[L.pos]) {
                 char e = L.src[L.pos++];
                 switch (e) {
-                    case 'n': ch = '\n'; break;
-                    case 't': ch = '\t'; break;
-                    case 'r': ch = '\r'; break;
-                    case '\\': ch = '\\'; break;
-                    case '"': ch = '"'; break;
-                    case '/': ch = '/'; break;
-                    default: ch = e; break;
+                case 'n':
+                    ch = '\n';
+                    break;
+                case 't':
+                    ch = '\t';
+                    break;
+                case 'r':
+                    ch = '\r';
+                    break;
+                case '\\':
+                    ch = '\\';
+                    break;
+                case '"':
+                    ch = '"';
+                    break;
+                case '/':
+                    ch = '/';
+                    break;
+                default:
+                    ch = e;
+                    break;
                 }
             }
             if (len + 1 >= cap) {
@@ -206,57 +290,178 @@ static void lex_next(void) {
     char c2 = L.src[L.pos + 1];
     L.pos++;
     switch (c) {
-        case '{': L.type = T_LBRACE; L.expect_operand = 1; return;
-        case '}': L.type = T_RBRACE; L.expect_operand = 1; return;
-        case '(': L.type = T_LPAREN; L.expect_operand = 1; return;
-        case ')': L.type = T_RPAREN; L.expect_operand = 0; return;
-        case ';': L.type = T_SEMI; L.expect_operand = 1; return;
-        case ',': L.type = T_COMMA; L.expect_operand = 1; return;
-        case '$': L.type = T_DOLLAR; L.expect_operand = 1; return;
-        case '?': L.type = T_QMARK; L.expect_operand = 1; return;
-        case ':': L.type = T_COLON; L.expect_operand = 1; return;
-        case '^': L.type = T_CARET; L.expect_operand = 1; return;
-        case '~': L.type = T_MATCH; L.expect_operand = 1; return;
-        case '+':
-            if (c2 == '+') { L.pos++; L.type = T_INC; L.expect_operand = 1; return; }
-            if (c2 == '=') { L.pos++; L.type = T_ADDA; L.expect_operand = 1; return; }
-            L.type = T_PLUS; L.expect_operand = 1; return;
-        case '-':
-            if (c2 == '-') { L.pos++; L.type = T_DEC; L.expect_operand = 1; return; }
-            if (c2 == '=') { L.pos++; L.type = T_SUBA; L.expect_operand = 1; return; }
-            L.type = T_MINUS; L.expect_operand = 1; return;
-        case '*':
-            if (c2 == '=') { L.pos++; L.type = T_MULA; L.expect_operand = 1; return; }
-            L.type = T_STAR; L.expect_operand = 1; return;
-        case '/':
-            if (c2 == '=') { L.pos++; L.type = T_DIVA; L.expect_operand = 1; return; }
-            L.type = T_SLASH; L.expect_operand = 1; return;
-        case '%':
-            if (c2 == '=') { L.pos++; L.type = T_MODA; L.expect_operand = 1; return; }
-            L.type = T_PERCENT; L.expect_operand = 1; return;
-        case '=':
-            if (c2 == '=') { L.pos++; L.type = T_EQ; L.expect_operand = 1; return; }
-            L.type = T_ASSIGN; L.expect_operand = 1; return;
-        case '!':
-            if (c2 == '=') { L.pos++; L.type = T_NE; L.expect_operand = 1; return; }
-            if (c2 == '~') { L.pos++; L.type = T_NOTMATCH; L.expect_operand = 1; return; }
-            L.type = T_NOT; L.expect_operand = 1; return;
-        case '<':
-            if (c2 == '=') { L.pos++; L.type = T_LE; L.expect_operand = 1; return; }
-            L.type = T_LT; L.expect_operand = 1; return;
-        case '>':
-            if (c2 == '=') { L.pos++; L.type = T_GE; L.expect_operand = 1; return; }
-            L.type = T_GT; L.expect_operand = 1; return;
-        case '&':
-            if (c2 == '&') { L.pos++; L.type = T_ANDAND; L.expect_operand = 1; return; }
-            lex_error("stray '&'");
+    case '{':
+        L.type = T_LBRACE;
+        L.expect_operand = 1;
+        return;
+    case '}':
+        L.type = T_RBRACE;
+        L.expect_operand = 1;
+        return;
+    case '(':
+        L.type = T_LPAREN;
+        L.expect_operand = 1;
+        return;
+    case ')':
+        L.type = T_RPAREN;
+        L.expect_operand = 0;
+        return;
+    case ';':
+        L.type = T_SEMI;
+        L.expect_operand = 1;
+        return;
+    case ',':
+        L.type = T_COMMA;
+        L.expect_operand = 1;
+        return;
+    case '$':
+        L.type = T_DOLLAR;
+        L.expect_operand = 1;
+        return;
+    case '?':
+        L.type = T_QMARK;
+        L.expect_operand = 1;
+        return;
+    case ':':
+        L.type = T_COLON;
+        L.expect_operand = 1;
+        return;
+    case '^':
+        L.type = T_CARET;
+        L.expect_operand = 1;
+        return;
+    case '~':
+        L.type = T_MATCH;
+        L.expect_operand = 1;
+        return;
+    case '+':
+        if (c2 == '+') {
+            L.pos++;
+            L.type = T_INC;
+            L.expect_operand = 1;
             return;
-        case '|':
-            if (c2 == '|') { L.pos++; L.type = T_OROR; L.expect_operand = 1; return; }
-            lex_error("stray '|'");
+        }
+        if (c2 == '=') {
+            L.pos++;
+            L.type = T_ADDA;
+            L.expect_operand = 1;
             return;
-        default:
-            lex_error("unexpected character in program");
+        }
+        L.type = T_PLUS;
+        L.expect_operand = 1;
+        return;
+    case '-':
+        if (c2 == '-') {
+            L.pos++;
+            L.type = T_DEC;
+            L.expect_operand = 1;
+            return;
+        }
+        if (c2 == '=') {
+            L.pos++;
+            L.type = T_SUBA;
+            L.expect_operand = 1;
+            return;
+        }
+        L.type = T_MINUS;
+        L.expect_operand = 1;
+        return;
+    case '*':
+        if (c2 == '=') {
+            L.pos++;
+            L.type = T_MULA;
+            L.expect_operand = 1;
+            return;
+        }
+        L.type = T_STAR;
+        L.expect_operand = 1;
+        return;
+    case '/':
+        if (c2 == '=') {
+            L.pos++;
+            L.type = T_DIVA;
+            L.expect_operand = 1;
+            return;
+        }
+        L.type = T_SLASH;
+        L.expect_operand = 1;
+        return;
+    case '%':
+        if (c2 == '=') {
+            L.pos++;
+            L.type = T_MODA;
+            L.expect_operand = 1;
+            return;
+        }
+        L.type = T_PERCENT;
+        L.expect_operand = 1;
+        return;
+    case '=':
+        if (c2 == '=') {
+            L.pos++;
+            L.type = T_EQ;
+            L.expect_operand = 1;
+            return;
+        }
+        L.type = T_ASSIGN;
+        L.expect_operand = 1;
+        return;
+    case '!':
+        if (c2 == '=') {
+            L.pos++;
+            L.type = T_NE;
+            L.expect_operand = 1;
+            return;
+        }
+        if (c2 == '~') {
+            L.pos++;
+            L.type = T_NOTMATCH;
+            L.expect_operand = 1;
+            return;
+        }
+        L.type = T_NOT;
+        L.expect_operand = 1;
+        return;
+    case '<':
+        if (c2 == '=') {
+            L.pos++;
+            L.type = T_LE;
+            L.expect_operand = 1;
+            return;
+        }
+        L.type = T_LT;
+        L.expect_operand = 1;
+        return;
+    case '>':
+        if (c2 == '=') {
+            L.pos++;
+            L.type = T_GE;
+            L.expect_operand = 1;
+            return;
+        }
+        L.type = T_GT;
+        L.expect_operand = 1;
+        return;
+    case '&':
+        if (c2 == '&') {
+            L.pos++;
+            L.type = T_ANDAND;
+            L.expect_operand = 1;
+            return;
+        }
+        lex_error("stray '&'");
+        return;
+    case '|':
+        if (c2 == '|') {
+            L.pos++;
+            L.type = T_OROR;
+            L.expect_operand = 1;
+            return;
+        }
+        lex_error("stray '|'");
+        return;
+    default:
+        lex_error("unexpected character in program");
     }
 }
 
@@ -287,7 +492,8 @@ static Stmt *parse_block(void);
 
 static ExprList *parse_expr_list(void) {
     ExprList *head = NULL, **tail = &head;
-    if (L.type == T_RPAREN || L.type == T_SEMI || L.type == T_RBRACE || L.type == T_EOF) return NULL;
+    if (L.type == T_RPAREN || L.type == T_SEMI || L.type == T_RBRACE || L.type == T_EOF)
+        return NULL;
     Expr *first;
     if (L.type == T_LPAREN) {
         size_t save_pos = L.pos - 1;
@@ -332,10 +538,9 @@ static ExprList *parse_expr_list(void) {
 }
 
 static int is_builtin(const char *name) {
-    static const char *names[] = {
-        "length", "substr", "index", "sprintf", "toupper", "tolower",
-        "int", "sin", "cos", "atan2", "exp", "log", "sqrt", "rand", "srand", NULL
-    };
+    static const char *names[] = { "length", "substr", "index", "sprintf", "toupper", "tolower",
+                                   "int",    "sin",    "cos",   "atan2",   "exp",     "log",
+                                   "sqrt",   "rand",   "srand", NULL };
     for (int i = 0; names[i]; i++)
         if (strcmp(name, names[i]) == 0) return 1;
     return 0;
@@ -344,91 +549,91 @@ static int is_builtin(const char *name) {
 static Expr *parse_primary(void) {
     Expr *e;
     switch (L.type) {
-        case T_NUM:
-            e = new_expr(E_NUM);
-            e->num = L.num;
+    case T_NUM:
+        e = new_expr(E_NUM);
+        e->num = L.num;
+        lex_next();
+        return e;
+    case T_STR:
+        e = new_expr(E_STR);
+        e->str = L.text;
+        L.text = NULL;
+        lex_next();
+        return e;
+    case T_ERE:
+        e = new_expr(E_ERE);
+        e->str = L.text;
+        L.text = NULL;
+        e->re = malloc(sizeof(regex_t));
+        if (regcomp(e->re, e->str, REG_EXTENDED | REG_NOSUB) != 0)
+            lex_error("bad regular expression");
+        lex_next();
+        return e;
+    case T_DOLLAR:
+        lex_next();
+        e = new_expr(E_FIELD);
+        e->a = parse_primary();
+        return e;
+    case T_LPAREN: {
+        lex_next();
+        e = parse_expr();
+        expect(T_RPAREN, "')'");
+        return e;
+    }
+    case T_NOT:
+        lex_next();
+        e = new_expr(E_NOT);
+        e->a = parse_primary();
+        return e;
+    case T_MINUS:
+        lex_next();
+        e = new_expr(E_NEG);
+        e->a = parse_primary();
+        return e;
+    case T_PLUS:
+        lex_next();
+        e = new_expr(E_POS);
+        e->a = parse_primary();
+        return e;
+    case T_INC:
+    case T_DEC: {
+        int isinc = (L.type == T_INC);
+        lex_next();
+        e = new_expr(isinc ? E_PREINC : E_PREDEC);
+        e->a = parse_primary();
+        return e;
+    }
+    case T_IDENT: {
+        char *name = L.text;
+        L.text = NULL;
+        lex_next();
+        if (L.type == T_LPAREN && is_builtin(name)) {
             lex_next();
-            return e;
-        case T_STR:
-            e = new_expr(E_STR);
-            e->str = L.text;
-            L.text = NULL;
-            lex_next();
-            return e;
-        case T_ERE:
-            e = new_expr(E_ERE);
-            e->str = L.text;
-            L.text = NULL;
-            e->re = malloc(sizeof(regex_t));
-            if (regcomp(e->re, e->str, REG_EXTENDED | REG_NOSUB) != 0)
-                lex_error("bad regular expression");
-            lex_next();
-            return e;
-        case T_DOLLAR:
-            lex_next();
-            e = new_expr(E_FIELD);
-            e->a = parse_primary();
-            return e;
-        case T_LPAREN: {
-            lex_next();
-            e = parse_expr();
+            e = new_expr(E_CALL);
+            e->str = name;
+            e->args = parse_expr_list();
             expect(T_RPAREN, "')'");
             return e;
         }
-        case T_NOT:
+        e = new_expr(E_VAR);
+        e->str = name;
+        if (L.type == T_INC) {
             lex_next();
-            e = new_expr(E_NOT);
-            e->a = parse_primary();
-            return e;
-        case T_MINUS:
-            lex_next();
-            e = new_expr(E_NEG);
-            e->a = parse_primary();
-            return e;
-        case T_PLUS:
-            lex_next();
-            e = new_expr(E_POS);
-            e->a = parse_primary();
-            return e;
-        case T_INC:
-        case T_DEC: {
-            int isinc = (L.type == T_INC);
-            lex_next();
-            e = new_expr(isinc ? E_PREINC : E_PREDEC);
-            e->a = parse_primary();
-            return e;
+            Expr *p = new_expr(E_POSTINC);
+            p->a = e;
+            return p;
         }
-        case T_IDENT: {
-            char *name = L.text;
-            L.text = NULL;
+        if (L.type == T_DEC) {
             lex_next();
-            if (L.type == T_LPAREN && is_builtin(name)) {
-                lex_next();
-                e = new_expr(E_CALL);
-                e->str = name;
-                e->args = parse_expr_list();
-                expect(T_RPAREN, "')'");
-                return e;
-            }
-            e = new_expr(E_VAR);
-            e->str = name;
-            if (L.type == T_INC) {
-                lex_next();
-                Expr *p = new_expr(E_POSTINC);
-                p->a = e;
-                return p;
-            }
-            if (L.type == T_DEC) {
-                lex_next();
-                Expr *p = new_expr(E_POSTDEC);
-                p->a = e;
-                return p;
-            }
-            return e;
+            Expr *p = new_expr(E_POSTDEC);
+            p->a = e;
+            return p;
         }
-        default:
-            fprintf(stderr, "awk: unexpected token in expression\n");
-            exit(2);
+        return e;
+    }
+    default:
+        fprintf(stderr, "awk: unexpected token in expression\n");
+        exit(2);
     }
 }
 
@@ -475,11 +680,16 @@ static Expr *parse_add(void) {
 
 static int starts_primary(void) {
     switch (L.type) {
-        case T_NUM: case T_STR: case T_ERE: case T_IDENT: case T_DOLLAR:
-        case T_LPAREN: case T_NOT:
-            return 1;
-        default:
-            return 0;
+    case T_NUM:
+    case T_STR:
+    case T_ERE:
+    case T_IDENT:
+    case T_DOLLAR:
+    case T_LPAREN:
+    case T_NOT:
+        return 1;
+    default:
+        return 0;
     }
 }
 
@@ -560,15 +770,14 @@ static Expr *parse_ternary(void) {
     return e;
 }
 
-static int is_lvalue(Expr *e) {
-    return e->kind == E_VAR || e->kind == E_FIELD;
-}
+static int is_lvalue(Expr *e) { return e->kind == E_VAR || e->kind == E_FIELD; }
 
 static Expr *parse_expr(void) {
     Expr *e = parse_ternary();
     TokType t = L.type;
-    if ((t == T_ASSIGN || t == T_ADDA || t == T_SUBA || t == T_MULA || t == T_DIVA || t == T_MODA)
-        && is_lvalue(e)) {
+    if ((t == T_ASSIGN || t == T_ADDA || t == T_SUBA || t == T_MULA || t == T_DIVA ||
+         t == T_MODA) &&
+        is_lvalue(e)) {
         lex_next();
         Expr *rhs = parse_expr();
         Expr *a = new_expr(t == T_ASSIGN ? E_ASSIGN : E_OPASSIGN);
@@ -592,78 +801,78 @@ static Stmt *parse_simple_or_block(void) {
 
 static Stmt *parse_stmt(void) {
     switch (L.type) {
-        case T_LBRACE:
-            return parse_block();
-        case T_IF: {
+    case T_LBRACE:
+        return parse_block();
+    case T_IF: {
+        lex_next();
+        expect(T_LPAREN, "'('");
+        Stmt *s = new_stmt(S_IF);
+        s->cond = parse_expr();
+        expect(T_RPAREN, "')'");
+        s->body = parse_simple_or_block();
+        skip_semis();
+        if (L.type == T_ELSE) {
             lex_next();
-            expect(T_LPAREN, "'('");
-            Stmt *s = new_stmt(S_IF);
-            s->cond = parse_expr();
-            expect(T_RPAREN, "')'");
-            s->body = parse_simple_or_block();
-            skip_semis();
-            if (L.type == T_ELSE) {
-                lex_next();
-                s->els = parse_simple_or_block();
-            }
-            return s;
+            s->els = parse_simple_or_block();
         }
-        case T_WHILE: {
-            lex_next();
-            expect(T_LPAREN, "'('");
-            Stmt *s = new_stmt(S_WHILE);
-            s->cond = parse_expr();
-            expect(T_RPAREN, "')'");
-            s->body = parse_simple_or_block();
-            return s;
-        }
-        case T_FOR: {
-            lex_next();
-            expect(T_LPAREN, "'('");
-            Stmt *s = new_stmt(S_FOR);
-            if (L.type != T_SEMI) s->init = new_stmt(S_EXPR), s->init->cond = parse_expr();
-            expect(T_SEMI, "';'");
-            if (L.type != T_SEMI) s->cond = parse_expr();
-            expect(T_SEMI, "';'");
-            if (L.type != T_RPAREN) s->post = new_stmt(S_EXPR), s->post->cond = parse_expr();
-            expect(T_RPAREN, "')'");
-            s->body = parse_simple_or_block();
-            return s;
-        }
-        case T_PRINT: {
-            lex_next();
-            Stmt *s = new_stmt(S_PRINT);
-            s->args = parse_expr_list();
-            return s;
-        }
-        case T_PRINTF: {
-            lex_next();
-            Stmt *s = new_stmt(S_PRINTF);
-            s->args = parse_expr_list();
-            return s;
-        }
-        case T_NEXT:
-            lex_next();
-            return new_stmt(S_NEXT);
-        case T_BREAK:
-            lex_next();
-            return new_stmt(S_BREAK);
-        case T_CONTINUE:
-            lex_next();
-            return new_stmt(S_CONTINUE);
-        case T_EXIT: {
-            lex_next();
-            Stmt *s = new_stmt(S_EXIT);
-            if (L.type != T_SEMI && L.type != T_RBRACE && L.type != T_EOF) s->cond = parse_expr();
-            return s;
-        }
-        case T_SEMI:
-            return new_stmt(S_BLOCK);
-        default: {
-            Stmt *s = new_stmt(S_EXPR);
-            s->cond = parse_expr();
-            return s;
-        }
+        return s;
+    }
+    case T_WHILE: {
+        lex_next();
+        expect(T_LPAREN, "'('");
+        Stmt *s = new_stmt(S_WHILE);
+        s->cond = parse_expr();
+        expect(T_RPAREN, "')'");
+        s->body = parse_simple_or_block();
+        return s;
+    }
+    case T_FOR: {
+        lex_next();
+        expect(T_LPAREN, "'('");
+        Stmt *s = new_stmt(S_FOR);
+        if (L.type != T_SEMI) s->init = new_stmt(S_EXPR), s->init->cond = parse_expr();
+        expect(T_SEMI, "';'");
+        if (L.type != T_SEMI) s->cond = parse_expr();
+        expect(T_SEMI, "';'");
+        if (L.type != T_RPAREN) s->post = new_stmt(S_EXPR), s->post->cond = parse_expr();
+        expect(T_RPAREN, "')'");
+        s->body = parse_simple_or_block();
+        return s;
+    }
+    case T_PRINT: {
+        lex_next();
+        Stmt *s = new_stmt(S_PRINT);
+        s->args = parse_expr_list();
+        return s;
+    }
+    case T_PRINTF: {
+        lex_next();
+        Stmt *s = new_stmt(S_PRINTF);
+        s->args = parse_expr_list();
+        return s;
+    }
+    case T_NEXT:
+        lex_next();
+        return new_stmt(S_NEXT);
+    case T_BREAK:
+        lex_next();
+        return new_stmt(S_BREAK);
+    case T_CONTINUE:
+        lex_next();
+        return new_stmt(S_CONTINUE);
+    case T_EXIT: {
+        lex_next();
+        Stmt *s = new_stmt(S_EXIT);
+        if (L.type != T_SEMI && L.type != T_RBRACE && L.type != T_EOF) s->cond = parse_expr();
+        return s;
+    }
+    case T_SEMI:
+        return new_stmt(S_BLOCK);
+    default: {
+        Stmt *s = new_stmt(S_EXPR);
+        s->cond = parse_expr();
+        return s;
+    }
     }
 }
 
@@ -1019,14 +1228,25 @@ static Value eval(Expr *e);
 
 static void unescape_inplace(char *s) {
     char *w = s;
-    for (char *r = s; *r; ) {
+    for (char *r = s; *r;) {
         if (*r == '\\' && r[1]) {
             char e = r[1];
             switch (e) {
-                case 'n': *w++ = '\n'; r += 2; break;
-                case 't': *w++ = '\t'; r += 2; break;
-                case '\\': *w++ = '\\'; r += 2; break;
-                default: *w++ = *r++; break;
+            case 'n':
+                *w++ = '\n';
+                r += 2;
+                break;
+            case 't':
+                *w++ = '\t';
+                r += 2;
+                break;
+            case '\\':
+                *w++ = '\\';
+                r += 2;
+                break;
+            default:
+                *w++ = *r++;
+                break;
             }
         } else {
             *w++ = *r++;
@@ -1068,46 +1288,56 @@ static void do_printf(FILE *out, const char *fmt, ExprList *args) {
         if (a) a = a->next;
         char obuf[512];
         switch (conv) {
-            case 'd': case 'i': {
-                char s2[70];
-                snprintf(s2, sizeof s2, "%sld", spec);
-                snprintf(obuf, sizeof obuf, s2, (long) to_num(v));
-                fputs(obuf, out);
-                break;
-            }
-            case 'o': case 'x': case 'X': case 'u': {
-                char s2[70];
-                snprintf(s2, sizeof s2, "%sl%c", spec, conv);
-                snprintf(obuf, sizeof obuf, s2, (unsigned long) to_num(v));
-                fputs(obuf, out);
-                break;
-            }
-            case 'e': case 'E': case 'f': case 'F': case 'g': case 'G': {
-                char s2[70];
-                snprintf(s2, sizeof s2, "%s%c", spec, conv);
-                snprintf(obuf, sizeof obuf, s2, to_num(v));
-                fputs(obuf, out);
-                break;
-            }
-            case 'c': {
-                char valbuf[64];
-                const char *sv = to_str(v, valbuf, sizeof valbuf);
-                char s2[70];
-                snprintf(s2, sizeof s2, "%sc", spec);
-                snprintf(obuf, sizeof obuf, s2, sv[0] ? sv[0] : (char) (long) to_num(v));
-                fputs(obuf, out);
-                break;
-            }
-            case 's': default: {
-                char valbuf[512];
-                const char *sv = to_str(v, valbuf, sizeof valbuf);
-                char s2[70];
-                snprintf(s2, sizeof s2, "%ss", spec);
-                char big[4096];
-                snprintf(big, sizeof big, s2, sv);
-                fputs(big, out);
-                break;
-            }
+        case 'd':
+        case 'i': {
+            char s2[70];
+            snprintf(s2, sizeof s2, "%sld", spec);
+            snprintf(obuf, sizeof obuf, s2, (long) to_num(v));
+            fputs(obuf, out);
+            break;
+        }
+        case 'o':
+        case 'x':
+        case 'X':
+        case 'u': {
+            char s2[70];
+            snprintf(s2, sizeof s2, "%sl%c", spec, conv);
+            snprintf(obuf, sizeof obuf, s2, (unsigned long) to_num(v));
+            fputs(obuf, out);
+            break;
+        }
+        case 'e':
+        case 'E':
+        case 'f':
+        case 'F':
+        case 'g':
+        case 'G': {
+            char s2[70];
+            snprintf(s2, sizeof s2, "%s%c", spec, conv);
+            snprintf(obuf, sizeof obuf, s2, to_num(v));
+            fputs(obuf, out);
+            break;
+        }
+        case 'c': {
+            char valbuf[64];
+            const char *sv = to_str(v, valbuf, sizeof valbuf);
+            char s2[70];
+            snprintf(s2, sizeof s2, "%sc", spec);
+            snprintf(obuf, sizeof obuf, s2, sv[0] ? sv[0] : (char) (long) to_num(v));
+            fputs(obuf, out);
+            break;
+        }
+        case 's':
+        default: {
+            char valbuf[512];
+            const char *sv = to_str(v, valbuf, sizeof valbuf);
+            char s2[70];
+            snprintf(s2, sizeof s2, "%ss", spec);
+            char big[4096];
+            snprintf(big, sizeof big, s2, sv);
+            fputs(big, out);
+            break;
+        }
         }
     }
 }
@@ -1139,8 +1369,12 @@ static Value call_builtin(const char *name, ExprList *args) {
         const char *s = to_str(sv, buf, sizeof buf);
         long slen = (long) strlen(s);
         long m = args->next ? (long) to_num(eval(args->next->e)) : 1;
-        long n = (args->next && args->next->next) ? (long) to_num(eval(args->next->next->e)) : LONG_MAX;
-        if (m < 1) { n += (m - 1); m = 1; }
+        long n =
+            (args->next && args->next->next) ? (long) to_num(eval(args->next->next->e)) : LONG_MAX;
+        if (m < 1) {
+            n += (m - 1);
+            m = 1;
+        }
         if (n < 0) n = 0;
         if (m > slen) return mkstr("");
         long avail = slen - m + 1;
@@ -1171,7 +1405,8 @@ static Value call_builtin(const char *name, ExprList *args) {
         const char *s = to_str(sv, buf, sizeof buf);
         char *r = strdup(s);
         for (char *p = r; *p; p++)
-            *p = (char) (strcmp(name, "toupper") == 0 ? toupper((unsigned char) *p) : tolower((unsigned char) *p));
+            *p = (char) (strcmp(name, "toupper") == 0 ? toupper((unsigned char) *p) :
+                                                        tolower((unsigned char) *p));
         Value ret = mkstr(r);
         free(r);
         return ret;
@@ -1182,8 +1417,10 @@ static Value call_builtin(const char *name, ExprList *args) {
     if (strcmp(name, "exp") == 0) return mknum(exp(to_num(eval(args->e))));
     if (strcmp(name, "log") == 0) return mknum(log(to_num(eval(args->e))));
     if (strcmp(name, "sqrt") == 0) return mknum(sqrt(to_num(eval(args->e))));
-    if (strcmp(name, "atan2") == 0) return mknum(atan2(to_num(eval(args->e)), to_num(eval(args->next->e))));
-    if (strcmp(name, "rand") == 0) return mknum((double) rand_r(&rand_seed) / ((double) RAND_MAX + 1));
+    if (strcmp(name, "atan2") == 0)
+        return mknum(atan2(to_num(eval(args->e)), to_num(eval(args->next->e))));
+    if (strcmp(name, "rand") == 0)
+        return mknum((double) rand_r(&rand_seed) / ((double) RAND_MAX + 1));
     if (strcmp(name, "srand") == 0) {
         unsigned int prev = rand_seed;
         rand_seed = args ? (unsigned int) to_num(eval(args->e)) : (unsigned int) time(NULL);
@@ -1218,96 +1455,135 @@ static Value assign_to(Expr *lhs, Value v) {
 static Value eval(Expr *e) {
     char buf[64], buf2[64];
     switch (e->kind) {
-        case E_NUM: return mknum(e->num);
-        case E_STR: return mkstr(e->str);
-        case E_ERE: return mknum(regexec(e->re, get_field(0), 0, NULL, 0) == 0);
-        case E_FIELD: return mkstrnum(get_field((int) to_num(eval(e->a))));
-        case E_VAR: return get_var(e->str);
-        case E_ASSIGN: return assign_to(e->a, eval(e->b));
-        case E_OPASSIGN: {
-            Value cur = eval(e->a);
-            Value rhs = eval(e->b);
-            double x = to_num(cur), y = to_num(rhs), r = 0;
+    case E_NUM:
+        return mknum(e->num);
+    case E_STR:
+        return mkstr(e->str);
+    case E_ERE:
+        return mknum(regexec(e->re, get_field(0), 0, NULL, 0) == 0);
+    case E_FIELD:
+        return mkstrnum(get_field((int) to_num(eval(e->a))));
+    case E_VAR:
+        return get_var(e->str);
+    case E_ASSIGN:
+        return assign_to(e->a, eval(e->b));
+    case E_OPASSIGN: {
+        Value cur = eval(e->a);
+        Value rhs = eval(e->b);
+        double x = to_num(cur), y = to_num(rhs), r = 0;
+        switch (e->op) {
+        case T_ADDA:
+            r = x + y;
+            break;
+        case T_SUBA:
+            r = x - y;
+            break;
+        case T_MULA:
+            r = x * y;
+            break;
+        case T_DIVA:
+            r = x / y;
+            break;
+        case T_MODA:
+            r = fmod(x, y);
+            break;
+        default:
+            break;
+        }
+        return assign_to(e->a, mknum(r));
+    }
+    case E_NEG:
+        return mknum(-to_num(eval(e->a)));
+    case E_POS:
+        return mknum(to_num(eval(e->a)));
+    case E_NOT:
+        return mknum(!truthy(eval(e->a)));
+    case E_AND:
+        return mknum(truthy(eval(e->a)) && truthy(eval(e->b)));
+    case E_OR:
+        return mknum(truthy(eval(e->a)) || truthy(eval(e->b)));
+    case E_MATCH: {
+        Value sv = eval(e->a);
+        const char *s = to_str(sv, buf, sizeof buf);
+        int m;
+        if (e->b->kind == E_ERE) {
+            m = regexec(e->b->re, s, 0, NULL, 0) == 0;
+        } else {
+            Value pv = eval(e->b);
+            regex_t re;
+            const char *pat = to_str(pv, buf2, sizeof buf2);
+            if (regcomp(&re, pat, REG_EXTENDED | REG_NOSUB) != 0) kx_die("bad regex");
+            m = regexec(&re, s, 0, NULL, 0) == 0;
+            regfree(&re);
+        }
+        return mknum(e->op ? !m : m);
+    }
+    case E_CONCAT: {
+        char b1[64], b2[64];
+        Value a = eval(e->a), b = eval(e->b);
+        const char *sa = to_str(a, b1, sizeof b1), *sb = to_str(b, b2, sizeof b2);
+        char *r = malloc(strlen(sa) + strlen(sb) + 1);
+        strcpy(r, sa);
+        strcat(r, sb);
+        Value ret = mkstr(r);
+        free(r);
+        return ret;
+    }
+    case E_TERNARY:
+        return truthy(eval(e->a)) ? eval(e->b) : eval(e->c);
+    case E_PREINC:
+        return assign_to(e->a, mknum(to_num(eval(e->a)) + 1));
+    case E_PREDEC:
+        return assign_to(e->a, mknum(to_num(eval(e->a)) - 1));
+    case E_POSTINC: {
+        Value old = eval(e->a);
+        assign_to(e->a, mknum(to_num(old) + 1));
+        return mknum(to_num(old));
+    }
+    case E_POSTDEC: {
+        Value old = eval(e->a);
+        assign_to(e->a, mknum(to_num(old) - 1));
+        return mknum(to_num(old));
+    }
+    case E_CALL:
+        return call_builtin(e->str, e->args);
+    case E_BINOP: {
+        if (e->op == '+' || e->op == '-' || e->op == '*' || e->op == '/' || e->op == '%' ||
+            e->op == '^') {
+            double x = to_num(eval(e->a)), y = to_num(eval(e->b));
             switch (e->op) {
-                case T_ADDA: r = x + y; break;
-                case T_SUBA: r = x - y; break;
-                case T_MULA: r = x * y; break;
-                case T_DIVA: r = x / y; break;
-                case T_MODA: r = fmod(x, y); break;
-                default: break;
+            case '+':
+                return mknum(x + y);
+            case '-':
+                return mknum(x - y);
+            case '*':
+                return mknum(x * y);
+            case '/':
+                return mknum(x / y);
+            case '%':
+                return mknum(fmod(x, y));
+            case '^':
+                return mknum(pow(x, y));
             }
-            return assign_to(e->a, mknum(r));
         }
-        case E_NEG: return mknum(-to_num(eval(e->a)));
-        case E_POS: return mknum(to_num(eval(e->a)));
-        case E_NOT: return mknum(!truthy(eval(e->a)));
-        case E_AND: return mknum(truthy(eval(e->a)) && truthy(eval(e->b)));
-        case E_OR: return mknum(truthy(eval(e->a)) || truthy(eval(e->b)));
-        case E_MATCH: {
-            Value sv = eval(e->a);
-            const char *s = to_str(sv, buf, sizeof buf);
-            int m;
-            if (e->b->kind == E_ERE) {
-                m = regexec(e->b->re, s, 0, NULL, 0) == 0;
-            } else {
-                Value pv = eval(e->b);
-                regex_t re;
-                const char *pat = to_str(pv, buf2, sizeof buf2);
-                if (regcomp(&re, pat, REG_EXTENDED | REG_NOSUB) != 0) kx_die("bad regex");
-                m = regexec(&re, s, 0, NULL, 0) == 0;
-                regfree(&re);
-            }
-            return mknum(e->op ? !m : m);
+        Value a = eval(e->a), b = eval(e->b);
+        int c = compare(a, b);
+        switch (e->op) {
+        case T_LT:
+            return mknum(c < 0);
+        case T_LE:
+            return mknum(c <= 0);
+        case T_GT:
+            return mknum(c > 0);
+        case T_GE:
+            return mknum(c >= 0);
+        case T_EQ:
+            return mknum(c == 0);
+        case T_NE:
+            return mknum(c != 0);
         }
-        case E_CONCAT: {
-            char b1[64], b2[64];
-            Value a = eval(e->a), b = eval(e->b);
-            const char *sa = to_str(a, b1, sizeof b1), *sb = to_str(b, b2, sizeof b2);
-            char *r = malloc(strlen(sa) + strlen(sb) + 1);
-            strcpy(r, sa);
-            strcat(r, sb);
-            Value ret = mkstr(r);
-            free(r);
-            return ret;
-        }
-        case E_TERNARY: return truthy(eval(e->a)) ? eval(e->b) : eval(e->c);
-        case E_PREINC: return assign_to(e->a, mknum(to_num(eval(e->a)) + 1));
-        case E_PREDEC: return assign_to(e->a, mknum(to_num(eval(e->a)) - 1));
-        case E_POSTINC: {
-            Value old = eval(e->a);
-            assign_to(e->a, mknum(to_num(old) + 1));
-            return mknum(to_num(old));
-        }
-        case E_POSTDEC: {
-            Value old = eval(e->a);
-            assign_to(e->a, mknum(to_num(old) - 1));
-            return mknum(to_num(old));
-        }
-        case E_CALL: return call_builtin(e->str, e->args);
-        case E_BINOP: {
-            if (e->op == '+' || e->op == '-' || e->op == '*' || e->op == '/' || e->op == '%' || e->op == '^') {
-                double x = to_num(eval(e->a)), y = to_num(eval(e->b));
-                switch (e->op) {
-                    case '+': return mknum(x + y);
-                    case '-': return mknum(x - y);
-                    case '*': return mknum(x * y);
-                    case '/': return mknum(x / y);
-                    case '%': return mknum(fmod(x, y));
-                    case '^': return mknum(pow(x, y));
-                }
-            }
-            Value a = eval(e->a), b = eval(e->b);
-            int c = compare(a, b);
-            switch (e->op) {
-                case T_LT: return mknum(c < 0);
-                case T_LE: return mknum(c <= 0);
-                case T_GT: return mknum(c > 0);
-                case T_GE: return mknum(c >= 0);
-                case T_EQ: return mknum(c == 0);
-                case T_NE: return mknum(c != 0);
-            }
-            return mknum(0);
-        }
+        return mknum(0);
+    }
     }
     return mknum(0);
 }
@@ -1339,41 +1615,49 @@ static void print_args(FILE *out, ExprList *args) {
 
 static ExecSig exec_stmt(Stmt *s) {
     switch (s->kind) {
-        case S_BLOCK: return exec_list(s->body);
-        case S_EXPR: eval(s->cond); return EX_NORMAL;
-        case S_PRINT: print_args(stdout, s->args); return EX_NORMAL;
-        case S_PRINTF: {
-            char buf[512];
-            Value fv = eval(s->args->e);
-            do_printf(stdout, to_str(fv, buf, sizeof buf), s->args->next);
-            return EX_NORMAL;
+    case S_BLOCK:
+        return exec_list(s->body);
+    case S_EXPR:
+        eval(s->cond);
+        return EX_NORMAL;
+    case S_PRINT:
+        print_args(stdout, s->args);
+        return EX_NORMAL;
+    case S_PRINTF: {
+        char buf[512];
+        Value fv = eval(s->args->e);
+        do_printf(stdout, to_str(fv, buf, sizeof buf), s->args->next);
+        return EX_NORMAL;
+    }
+    case S_IF:
+        if (truthy(eval(s->cond))) return exec_stmt(s->body);
+        if (s->els) return exec_stmt(s->els);
+        return EX_NORMAL;
+    case S_WHILE:
+        while (truthy(eval(s->cond))) {
+            ExecSig sig = exec_stmt(s->body);
+            if (sig == EX_BREAK) break;
+            if (sig == EX_NEXT || sig == EX_EXIT) return sig;
         }
-        case S_IF:
-            if (truthy(eval(s->cond))) return exec_stmt(s->body);
-            if (s->els) return exec_stmt(s->els);
-            return EX_NORMAL;
-        case S_WHILE:
-            while (truthy(eval(s->cond))) {
-                ExecSig sig = exec_stmt(s->body);
-                if (sig == EX_BREAK) break;
-                if (sig == EX_NEXT || sig == EX_EXIT) return sig;
-            }
-            return EX_NORMAL;
-        case S_FOR:
-            if (s->init) exec_stmt(s->init);
-            while (!s->cond || truthy(eval(s->cond))) {
-                ExecSig sig = exec_stmt(s->body);
-                if (sig == EX_BREAK) break;
-                if (sig == EX_NEXT || sig == EX_EXIT) return sig;
-                if (s->post) exec_stmt(s->post);
-            }
-            return EX_NORMAL;
-        case S_NEXT: return EX_NEXT;
-        case S_BREAK: return EX_BREAK;
-        case S_CONTINUE: return EX_CONTINUE;
-        case S_EXIT:
-            exit_code = s->cond ? (int) to_num(eval(s->cond)) : 0;
-            return EX_EXIT;
+        return EX_NORMAL;
+    case S_FOR:
+        if (s->init) exec_stmt(s->init);
+        while (!s->cond || truthy(eval(s->cond))) {
+            ExecSig sig = exec_stmt(s->body);
+            if (sig == EX_BREAK) break;
+            if (sig == EX_NEXT || sig == EX_EXIT) return sig;
+            if (s->post) exec_stmt(s->post);
+        }
+        return EX_NORMAL;
+    case S_NEXT:
+        return EX_NEXT;
+    case S_BREAK:
+        return EX_BREAK;
+    case S_CONTINUE:
+        return EX_CONTINUE;
+    case S_EXIT:
+        exit_code = s->cond ? (int) to_num(eval(s->cond)) : 0;
+        return EX_EXIT;
     }
     return EX_NORMAL;
 }
@@ -1397,8 +1681,14 @@ static void process_file(FILE *f, Item *items, int *exited) {
         if (n > 0 && line[n - 1] == '\n') line[n - 1] = 0;
         nr_val++;
         set_record(line);
-        if (run_items(items, PAT_ALWAYS) == EX_EXIT) { *exited = 1; break; }
-        if (run_items(items, PAT_EXPR) == EX_EXIT) { *exited = 1; break; }
+        if (run_items(items, PAT_ALWAYS) == EX_EXIT) {
+            *exited = 1;
+            break;
+        }
+        if (run_items(items, PAT_EXPR) == EX_EXIT) {
+            *exited = 1;
+            break;
+        }
     }
     free(line);
 }
@@ -1406,7 +1696,7 @@ static void process_file(FILE *f, Item *items, int *exited) {
 int main(int argc, char **argv) {
     kx_prog = "awk";
     int i = 1;
-    ExprList dummy = {0};
+    ExprList dummy = { 0 };
     (void) dummy;
     char *progtext = NULL;
     ExprList *pending_v = NULL, **pending_v_tail = &pending_v;

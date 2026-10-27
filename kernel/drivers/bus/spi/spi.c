@@ -22,9 +22,7 @@ static struct spi_controller g_stub_spi_controllers[SPI_MAX_CONTROLLERS];
 
 static void spi_delay_us(uint32_t us) {
     if (us == 0) return;
-    for (uint32_t i = 0; i < us; i++) {
-        io_wait();
-    }
+    for (uint32_t i = 0; i < us; i++) { io_wait(); }
 }
 
 static uint8_t reverse_bits8(uint8_t b) {
@@ -87,16 +85,12 @@ static int spi_transfer_one_message_default(struct spi_controller *ctlr, struct 
         }
         total_len += t->len;
 
-        if (t->delay_usecs > 0) {
-            spi_delay_us(t->delay_usecs);
-        }
+        if (t->delay_usecs > 0) { spi_delay_us(t->delay_usecs); }
 
         if (t->cs_change) {
             spi_set_cs_level(spi, false);
             spi_delay_us(1);
-            if (i + 1 < mesg->ntransfers) {
-                spi_set_cs_level(spi, true);
-            }
+            if (i + 1 < mesg->ntransfers) { spi_set_cs_level(spi, true); }
         }
     }
 
@@ -161,9 +155,7 @@ int spi_async(struct spi_device *spi, struct spi_message *message) {
     }
     spin_unlock(&ctlr->lock);
 
-    if (start_worker) {
-        spi_pump_messages(ctlr);
-    }
+    if (start_worker) { spi_pump_messages(ctlr); }
 
     return 0;
 }
@@ -209,9 +201,7 @@ void spi_unregister_controller(struct spi_controller *ctlr) {
     spin_unlock(&g_spi_core_lock);
 
     for (int cs = 0; cs < SPI_MAX_DEVICES_PER_CONTROLLER; cs++) {
-        if (to_free[cs]) {
-            spi_unregister_device(to_free[cs]);
-        }
+        if (to_free[cs]) { spi_unregister_device(to_free[cs]); }
     }
 }
 
@@ -232,9 +222,7 @@ static struct spi_driver *spi_find_matching_driver(struct spi_device *spi) {
         if (drv->id_table) {
             const struct spi_device_id *id = drv->id_table;
             while (id->name[0]) {
-                if (strncmp(id->name, spi->modalias, SPI_NAME_SIZE) == 0) {
-                    return drv;
-                }
+                if (strncmp(id->name, spi->modalias, SPI_NAME_SIZE) == 0) { return drv; }
                 id++;
             }
         } else if (strncmp(drv->name, spi->modalias, SPI_NAME_SIZE) == 0) {
@@ -317,9 +305,7 @@ void spi_unregister_driver(struct spi_driver *sdrv) {
             for (int b = 0; b < SPI_MAX_CONTROLLERS; b++) {
                 for (int cs = 0; cs < SPI_MAX_DEVICES_PER_CONTROLLER; cs++) {
                     struct spi_device *dev = g_devices[b][cs];
-                    if (dev && dev->driver == sdrv) {
-                        matched[matched_count++] = dev;
-                    }
+                    if (dev && dev->driver == sdrv) { matched[matched_count++] = dev; }
                 }
             }
             g_drivers[i] = NULL;
@@ -364,14 +350,10 @@ struct spi_device *spi_new_device(struct spi_controller *ctlr, struct spi_board_
     g_devices[ctlr->bus_num][chip->chip_select] = spi;
 
     struct spi_driver *matched_drv = spi_find_matching_driver(spi);
-    if (matched_drv) {
-        spi->driver = matched_drv;
-    }
+    if (matched_drv) { spi->driver = matched_drv; }
     spin_unlock(&g_spi_core_lock);
 
-    if (ctlr->setup) {
-        ctlr->setup(spi);
-    }
+    if (ctlr->setup) { ctlr->setup(spi); }
 
     if (matched_drv && matched_drv->probe) {
         int ret = matched_drv->probe(spi);
@@ -411,9 +393,7 @@ int spi_setup(struct spi_device *spi) {
     if (spi->bits_per_word != 8 && spi->bits_per_word != 16 && spi->bits_per_word != 32) {
         return -EINVAL;
     }
-    if (spi->controller->setup) {
-        return spi->controller->setup(spi);
-    }
+    if (spi->controller->setup) { return spi->controller->setup(spi); }
     return 0;
 }
 
@@ -427,9 +407,7 @@ int spi_sync(struct spi_device *spi, struct spi_message *message) {
     int ret = spi_async(spi, message);
     if (ret < 0) return ret;
 
-    while (!message->completed) {
-        __asm__ volatile("sti; pause" ::: "memory");
-    }
+    while (!message->completed) { __asm__ volatile("sti; pause" ::: "memory"); }
     return message->status;
 }
 
@@ -458,7 +436,8 @@ int spi_read(struct spi_device *spi, void *buf, size_t len) {
     return spi_sync_transfer(spi, &t, 1);
 }
 
-int spi_write_then_read(struct spi_device *spi, const void *txbuf, unsigned n_tx, void *rxbuf, unsigned n_rx) {
+int spi_write_then_read(struct spi_device *spi, const void *txbuf, unsigned n_tx, void *rxbuf,
+                        unsigned n_rx) {
     struct spi_transfer t[2];
     memset(t, 0, sizeof(t));
     t[0].tx_buf = txbuf;
@@ -534,9 +513,7 @@ static int64_t spidev_write(vfs_node_t *node, const char *buf, uint64_t len, uin
 
     memcpy(kbuf, buf, len);
     int ret = spi_write(spi, kbuf, (size_t) len);
-    if (ret >= 0) {
-        ret = (int) len;
-    }
+    if (ret >= 0) { ret = (int) len; }
 
     kfree(kbuf);
     return ret;
@@ -564,8 +541,10 @@ static int64_t spidev_ioctl(vfs_node_t *node, uint64_t cmd, uint64_t arg) {
         return 0;
     case SPI_IOC_WR_LSB_FIRST:
         if (!uptr_ok((const void *) (uintptr_t) arg, sizeof(uint8_t))) return -EFAULT;
-        if (*(uint8_t *) (uintptr_t) arg) spi->mode |= SPI_LSB_FIRST;
-        else spi->mode &= ~SPI_LSB_FIRST;
+        if (*(uint8_t *) (uintptr_t) arg)
+            spi->mode |= SPI_LSB_FIRST;
+        else
+            spi->mode &= ~SPI_LSB_FIRST;
         return spi_setup(spi);
     case SPI_IOC_RD_BITS_PER_WORD:
         if (!uptr_ok_w((void *) (uintptr_t) arg, sizeof(uint8_t))) return -EFAULT;
@@ -682,7 +661,8 @@ static int64_t spidev_ioctl(vfs_node_t *node, uint64_t cmd, uint64_t arg) {
     return -EINVAL;
 }
 
-static int stub_spi_transfer_one(struct spi_controller *ctlr, struct spi_device *spi, struct spi_transfer *t) {
+static int stub_spi_transfer_one(struct spi_controller *ctlr, struct spi_device *spi,
+                                 struct spi_transfer *t) {
     (void) ctlr;
     uint8_t bpw = t->bits_per_word ? t->bits_per_word : (spi ? spi->bits_per_word : 8);
 

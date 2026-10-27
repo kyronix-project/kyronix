@@ -36,8 +36,7 @@ int main(int argc, char **argv) {
     }
     *p++ = '\n';
 
-    while (fwrite(line, 1, (size_t) (p - line), stdout) == (size_t) (p - line)) {
-    }
+    while (fwrite(line, 1, (size_t) (p - line), stdout) == (size_t) (p - line)) {}
     free(line);
     return ferror(stdout) ? 1 : 0;
 }

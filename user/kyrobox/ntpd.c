@@ -15,8 +15,8 @@
 #define MAX_DELAY_US 10000000LL
 
 static uint32_t get_be32(const uint8_t *p) {
-    return ((uint32_t) p[0] << 24) | ((uint32_t) p[1] << 16) |
-           ((uint32_t) p[2] << 8) | (uint32_t) p[3];
+    return ((uint32_t) p[0] << 24) | ((uint32_t) p[1] << 16) | ((uint32_t) p[2] << 8) |
+           (uint32_t) p[3];
 }
 
 static void put_be32(uint8_t *p, uint32_t value) {
@@ -47,8 +47,8 @@ static bool ntp_timestamp_us(const uint8_t *stamp, int64_t reference_sec, int64_
         int64_t seconds =
             (int64_t) raw_seconds + (int64_t) era * NTP_ERA_SECONDS - (int64_t) NTP_UNIX_DELTA;
         if (seconds < MIN_UNIX_TIME || seconds >= MAX_UNIX_TIME) continue;
-        int64_t distance = seconds > reference_sec ? seconds - reference_sec
-                                                   : reference_sec - seconds;
+        int64_t distance =
+            seconds > reference_sec ? seconds - reference_sec : reference_sec - seconds;
         if (distance < best_distance) {
             best = seconds;
             best_distance = distance;
@@ -127,8 +127,7 @@ static int query_address(const struct addrinfo *ai, int64_t *offset_us, int64_t 
     unsigned version = (response[0] >> 3) & 7U;
     unsigned mode = response[0] & 7U;
     unsigned stratum = response[1];
-    if (leap == 3 || version < 3 || version > 4 || mode != 4 ||
-        stratum == 0 || stratum > 15) {
+    if (leap == 3 || version < 3 || version > 4 || mode != 4 || stratum == 0 || stratum > 15) {
         snprintf(error, error_size, "invalid NTP status");
         return -1;
     }
@@ -145,8 +144,8 @@ static int query_address(const struct addrinfo *ai, int64_t *offset_us, int64_t 
     int64_t t4_us = timespec_us(&t4);
     int64_t t2_us, t3_us;
     if (!ntp_timestamp_us(response + 32, t4.tv_sec, &t2_us) ||
-        !ntp_timestamp_us(response + 40, t4.tv_sec, &t3_us) ||
-        t3_us < t2_us || t3_us - t2_us > MAX_DELAY_US) {
+        !ntp_timestamp_us(response + 40, t4.tv_sec, &t3_us) || t3_us < t2_us ||
+        t3_us - t2_us > MAX_DELAY_US) {
         snprintf(error, error_size, "invalid server timestamps");
         return -1;
     }
@@ -162,8 +161,8 @@ static int query_address(const struct addrinfo *ai, int64_t *offset_us, int64_t 
     return 0;
 }
 
-static int sync_server(const char *server, int64_t *applied_offset, int64_t *delay_us,
-                       char *error, size_t error_size) {
+static int sync_server(const char *server, int64_t *applied_offset, int64_t *delay_us, char *error,
+                       size_t error_size) {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
@@ -195,8 +194,7 @@ static int sync_server(const char *server, int64_t *applied_offset, int64_t *del
         return -1;
     }
     int64_t target_us = timespec_us(&now) + offset;
-    if (target_us < MIN_UNIX_TIME * 1000000LL ||
-        target_us >= MAX_UNIX_TIME * 1000000LL) {
+    if (target_us < MIN_UNIX_TIME * 1000000LL || target_us >= MAX_UNIX_TIME * 1000000LL) {
         snprintf(error, error_size, "server time is outside the accepted range");
         return -1;
     }
@@ -219,8 +217,7 @@ static unsigned parse_interval(const char *value) {
     char *end = NULL;
     errno = 0;
     unsigned long interval = strtoul(value, &end, 10);
-    if (errno || !*value || *end || interval == 0 || interval > 86400)
-        kx_die("invalid interval");
+    if (errno || !*value || *end || interval == 0 || interval > 86400) kx_die("invalid interval");
     return (unsigned) interval;
 }
 
@@ -270,8 +267,7 @@ int main(int argc, char **argv) {
             int64_t offset_us, delay_us;
             if (sync_server(servers[index], &offset_us, &delay_us, error, sizeof(error)) == 0) {
                 if (!quiet) {
-                    fprintf(stderr,
-                            "ntpd: synchronized with %s (offset %+lld ms, delay %lld ms)\n",
+                    fprintf(stderr, "ntpd: synchronized with %s (offset %+lld ms, delay %lld ms)\n",
                             servers[index], (long long) (offset_us / 1000),
                             (long long) (delay_us / 1000));
                 }
@@ -282,8 +278,7 @@ int main(int argc, char **argv) {
         }
 
         if (once) {
-            if (!synced && !quiet)
-                fprintf(stderr, "ntpd: synchronization failed: %s\n", error);
+            if (!synced && !quiet) fprintf(stderr, "ntpd: synchronization failed: %s\n", error);
             return synced ? 0 : 1;
         }
         if (!synced && !quiet)

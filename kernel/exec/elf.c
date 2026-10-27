@@ -73,8 +73,7 @@ int elf_load_into(vmm_space_t *space, const void *data, uint64_t size, uint64_t 
         uint64_t entry = bias + eh->e_entry;
         if ((ph->p_flags & PF_X) && entry >= vaddr && entry - vaddr < ph->p_memsz)
             entry_executable = true;
-        if (!phdr_va && eh->e_phoff >= ph->p_offset &&
-            eh->e_phoff - ph->p_offset < ph->p_filesz)
+        if (!phdr_va && eh->e_phoff >= ph->p_offset && eh->e_phoff - ph->p_offset < ph->p_filesz)
             phdr_va = vaddr + (eh->e_phoff - ph->p_offset);
         uint64_t page_base = PAGE_ALIGN_DOWN(vaddr);
         uint64_t page_end = PAGE_ALIGN_UP(vaddr + ph->p_memsz);
@@ -101,8 +100,7 @@ int elf_load_into(vmm_space_t *space, const void *data, uint64_t size, uint64_t 
         if (ph->p_flags & PF_R) prot |= PROT_READ;
         if (ph->p_flags & PF_W) prot |= PROT_WRITE;
         if (ph->p_flags & PF_X) prot |= PROT_EXEC;
-        if (vma_add(space, page_base, page_end - page_base, prot, 0, true) < 0)
-            return -1;
+        if (vma_add(space, page_base, page_end - page_base, prot, 0, true) < 0) return -1;
 
         uint64_t end = PAGE_ALIGN_UP(vaddr + ph->p_memsz);
         if (end > brk) brk = end;

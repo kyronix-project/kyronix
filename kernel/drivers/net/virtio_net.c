@@ -1,13 +1,13 @@
 #include "../arch/x86_64/cpu.h"
 #include "../arch/x86_64/idt.h"
 #include "../arch/x86_64/spinlock.h"
+#include "../bus/pci/pci.h"
 #include "../lib/log.h"
 #include "../lib/string.h"
 #include "../mm/kmemleak.h"
 #include "../mm/pmm.h"
 #include "../module.h"
 #include "../net/net.h"
-#include "../bus/pci/pci.h"
 
 #define REG_DEVFEAT 0x00u
 #define REG_DRVFEAT 0x04u
@@ -107,8 +107,7 @@ static inline void io_w32(uint8_t r, uint32_t v) { outl((uint16_t) (g_iobase + r
 static uint32_t vq_pages(uint16_t size) {
     uint32_t desc_end = (uint32_t) size * 16u;
     uint32_t avail_end = desc_end + 4u + (uint32_t) size * 2u + 2u;
-    uint32_t used_off = (avail_end + (uint32_t) (PAGE_SIZE - 1)) &
-                        ~(uint32_t) (PAGE_SIZE - 1);
+    uint32_t used_off = (avail_end + (uint32_t) (PAGE_SIZE - 1)) & ~(uint32_t) (PAGE_SIZE - 1);
     uint32_t used_end = used_off + 4u + (uint32_t) size * 8u + 2u;
     return (used_end + (uint32_t) (PAGE_SIZE - 1)) / (uint32_t) PAGE_SIZE;
 }
@@ -122,8 +121,7 @@ static void vq_init(virtq_t *q, uint64_t phys, uint16_t size, uint32_t pages) {
     q->desc = (vq_desc_t *) v;
     q->avail = (vq_avail_t *) (v + (uint32_t) size * 16u);
     uint32_t avail_end = (uint32_t) size * 16u + 4u + (uint32_t) size * 2u + 2u;
-    uint32_t used_off = (avail_end + (uint32_t) (PAGE_SIZE - 1)) &
-                        ~(uint32_t) (PAGE_SIZE - 1);
+    uint32_t used_off = (avail_end + (uint32_t) (PAGE_SIZE - 1)) & ~(uint32_t) (PAGE_SIZE - 1);
     q->used = (vq_used_t *) (v + used_off);
 }
 
@@ -154,8 +152,7 @@ static bool setup_queue(uint16_t qidx, virtq_t *q) {
     uint64_t phys = (uint64_t) pmm_alloc_contiguous(pages);
     if (!phys) return false;
 #ifdef CONFIG_KMEMLEAK
-    for (uint32_t i = 0; i < pages; i++)
-        kmemleak_page_perm((void *) (phys + i * PAGE_SIZE));
+    for (uint32_t i = 0; i < pages; i++) kmemleak_page_perm((void *) (phys + i * PAGE_SIZE));
 #endif
     vq_init(q, phys, size, pages);
     io_w32(REG_QADDR, (uint32_t) (phys / PAGE_SIZE));
@@ -187,8 +184,7 @@ static void virtnet_poll(void) {
         uint32_t total = elem.len;
         if (total > RX_BUF_SIZE) total = RX_BUF_SIZE;
         if (total > sizeof(vnet_hdr_t))
-            net_receive(buf + sizeof(vnet_hdr_t),
-                        (uint16_t) (total - sizeof(vnet_hdr_t)));
+            net_receive(buf + sizeof(vnet_hdr_t), (uint16_t) (total - sizeof(vnet_hdr_t)));
         rx_post_buf(desc, g_rxq.desc[desc].addr);
     }
     spin_unlock_irqrestore(&g_rxq_lock);
@@ -267,8 +263,7 @@ static int virtnet_start(void) {
     for (int i = 0; i < g_pci_ndevs; i++) {
         pci_dev_t *candidate = &g_pci_devs[i];
         if (candidate->vendor == PCI_VIRTIO_VENDOR &&
-            (candidate->device == PCI_VIRTIO_NET_LEG ||
-             candidate->device == PCI_VIRTIO_NET_MOD)) {
+            (candidate->device == PCI_VIRTIO_NET_LEG || candidate->device == PCI_VIRTIO_NET_MOD)) {
             dev = candidate;
             break;
         }
@@ -293,8 +288,8 @@ static int virtnet_start(void) {
         return -ENODEV;
     }
 
-    log_info("virtio-net: PCI %02x:%02x.%x iobase=0x%04x irq=%u", dev->bus, dev->dev,
-             dev->fn, g_iobase, dev->irq_line);
+    log_info("virtio-net: PCI %02x:%02x.%x iobase=0x%04x irq=%u", dev->bus, dev->dev, dev->fn,
+             g_iobase, dev->irq_line);
     io_w8(REG_STATUS, 0);
     io_w8(REG_STATUS, S_ACK);
     io_w8(REG_STATUS, S_ACK | S_DRIVER);

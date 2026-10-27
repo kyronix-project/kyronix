@@ -1,4 +1,4 @@
-CC := musl-gcc
+CC := gcc
 CFLAGS ?= -std=c11 -Wall -Wextra -Werror -O2 -march=x86-64 -mtune=generic -fPIC
 LDFLAGS ?= -shared -Wl,-soname,libudev.so.1 -Wl,--version-script=libudev.map
 OUT := ../../build/lib/libudev.so.1

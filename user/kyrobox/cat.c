@@ -77,17 +77,38 @@ int main(int argc, char **argv) {
         }
         for (const char *p = arg + 1; *p; p++) {
             switch (*p) {
-            case 'A': o.show_nonprinting = o.show_ends = o.show_tabs = true; break;
-            case 'b': o.number_nonblank = true; o.number = false; break;
-            case 'E': o.show_ends = true; break;
-            case 'n': if (!o.number_nonblank) o.number = true; break;
-            case 's': o.squeeze = true; break;
-            case 'T': o.show_tabs = true; break;
-            case 'v': o.show_nonprinting = true; break;
-            case 'e': o.show_nonprinting = o.show_ends = true; break;
-            case 't': o.show_nonprinting = o.show_tabs = true; break;
-            case 'u': break;
-            default: kx_die("invalid option");
+            case 'A':
+                o.show_nonprinting = o.show_ends = o.show_tabs = true;
+                break;
+            case 'b':
+                o.number_nonblank = true;
+                o.number = false;
+                break;
+            case 'E':
+                o.show_ends = true;
+                break;
+            case 'n':
+                if (!o.number_nonblank) o.number = true;
+                break;
+            case 's':
+                o.squeeze = true;
+                break;
+            case 'T':
+                o.show_tabs = true;
+                break;
+            case 'v':
+                o.show_nonprinting = true;
+                break;
+            case 'e':
+                o.show_nonprinting = o.show_ends = true;
+                break;
+            case 't':
+                o.show_nonprinting = o.show_tabs = true;
+                break;
+            case 'u':
+                break;
+            default:
+                kx_die("invalid option");
             }
         }
     }

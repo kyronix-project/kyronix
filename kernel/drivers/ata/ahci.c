@@ -2,6 +2,8 @@
 #include "../arch/x86_64/cpu.h"
 #include "../arch/x86_64/pit.h"
 #include "../arch/x86_64/spinlock.h"
+#include "../block/block.h"
+#include "../bus/pci/pci.h"
 #include "../lib/log.h"
 #include "../lib/printf.h"
 #include "../lib/string.h"
@@ -10,8 +12,6 @@
 #include "../mm/pmm.h"
 #include "../mm/vmm.h"
 #include "../proc/proc.h"
-#include "../block/block.h"
-#include "../bus/pci/pci.h"
 
 #define PCI_CLASS_STORAGE 0x01
 #define PCI_SUBCLASS_SATA 0x06
@@ -102,8 +102,8 @@ typedef struct {
     hba_prdt_t prdt[1];
 } __attribute__((packed)) hba_cmd_tbl_t;
 
-_Static_assert(__builtin_offsetof(hba_cmd_tbl_t, prdt) +
-                       AHCI_MAX_PRDT * sizeof(hba_prdt_t) <= PAGE_SIZE,
+_Static_assert(__builtin_offsetof(hba_cmd_tbl_t, prdt) + AHCI_MAX_PRDT * sizeof(hba_prdt_t) <=
+                   PAGE_SIZE,
                "AHCI command table exceeds its DMA page");
 
 typedef struct {
@@ -131,8 +131,7 @@ static bool g_ready = false;
 static int g_port_count = 0;
 
 static void wake_proc(proc_t *p) {
-    if (p && __sync_bool_compare_and_swap(&p->state, PROC_WAITING, PROC_READY))
-        proc_set_ready(p);
+    if (p && __sync_bool_compare_and_swap(&p->state, PROC_WAITING, PROC_READY)) proc_set_ready(p);
 }
 
 /* A port still has one command table, but contenders sleep instead of burning
@@ -505,8 +504,7 @@ void ahci_disk_model(int port, char *buf, int len) {
 
 static uint64_t dma_page_phys(uint64_t virt) {
     uint64_t direct_len = pmm_total_pages() * PAGE_SIZE;
-    if (virt >= g_hhdm_offset && virt - g_hhdm_offset < direct_len)
-        return virt - g_hhdm_offset;
+    if (virt >= g_hhdm_offset && virt - g_hhdm_offset < direct_len) return virt - g_hhdm_offset;
     return vmm_virt_to_phys(&g_kernel_space, virt);
 }
 

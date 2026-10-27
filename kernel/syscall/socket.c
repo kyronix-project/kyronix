@@ -44,10 +44,11 @@ struct ucred_s {
 };
 
 static void sun_path_copy(char *out, const char *sun_path, uint64_t addrlen) {
-    uint64_t n = addrlen > offsetof(struct sockaddr_un, sun_path)
-                     ? addrlen - offsetof(struct sockaddr_un, sun_path)
-                     : 0;
-    if (n > sizeof(((struct sockaddr_un *) 0)->sun_path)) n = sizeof(((struct sockaddr_un *) 0)->sun_path);
+    uint64_t n = addrlen > offsetof(struct sockaddr_un, sun_path) ?
+                     addrlen - offsetof(struct sockaddr_un, sun_path) :
+                     0;
+    if (n > sizeof(((struct sockaddr_un *) 0)->sun_path))
+        n = sizeof(((struct sockaddr_un *) 0)->sun_path);
     if (n) memcpy(out, sun_path, n);
     out[n] = '\0';
 }
@@ -122,9 +123,8 @@ int64_t sys_socket_accept(int fd, struct sockaddr_un *addr, int *addrlen, int fl
         if (!addrlen || !uptr_ok_w(addrlen, sizeof(*addrlen))) return -(int64_t) EFAULT;
         capacity = *addrlen;
         if (capacity < 0) return -(int64_t) EINVAL;
-        if (capacity && !uptr_ok_w(addr, (uint64_t) capacity < sizeof(*addr)
-                                            ? (uint64_t) capacity
-                                            : sizeof(*addr)))
+        if (capacity && !uptr_ok_w(addr, (uint64_t) capacity < sizeof(*addr) ? (uint64_t) capacity :
+                                                                               sizeof(*addr)))
             return -(int64_t) EFAULT;
     }
     if (f->inet) {
@@ -164,8 +164,7 @@ int64_t sys_socket_bind(int fd, struct sockaddr_un *addr, uint64_t addrlen) {
         if (addr->sun_family != AF_INET) return -(int64_t) EINVAL;
         const struct sockaddr_in *in = (const struct sockaddr_in *) addr;
         uint16_t port = (uint16_t) ((in->sin_port >> 8) | (in->sin_port << 8));
-        if (port && port < 1024 && !jail_host_priv(g_current_proc))
-            return -(int64_t) EPERM;
+        if (port && port < 1024 && !jail_host_priv(g_current_proc)) return -(int64_t) EPERM;
         return inet_bind(f->inet, (const struct sockaddr_in *) addr);
     }
     if (addrlen < offsetof(struct sockaddr_un, sun_path) ||
@@ -306,10 +305,8 @@ int64_t sys_socket_sendmsg(int fd, const void *mhdr, int flags) {
     const uint64_t *m = (const uint64_t *) mhdr;
     const struct iovec *iov = (const struct iovec *) m[2];
     int iovlen = (int) m[3];
-    if (iovlen < 0 || iovlen > IOV_MAX)
-        return -(int64_t) EINVAL;
-    if (iovlen && !uptr_ok(iov, (uint64_t) iovlen * sizeof(*iov)))
-        return -(int64_t) EFAULT;
+    if (iovlen < 0 || iovlen > IOV_MAX) return -(int64_t) EINVAL;
+    if (iovlen && !uptr_ok(iov, (uint64_t) iovlen * sizeof(*iov))) return -(int64_t) EFAULT;
     int64_t total = 0;
     for (int i = 0; i < iovlen; i++) {
         if (iov[i].iov_len > (uint64_t) INT64_MAX - (uint64_t) total)
@@ -345,8 +342,7 @@ int64_t sys_socket_sendmsg(int fd, const void *mhdr, int flags) {
                     if (!files[cloned]) break;
                 }
                 if (cloned != n || pipe_anc_send(tx, files, n) < 0) {
-                    for (int i = 0; i < cloned; i++)
-                        vfs_file_close((vfs_file_t *) files[i]);
+                    for (int i = 0; i < cloned; i++) vfs_file_close((vfs_file_t *) files[i]);
                     return total ? total : -(int64_t) EBADF;
                 }
             }
@@ -362,10 +358,8 @@ int64_t sys_socket_recvmsg(int fd, void *mhdr, int flags) {
     uint64_t *m = (uint64_t *) mhdr;
     const struct iovec *iov = (const struct iovec *) m[2];
     int iovlen = (int) m[3];
-    if (iovlen < 0 || iovlen > IOV_MAX)
-        return -(int64_t) EINVAL;
-    if (iovlen && !uptr_ok(iov, (uint64_t) iovlen * sizeof(*iov)))
-        return -(int64_t) EFAULT;
+    if (iovlen < 0 || iovlen > IOV_MAX) return -(int64_t) EINVAL;
+    if (iovlen && !uptr_ok(iov, (uint64_t) iovlen * sizeof(*iov))) return -(int64_t) EFAULT;
     {
         vfs_file_t *isf = fd_get_file(fd);
         if (isf && isf->inet && iovlen > 0 && !(flags & MSG_PEEK)) {
@@ -394,10 +388,10 @@ int64_t sys_socket_recvmsg(int fd, void *mhdr, int flags) {
     for (int i = 0; i < iovlen; i++) {
         if (iov[i].iov_len > (uint64_t) INT64_MAX - (uint64_t) total)
             return total ? total : -(int64_t) EINVAL;
-        int64_t r = (flags & MSG_PEEK) ?
-                        fd_peek_ex(fd, (void *) iov[i].iov_base, iov[i].iov_len, peek_skip,
-                                   dontwait) :
-                        fd_read_ex(fd, (void *) iov[i].iov_base, iov[i].iov_len, dontwait);
+        int64_t r =
+            (flags & MSG_PEEK) ?
+                fd_peek_ex(fd, (void *) iov[i].iov_base, iov[i].iov_len, peek_skip, dontwait) :
+                fd_read_ex(fd, (void *) iov[i].iov_base, iov[i].iov_len, dontwait);
         if (r < 0) return total ? total : r;
         total += r;
         if (flags & MSG_PEEK) peek_skip += (uint64_t) r;
@@ -417,8 +411,7 @@ int64_t sys_socket_recvmsg(int fd, void *mhdr, int flags) {
         if (nfds > 0) {
             uint64_t max_space = align8(cmsg_hdr_len + (uint64_t) nfds * sizeof(int));
             if (!control || control_len < max_space || !uptr_ok_w(control, max_space)) {
-                for (int i = 0; i < nfds; i++)
-                    vfs_file_close((vfs_file_t *) files[i]);
+                for (int i = 0; i < nfds; i++) vfs_file_close((vfs_file_t *) files[i]);
                 m[5] = 0;
                 ((uint32_t *) mhdr)[12] = MSG_CTRUNC;
                 return total;
@@ -432,8 +425,7 @@ int64_t sys_socket_recvmsg(int fd, void *mhdr, int flags) {
                 if (newfd < 0) break;
                 fdarr[installed] = newfd;
             }
-            for (int i = installed; i < nfds; i++)
-                vfs_file_close((vfs_file_t *) files[i]);
+            for (int i = installed; i < nfds; i++) vfs_file_close((vfs_file_t *) files[i]);
             if (installed > 0) {
                 uint64_t rights_len = cmsg_hdr_len + (uint64_t) installed * sizeof(int);
                 uint64_t rights_sp = align8(rights_len);

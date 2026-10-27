@@ -27,8 +27,7 @@ static int append_basename(char *out, size_t size, const char *directory, const 
         return -1;
     }
     memcpy(source_copy, source, source_len + 1);
-    while (source_len > 1 && source_copy[source_len - 1] == '/')
-        source_copy[--source_len] = '\0';
+    while (source_len > 1 && source_copy[source_len - 1] == '/') source_copy[--source_len] = '\0';
     int n = snprintf(out, size, "%s%s%s", directory,
                      directory[0] && directory[strlen(directory) - 1] == '/' ? "" : "/",
                      kx_base(source_copy));
@@ -105,7 +104,7 @@ static int move_one(const char *source, const char *target, const mv_options_t *
 
 int main(int argc, char **argv) {
     kx_prog = "mv";
-    mv_options_t o = {0};
+    mv_options_t o = { 0 };
     int first = 1;
 
     for (; first < argc; first++) {
@@ -121,11 +120,23 @@ int main(int argc, char **argv) {
         }
         for (const char *p = arg + 1; *p; p++) {
             switch (*p) {
-            case 'f': o.force = true; o.interactive = o.no_clobber = false; break;
-            case 'i': o.interactive = true; o.force = o.no_clobber = false; break;
-            case 'n': o.no_clobber = true; o.force = o.interactive = false; break;
-            case 'v': o.verbose = true; break;
-            default: kx_die("invalid option");
+            case 'f':
+                o.force = true;
+                o.interactive = o.no_clobber = false;
+                break;
+            case 'i':
+                o.interactive = true;
+                o.force = o.no_clobber = false;
+                break;
+            case 'n':
+                o.no_clobber = true;
+                o.force = o.interactive = false;
+                break;
+            case 'v':
+                o.verbose = true;
+                break;
+            default:
+                kx_die("invalid option");
             }
         }
     }

@@ -11,9 +11,7 @@ enum {
     F_OS = 1 << 7
 };
 
-static void usage(void) {
-    puts("usage: uname [-asnrvmpio]");
-}
+static void usage(void) { puts("usage: uname [-asnrvmpio]"); }
 
 static void add_field(const char *value, bool *first) {
     if (!*first) putchar(' ');
@@ -36,15 +34,24 @@ int main(int argc, char **argv) {
         }
         if (a[0] != '-' || a[1] == '\0') kx_die("extra operand");
         for (const char *p = a + 1; *p; p++) {
-            if (*p == 'a') flags |= 0xffU;
-            else if (*p == 's') flags |= F_SYSNAME;
-            else if (*p == 'n') flags |= F_NODENAME;
-            else if (*p == 'r') flags |= F_RELEASE;
-            else if (*p == 'v') flags |= F_VERSION;
-            else if (*p == 'm') flags |= F_MACHINE;
-            else if (*p == 'p') flags |= F_PROCESSOR;
-            else if (*p == 'i') flags |= F_HARDWARE;
-            else if (*p == 'o') flags |= F_OS;
+            if (*p == 'a')
+                flags |= 0xffU;
+            else if (*p == 's')
+                flags |= F_SYSNAME;
+            else if (*p == 'n')
+                flags |= F_NODENAME;
+            else if (*p == 'r')
+                flags |= F_RELEASE;
+            else if (*p == 'v')
+                flags |= F_VERSION;
+            else if (*p == 'm')
+                flags |= F_MACHINE;
+            else if (*p == 'p')
+                flags |= F_PROCESSOR;
+            else if (*p == 'i')
+                flags |= F_HARDWARE;
+            else if (*p == 'o')
+                flags |= F_OS;
             else {
                 fprintf(stderr, "uname: invalid option -- '%c'\n", *p);
                 return 1;

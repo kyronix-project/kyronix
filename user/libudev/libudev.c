@@ -1,6 +1,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <stdint.h>
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -184,8 +185,8 @@ static struct udev_device *device_new(struct udev *u, const char *sysname) {
     d->refcnt = 1;
     d->udev = u;
     d->subsystem = is_input ? "input" : "graphics";
-    snprintf(d->syspath, sizeof(d->syspath), "%s%s",
-             is_input ? INPUT_SYSPATH : GRAPHICS_SYSPATH, sysname);
+    snprintf(d->syspath, sizeof(d->syspath), "%s%s", is_input ? INPUT_SYSPATH : GRAPHICS_SYSPATH,
+             sysname);
     snprintf(d->sysname, sizeof(d->sysname), "%s", sysname);
     snprintf(d->devnode, sizeof(d->devnode), "%s", devnode);
     d->devnum = st.st_rdev;
@@ -219,7 +220,7 @@ E struct udev_device *udev_device_new_from_devnum(struct udev *u, char type, dev
 }
 
 E struct udev_device *udev_device_new_from_subsystem_sysname(struct udev *u, const char *subsystem,
-                                                            const char *sysname) {
+                                                             const char *sysname) {
     if (!subsystem || strcmp(subsystem, "input") != 0) return NULL;
     return device_new(u, sysname);
 }
@@ -281,8 +282,8 @@ E struct udev_device *udev_device_get_parent(struct udev_device *d) {
 }
 
 E struct udev_device *udev_device_get_parent_with_subsystem_devtype(struct udev_device *d,
-                                                                   const char *subsystem,
-                                                                   const char *devtype) {
+                                                                    const char *subsystem,
+                                                                    const char *devtype) {
     (void) d;
     (void) subsystem;
     (void) devtype;
@@ -478,7 +479,7 @@ E int udev_monitor_set_receive_buffer_size(struct udev_monitor *m, int size) {
 }
 
 E int udev_monitor_filter_add_match_subsystem_devtype(struct udev_monitor *m, const char *subsystem,
-                                                     const char *devtype) {
+                                                      const char *devtype) {
     (void) subsystem;
     (void) devtype;
     return m ? 0 : -1;

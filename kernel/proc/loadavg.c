@@ -10,15 +10,15 @@
 
 #define FIXED_1 (1 << LOAD_SHIFT)
 
-#define EXP_1  1884
-#define EXP_5  2014
+#define EXP_1 1884
+#define EXP_5 2014
 #define EXP_15 2034
 
-#define CALC_LOAD(load, exp, active)                                                              \
+#define CALC_LOAD(load, exp, active)                                                               \
     do {                                                                                           \
         uint64_t __new = (load) * (exp) + (active) * (FIXED_1 - (exp));                            \
         uint64_t __r = __new + (FIXED_1 / 2);                                                      \
-        (load) = (__r >> LOAD_SHIFT);                                                               \
+        (load) = (__r >> LOAD_SHIFT);                                                              \
     } while (0)
 
 uint64_t avenrun[3] = { 0, 0, 0 };
@@ -30,11 +30,9 @@ static int active_task_count(void) {
         proc_t *p = &g_proctable[i];
         /* idle processes (pid 0, one per CPU) must not count toward load,
          * matching how the scheduler excludes them via pid != 0 */
-        if (__atomic_load_n(&p->pid, __ATOMIC_RELAXED) == 0)
-            continue;
+        if (__atomic_load_n(&p->pid, __ATOMIC_RELAXED) == 0) continue;
         int st = __atomic_load_n(&p->state, __ATOMIC_RELAXED);
-        if (st == PROC_RUNNING || st == PROC_READY)
-            n++;
+        if (st == PROC_RUNNING || st == PROC_READY) n++;
     }
     return n;
 }
@@ -65,8 +63,7 @@ void calc_load_tick(void) {
     }
 
     ticks_since_sample++;
-    if (ticks_since_sample < LOAD_FREQ)
-        return;
+    if (ticks_since_sample < LOAD_FREQ) return;
 
     ticks_since_sample = 0;
 

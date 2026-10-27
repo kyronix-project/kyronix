@@ -5,8 +5,8 @@
 extern "C" {
 #endif
 
-#include <stdint.h>
 #include <fcntl.h>
+#include <stdint.h>
 
 typedef uint64_t eventfd_t;
 
@@ -17,7 +17,6 @@ typedef uint64_t eventfd_t;
 int eventfd(unsigned int, int);
 int eventfd_read(int, eventfd_t *);
 int eventfd_write(int, eventfd_t);
-
 
 #ifdef __cplusplus
 }

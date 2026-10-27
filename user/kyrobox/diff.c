@@ -44,7 +44,8 @@ static int is_blank_line(const char *s) {
 
 static int line_eq(const char *a, const char *b, const cmpflags_t *f) {
     if (f->ignore_blank_lines && is_blank_line(a) && is_blank_line(b)) return 1;
-    if (!f->ignore_case && !f->ignore_space_change && !f->ignore_all_space) return strcmp(a, b) == 0;
+    if (!f->ignore_case && !f->ignore_space_change && !f->ignore_all_space)
+        return strcmp(a, b) == 0;
 
     const unsigned char *pa = (const unsigned char *) a;
     const unsigned char *pb = (const unsigned char *) b;
@@ -129,14 +130,14 @@ static edit_t *build_edits(filelines_t *A, filelines_t *B, const cmpflags_t *cf,
     int ne = 0, i = 0, j = 0;
     while (i < n || j < m) {
         if (i < n && j < m && line_eq(A->lines[i], B->lines[j], cf)) {
-            edits[ne++] = (edit_t){ OP_EQ, i, j };
+            edits[ne++] = (edit_t) { OP_EQ, i, j };
             i++;
             j++;
         } else if (j < m && (i == n || DP(i, j + 1) > DP(i + 1, j))) {
-            edits[ne++] = (edit_t){ OP_INS, i, j };
+            edits[ne++] = (edit_t) { OP_INS, i, j };
             j++;
         } else {
-            edits[ne++] = (edit_t){ OP_DEL, i, j };
+            edits[ne++] = (edit_t) { OP_DEL, i, j };
             i++;
         }
     }
@@ -181,7 +182,7 @@ static hunk_t *group_hunks(edit_t *edits, int ne, int ctx, int *out_n) {
             he++;
             fwd++;
         }
-        hunks[nh++] = (hunk_t){ hs, he };
+        hunks[nh++] = (hunk_t) { hs, he };
         k = he;
     }
     *out_n = nh;
@@ -353,8 +354,8 @@ static void sbs_line(const char *l, const char *r, char mark, int width) {
     int half = (width - 3) / 2;
     if (half < 1) half = 1;
     int llen = l ? (int) strlen(l) : 0;
-    printf("%.*s%*s %c %s\n", llen < half ? llen : half, l ? l : "",
-           llen < half ? half - llen : 0, "", mark, r ? r : "");
+    printf("%.*s%*s %c %s\n", llen < half ? llen : half, l ? l : "", llen < half ? half - llen : 0,
+           "", mark, r ? r : "");
 }
 
 static void print_sbs(filelines_t *A, filelines_t *B, edit_t *edits, int ne, opts_t *o) {
@@ -434,10 +435,18 @@ static int diff_one(const char *patha, const char *pathb, opts_t *o) {
         int nh;
         hunk_t *hunks = group_hunks(edits, ne, ctx, &nh);
         switch (o->format) {
-        case FMT_UNIFIED: print_unified(&A, &B, edits, hunks, nh, patha, pathb, o); break;
-        case FMT_CONTEXT: print_context(&A, &B, edits, hunks, nh, patha, pathb, o); break;
-        case FMT_ED: print_ed(&B, edits, hunks, nh); break;
-        default: print_normal(&A, &B, edits, hunks, nh); break;
+        case FMT_UNIFIED:
+            print_unified(&A, &B, edits, hunks, nh, patha, pathb, o);
+            break;
+        case FMT_CONTEXT:
+            print_context(&A, &B, edits, hunks, nh, patha, pathb, o);
+            break;
+        case FMT_ED:
+            print_ed(&B, edits, hunks, nh);
+            break;
+        default:
+            print_normal(&A, &B, edits, hunks, nh);
+            break;
         }
         free(hunks);
     }
@@ -640,18 +649,44 @@ int main(int argc, char **argv) {
         if (a[0] == '-' && a[1] != '-' && a[1] != '\0') {
             for (int ci = 1; a[ci]; ci++) {
                 switch (a[ci]) {
-                case 'a': case 't': case 'T': case 'p': break;
-                case 'b': o.cf.ignore_space_change = 1; break;
-                case 'B': o.cf.ignore_blank_lines = 1; break;
-                case 'i': o.cf.ignore_case = 1; break;
-                case 'w': o.cf.ignore_all_space = 1; break;
-                case 'N': o.new_file = 1; break;
-                case 'q': o.brief = 1; break;
-                case 'r': o.recursive = 1; break;
-                case 's': o.report_identical = 1; break;
-                case 'e': o.format = FMT_ED; break;
-                case 'n': o.format = FMT_NORMAL; break;
-                case 'y': o.format = FMT_SBS; break;
+                case 'a':
+                case 't':
+                case 'T':
+                case 'p':
+                    break;
+                case 'b':
+                    o.cf.ignore_space_change = 1;
+                    break;
+                case 'B':
+                    o.cf.ignore_blank_lines = 1;
+                    break;
+                case 'i':
+                    o.cf.ignore_case = 1;
+                    break;
+                case 'w':
+                    o.cf.ignore_all_space = 1;
+                    break;
+                case 'N':
+                    o.new_file = 1;
+                    break;
+                case 'q':
+                    o.brief = 1;
+                    break;
+                case 'r':
+                    o.recursive = 1;
+                    break;
+                case 's':
+                    o.report_identical = 1;
+                    break;
+                case 'e':
+                    o.format = FMT_ED;
+                    break;
+                case 'n':
+                    o.format = FMT_NORMAL;
+                    break;
+                case 'y':
+                    o.format = FMT_SBS;
+                    break;
                 case 'u':
                 case 'c': {
                     o.format = a[ci] == 'u' ? FMT_UNIFIED : FMT_CONTEXT;
@@ -676,7 +711,8 @@ int main(int argc, char **argv) {
                     }
                     break;
                 }
-                default: usage();
+                default:
+                    usage();
                 }
             }
             continue;

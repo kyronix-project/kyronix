@@ -21,21 +21,21 @@
 #include "lib/printf.h"
 #include "lib/string.h"
 #include "mem.h"
-#include "module/loader.h"
-#include "phantom.h"
 #include "mm/pmm.h"
 #include "mm/shm.h"
 #include "mm/vmm.h"
+#include "module/loader.h"
 #include "mount.h"
+#include "phantom.h"
 #include "poll.h"
 #include "proc/jail.h"
 #include "proc/proc.h"
-#include "security/phantom.h"
-#include "security/anti_toctou.h"
 #include "proc/signal.h"
 #include "proc/smp.h"
 #include "procctl.h"
 #include "ptrace.h"
+#include "security/anti_toctou.h"
+#include "security/phantom.h"
 #include "sig.h"
 #include "socket.h"
 #include "time.h"
@@ -769,8 +769,8 @@ void syscall_dispatch(syscall_frame_t *f) {
         break;
     }
     case 164:
-        ret = host_priv() ? sys_settimeofday((const void *) a1, (const void *) a2)
-                          : -(int64_t) EPERM;
+        ret =
+            host_priv() ? sys_settimeofday((const void *) a1, (const void *) a2) : -(int64_t) EPERM;
         break; /* settimeofday */
     case 165:  /* mount(source, target, fstype, flags, data) */
         ret = sys_mount((const char *) a1, (const char *) a2, (const char *) a3, a4, (void *) a5);
@@ -779,9 +779,7 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = sys_umount2((const char *) a1, (int) a2);
         break;
     case 170: /* sethostname(name, length) */
-        ret = host_priv()
-                  ? sys_sethostname((const char *) a1, a2)
-                  : -(int64_t) EPERM;
+        ret = host_priv() ? sys_sethostname((const char *) a1, a2) : -(int64_t) EPERM;
         break;
     case 171:
         ret = host_priv() ? 0 : -(int64_t) EPERM;
@@ -877,8 +875,7 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = 0;
         break; /* timer_getoverrun */
     case 227:
-        ret = host_priv() ? sys_clock_settime((int) a1, (const void *) a2)
-                          : -(int64_t) EPERM;
+        ret = host_priv() ? sys_clock_settime((int) a1, (const void *) a2) : -(int64_t) EPERM;
         break; /* clock_settime */
     case 232:
         ret = sys_epoll_wait((int) a1, (struct epoll_event *) a2, (int) a3, (int) a4);
@@ -1201,7 +1198,7 @@ void syscall_dispatch(syscall_frame_t *f) {
     case 307:
         ret = -(int64_t) ENOSYS;
         break; /* seccomp not implemented */
-    case 313: /* finit_module(fd, params, flags) */
+    case 313:  /* finit_module(fd, params, flags) */
         ret = sys_finit_module((int) a1, (const char *) a2, (uint32_t) a3);
         break;
     case 318:

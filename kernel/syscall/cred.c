@@ -222,9 +222,7 @@ static bool name_in_list(const char *members, const char *name) {
     int nlen = (int) strlen(name);
     const char *p = members;
     while (*p) {
-        if (strncmp(p, name, nlen) == 0 &&
-            (p[nlen] == ',' || p[nlen] == '\0'))
-            return true;
+        if (strncmp(p, name, nlen) == 0 && (p[nlen] == ',' || p[nlen] == '\0')) return true;
         while (*p && *p != ',') p++;
         if (*p == ',') p++;
     }
@@ -284,8 +282,7 @@ static void kernel_initgroups(proc_t *p, uint32_t uid) {
     }
 
     p->ngroups = ngroups;
-    for (int i = 0; i < ngroups; i++)
-        p->sup_groups[i] = groups[i];
+    for (int i = 0; i < ngroups; i++) p->sup_groups[i] = groups[i];
 }
 
 int64_t sys_getgroups(int size, uint32_t *list) {
@@ -294,10 +291,8 @@ int64_t sys_getgroups(int size, uint32_t *list) {
     int n = p->ngroups;
     if (size == 0) return n;
     if (size < n) return -(int64_t) EINVAL;
-    if (!list || !uptr_ok_w(list, (uint64_t) n * sizeof(*list)))
-        return -(int64_t) EFAULT;
-    for (int i = 0; i < n; i++)
-        list[i] = p->sup_groups[i];
+    if (!list || !uptr_ok_w(list, (uint64_t) n * sizeof(*list))) return -(int64_t) EFAULT;
+    for (int i = 0; i < n; i++) list[i] = p->sup_groups[i];
     return n;
 }
 
@@ -310,7 +305,6 @@ int64_t sys_setgroups(int size, const uint32_t *list) {
     if (size > 0 && (!list || !uptr_ok(list, (uint64_t) size * sizeof(*list))))
         return -(int64_t) EFAULT;
     p->ngroups = size;
-    for (int i = 0; i < size; i++)
-        p->sup_groups[i] = list[i];
+    for (int i = 0; i < size; i++) p->sup_groups[i] = list[i];
     return 0;
 }

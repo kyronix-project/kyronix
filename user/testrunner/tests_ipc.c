@@ -570,8 +570,7 @@ int test_memfd_shared_across_processes(void) {
     ASSERT_GE(fd, 0);
     ASSERT_EQ(0, ftruncate(fd, SHM_TEST_SIZE));
 
-    unsigned char *map =
-        mmap(NULL, SHM_TEST_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    unsigned char *map = mmap(NULL, SHM_TEST_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     ASSERT_TRUE(map != MAP_FAILED);
 
     pid_t pid = fork();
@@ -581,8 +580,7 @@ int test_memfd_shared_across_processes(void) {
         munmap(map, SHM_TEST_SIZE);
         int rfd = recv_fd(sv[1]);
         if (rfd < 0) _exit(11);
-        unsigned char *cmap =
-            mmap(NULL, SHM_TEST_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, rfd, 0);
+        unsigned char *cmap = mmap(NULL, SHM_TEST_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, rfd, 0);
         close(rfd); /* the mapping must outlive the descriptor */
         if (cmap == MAP_FAILED) _exit(12);
         /* wait for the parent's pattern to show up */

@@ -58,7 +58,7 @@ static unsigned long option_number(const char *attached, int *index, int argc, c
 
 int main(int argc, char **argv) {
     kx_prog = "uniq";
-    uniq_options_t o = {0};
+    uniq_options_t o = { 0 };
     int first = 1;
 
     for (; first < argc; first++) {
@@ -74,11 +74,23 @@ int main(int argc, char **argv) {
         }
         for (const char *p = arg + 1; *p; p++) {
             switch (*p) {
-            case 'c': o.count = true; break;
-            case 'd': o.repeated = true; o.unique = false; break;
-            case 'u': o.unique = true; o.repeated = false; break;
-            case 'i': o.ignore_case = true; break;
-            case 'z': o.zero = true; break;
+            case 'c':
+                o.count = true;
+                break;
+            case 'd':
+                o.repeated = true;
+                o.unique = false;
+                break;
+            case 'u':
+                o.unique = true;
+                o.repeated = false;
+                break;
+            case 'i':
+                o.ignore_case = true;
+                break;
+            case 'z':
+                o.zero = true;
+                break;
             case 'f':
                 o.skip_fields = option_number(p + 1, &first, argc, argv);
                 p += strlen(p + 1);
@@ -92,7 +104,8 @@ int main(int argc, char **argv) {
                 o.have_width = true;
                 p += strlen(p + 1);
                 break;
-            default: kx_die("invalid option");
+            default:
+                kx_die("invalid option");
             }
         }
     }

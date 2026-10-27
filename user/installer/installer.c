@@ -78,14 +78,11 @@ typedef struct {
 } component_info_t;
 
 static const component_info_t component_table[] = {
-    {"Text editor", "vi console editor", COMPONENT_EDITOR},
-    {"Network tools", "ping, wget, nc and nslookup", COMPONENT_NETWORK},
-    {"Development kit", "headers and static libraries",
-     COMPONENT_DEVELOPMENT},
-    {"Security lab", "Phantom and Anti-TOCTOU self-tests",
-     COMPONENT_SECURITY},
-    {"Installer tools", "installer, mkfs.ext2 and Limine utility",
-     COMPONENT_INSTALLER},
+    { "Text editor", "vi console editor", COMPONENT_EDITOR },
+    { "Network tools", "ping, wget, nc and nslookup", COMPONENT_NETWORK },
+    { "Development kit", "headers and static libraries", COMPONENT_DEVELOPMENT },
+    { "Security lab", "Phantom and Anti-TOCTOU self-tests", COMPONENT_SECURITY },
+    { "Installer tools", "installer, mkfs.ext2 and Limine utility", COMPONENT_INSTALLER },
 };
 
 static FILE *log_file;
@@ -138,19 +135,25 @@ static int ui_read_key(void) {
     }
 
     int final = getch();
-    for (int i = 0; i < 8 && final != ERR &&
-                    ((final >= '0' && final <= '9') || final == ';'); i++)
+    for (int i = 0; i < 8 && final != ERR && ((final >= '0' && final <= '9') || final == ';'); i++)
         final = getch();
     wtimeout(stdscr, -1);
 
     switch (final) {
-        case 'A': return KEY_UP;
-        case 'B': return KEY_DOWN;
-        case 'C': return KEY_RIGHT;
-        case 'D': return KEY_LEFT;
-        case 'H': return KEY_HOME;
-        case 'F': return KEY_END;
-        default: return 27;
+    case 'A':
+        return KEY_UP;
+    case 'B':
+        return KEY_DOWN;
+    case 'C':
+        return KEY_RIGHT;
+    case 'D':
+        return KEY_LEFT;
+    case 'H':
+        return KEY_HOME;
+    case 'F':
+        return KEY_END;
+    default:
+        return 27;
     }
 }
 
@@ -185,8 +188,7 @@ static uint64_t get_device_size(const char *path) {
     int fd = open(path, O_RDONLY);
     if (fd < 0) return 0;
     uint64_t bytes = 0;
-    if (ioctl(fd, BLKGETSIZE64, &bytes) < 0 &&
-        ioctl(fd, BLKGETSIZE64_COMPAT, &bytes) < 0) {
+    if (ioctl(fd, BLKGETSIZE64, &bytes) < 0 && ioctl(fd, BLKGETSIZE64_COMPAT, &bytes) < 0) {
         off_t end = lseek(fd, 0, SEEK_END);
         if (end > 0) bytes = (uint64_t) end;
     }
@@ -195,8 +197,8 @@ static uint64_t get_device_size(const char *path) {
 }
 
 static int is_disk_name(const char *name) {
-    return strlen(name) == 3 && name[0] == 's' && name[1] == 'd' &&
-           name[2] >= 'a' && name[2] <= 'z';
+    return strlen(name) == 3 && name[0] == 's' && name[1] == 'd' && name[2] >= 'a' &&
+           name[2] <= 'z';
 }
 
 static int discover_disks(disk_info_t disks[MAX_DISKS]) {
@@ -206,8 +208,7 @@ static int discover_disks(disk_info_t disks[MAX_DISKS]) {
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL && count < MAX_DISKS) {
         if (!is_disk_name(entry->d_name)) continue;
-        snprintf(disks[count].path, sizeof(disks[count].path), "/dev/%s",
-                 entry->d_name);
+        snprintf(disks[count].path, sizeof(disks[count].path), "/dev/%s", entry->d_name);
         disks[count].bytes = get_device_size(disks[count].path);
         if (disks[count].bytes >= MINIMUM_DISK_BYTES) count++;
     }
@@ -227,12 +228,10 @@ static int discover_disks(disk_info_t disks[MAX_DISKS]) {
 static void format_size(uint64_t bytes, char *out, size_t out_size) {
     const uint64_t gib = 1024ULL * 1024ULL * 1024ULL;
     if (bytes >= gib)
-        snprintf(out, out_size, "%llu.%llu GiB",
-                 (unsigned long long) (bytes / gib),
+        snprintf(out, out_size, "%llu.%llu GiB", (unsigned long long) (bytes / gib),
                  (unsigned long long) ((bytes % gib) * 10ULL / gib));
     else
-        snprintf(out, out_size, "%llu MiB",
-                 (unsigned long long) (bytes / (1024ULL * 1024ULL)));
+        snprintf(out, out_size, "%llu MiB", (unsigned long long) (bytes / (1024ULL * 1024ULL)));
 }
 
 static int select_disk(disk_info_t disks[MAX_DISKS], int count) {
@@ -251,31 +250,30 @@ static int select_disk(disk_info_t disks[MAX_DISKS], int count) {
         refresh();
 
         int key = ui_read_key();
-        if ((key == KEY_UP || key == 'k') && selected > 0) selected--;
+        if ((key == KEY_UP || key == 'k') && selected > 0)
+            selected--;
         else if ((key == KEY_DOWN || key == 'j') && selected + 1 < count)
             selected++;
-        else if (key == '\n' || key == KEY_ENTER) return selected;
-        else if (key == 'q' || key == 'Q' || key == 27) return -1;
+        else if (key == '\n' || key == KEY_ENTER)
+            return selected;
+        else if (key == 'q' || key == 'Q' || key == 27)
+            return -1;
     }
 }
 
 static int valid_hostname(const char *hostname) {
     size_t length = strlen(hostname);
-    if (length == 0 || length > 63 || hostname[0] == '-' ||
-        hostname[length - 1] == '-')
-        return 0;
+    if (length == 0 || length > 63 || hostname[0] == '-' || hostname[length - 1] == '-') return 0;
     for (size_t i = 0; i < length; i++) {
         char c = hostname[i];
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') || c == '-')
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-')
             continue;
         return 0;
     }
     return 1;
 }
 
-static void show_information(const char *title, const char *line1,
-                             const char *line2) {
+static void show_information(const char *title, const char *line1, const char *line2) {
     draw_frame(title);
     mvprintw(7, 4, "%s", line1);
     if (line2 && line2[0]) mvprintw(9, 4, "%s", line2);
@@ -301,8 +299,7 @@ static void edit_hostname(install_config_t *config) {
             snprintf(config->hostname, sizeof(config->hostname), "%s", value);
             return;
         }
-        show_information("Invalid hostname",
-                         "Use 1-63 letters, digits or hyphens.",
+        show_information("Invalid hostname", "Use 1-63 letters, digits or hyphens.",
                          "The first and last character cannot be a hyphen.");
     }
 }
@@ -316,23 +313,21 @@ static void edit_components(install_config_t *config) {
         for (int i = 0; i < count; i++) {
             int enabled = (config->components & component_table[i].flag) != 0;
             if (i == selected) attron(A_REVERSE);
-            mvprintw(8 + i * 2, 6, "[%c] %-20s %s",
-                     enabled ? 'x' : ' ', component_table[i].name,
+            mvprintw(8 + i * 2, 6, "[%c] %-20s %s", enabled ? 'x' : ' ', component_table[i].name,
                      component_table[i].description);
             if (i == selected) attroff(A_REVERSE);
         }
-        mvprintw(LINES - 3, 4,
-                 "Up/Down: select   Space: toggle   Enter/Esc: return");
+        mvprintw(LINES - 3, 4, "Up/Down: select   Space: toggle   Enter/Esc: return");
         refresh();
 
         int key = ui_read_key();
-        if ((key == KEY_UP || key == 'k') && selected > 0) selected--;
+        if ((key == KEY_UP || key == 'k') && selected > 0)
+            selected--;
         else if ((key == KEY_DOWN || key == 'j') && selected + 1 < count)
             selected++;
         else if (key == ' ') {
             config->components ^= component_table[selected].flag;
-        } else if (key == '\n' || key == KEY_ENTER || key == 27 ||
-                   key == 'q' || key == 'Q') {
+        } else if (key == '\n' || key == KEY_ENTER || key == 27 || key == 'q' || key == 'Q') {
             return;
         }
     }
@@ -354,8 +349,7 @@ static void edit_disk(install_config_t *config) {
     }
 }
 
-static void draw_config_row(int row, int selected, const char *label,
-                            const char *value) {
+static void draw_config_row(int row, int selected, const char *label, const char *value) {
     if (selected) attron(A_REVERSE);
     mvprintw(row, 5, " %-18s  %-45s ", label, value);
     if (selected) attroff(A_REVERSE);
@@ -372,25 +366,21 @@ static int configure_install(install_config_t *config) {
         if (config->has_disk) {
             char size[32];
             format_size(config->disk.bytes, size, sizeof(size));
-            snprintf(disk_value, sizeof(disk_value), "%s (%s)",
-                     config->disk.path, size);
+            snprintf(disk_value, sizeof(disk_value), "%s (%s)", config->disk.path, size);
         } else {
             snprintf(disk_value, sizeof(disk_value), "Not selected");
         }
         int enabled = 0;
-        for (int i = 0; i < (int) (sizeof(component_table) /
-                                    sizeof(component_table[0])); i++)
+        for (int i = 0; i < (int) (sizeof(component_table) / sizeof(component_table[0])); i++)
             if (config->components & component_table[i].flag) enabled++;
-        snprintf(component_value, sizeof(component_value), "%d of %zu enabled",
-                 enabled, sizeof(component_table) / sizeof(component_table[0]));
-        snprintf(mount_value, sizeof(mount_value), "%s",
-                 config->noatime ? "noatime" : "relatime");
+        snprintf(component_value, sizeof(component_value), "%d of %zu enabled", enabled,
+                 sizeof(component_table) / sizeof(component_table[0]));
+        snprintf(mount_value, sizeof(mount_value), "%s", config->noatime ? "noatime" : "relatime");
 
         draw_frame("Installation configuration");
         mvprintw(5, 5, "Configure each row, then select Install.");
         draw_config_row(7, selected == 0, "Target disk", disk_value);
-        draw_config_row(8, selected == 1, "Partitioning",
-                        "Automatic MBR (erase disk)");
+        draw_config_row(8, selected == 1, "Partitioning", "Automatic MBR (erase disk)");
         draw_config_row(9, selected == 2, "Root filesystem", "ext2");
         draw_config_row(10, selected == 3, "Mount policy", mount_value);
         draw_config_row(11, selected == 4, "Packages", component_value);
@@ -403,28 +393,25 @@ static int configure_install(install_config_t *config) {
             mvprintw(19, 5, "Select a target disk before installation.");
             attroff(COLOR_PAIR(4));
         }
-        mvprintw(LINES - 3, 4,
-                 "Up/Down: navigate   Enter: edit/select   Q: exit");
+        mvprintw(LINES - 3, 4, "Up/Down: navigate   Enter: edit/select   Q: exit");
         refresh();
 
         int key = ui_read_key();
-        if ((key == KEY_UP || key == 'k') && selected > 0) selected--;
-        else if ((key == KEY_DOWN || key == 'j') &&
-                 selected + 1 < row_count)
+        if ((key == KEY_UP || key == 'k') && selected > 0)
+            selected--;
+        else if ((key == KEY_DOWN || key == 'j') && selected + 1 < row_count)
             selected++;
-        else if (key == 'q' || key == 'Q' || key == 27) return 0;
-        else if (key != '\n' && key != KEY_ENTER &&
-                 key != KEY_LEFT && key != KEY_RIGHT)
+        else if (key == 'q' || key == 'Q' || key == 27)
+            return 0;
+        else if (key != '\n' && key != KEY_ENTER && key != KEY_LEFT && key != KEY_RIGHT)
             continue;
         else if (selected == 0)
             edit_disk(config);
         else if (selected == 1)
-            show_information("Automatic partitioning",
-                             "Creates a 16 MiB FAT16 boot partition and",
+            show_information("Automatic partitioning", "Creates a 16 MiB FAT16 boot partition and",
                              "uses the remaining space for the ext2 root.");
         else if (selected == 2)
-            show_information("Root filesystem",
-                             "ext2 is the writable root filesystem supported",
+            show_information("Root filesystem", "ext2 is the writable root filesystem supported",
                              "by the current Kyronix kernel.");
         else if (selected == 3)
             config->noatime = !config->noatime;
@@ -433,13 +420,12 @@ static int configure_install(install_config_t *config) {
         else if (selected == 5)
             edit_hostname(config);
         else if (selected == 6)
-            show_information("Bootloader",
-                             "The current installer supports Limine in",
+            show_information("Bootloader", "The current installer supports Limine in",
                              "Legacy BIOS mode. UEFI will be added later.");
         else if (selected == 7) {
             if (!config->has_disk) {
-                show_information("Target disk required",
-                                 "Select a target disk in the first row.", "");
+                show_information("Target disk required", "Select a target disk in the first row.",
+                                 "");
             } else {
                 return 1;
             }
@@ -470,8 +456,7 @@ static int confirm_erase(const disk_info_t *disk) {
 }
 
 static void show_progress(const char *step, int index, int total) {
-    if (step != current_step)
-        snprintf(current_step, sizeof(current_step), "%s", step);
+    if (step != current_step) snprintf(current_step, sizeof(current_step), "%s", step);
     if (!ui_active) {
         printf("[%d/%d] %s\n", index, total, step);
         fflush(stdout);
@@ -485,16 +470,14 @@ static void show_progress(const char *step, int index, int total) {
     mvprintw(10, 4, "[");
     for (int i = 0; i < width; i++) addch(i < filled ? ACS_CKBOARD : ' ');
     addch(']');
-    mvprintw(12, 4, "Files: %llu   Copied: %llu MiB",
-             (unsigned long long) copied_files,
+    mvprintw(12, 4, "Files: %llu   Copied: %llu MiB", (unsigned long long) copied_files,
              (unsigned long long) (copied_bytes / (1024ULL * 1024ULL)));
     mvprintw(LINES - 3, 4, "Do not power off the computer.");
     refresh();
 }
 
 static int valid_install_disk(const char *path) {
-    return path && strncmp(path, "/dev/", 5) == 0 &&
-           is_disk_name(path + 5);
+    return path && strncmp(path, "/dev/", 5) == 0 && is_disk_name(path + 5);
 }
 
 static int disk_is_mounted(const char *disk) {
@@ -507,12 +490,11 @@ static int disk_is_mounted(const char *disk) {
     char filesystem[64];
     char options[256];
     int mounted = 0;
-    while (fscanf(mounts, "%255s %255s %63s %255s %*d %*d",
-                  source, mountpoint, filesystem, options) == 4) {
+    while (fscanf(mounts, "%255s %255s %63s %255s %*d %*d", source, mountpoint, filesystem,
+                  options) == 4) {
         size_t length = strlen(disk);
         if (strncmp(source, disk, length) == 0 &&
-            (source[length] == '\0' ||
-             (source[length] >= '0' && source[length] <= '9'))) {
+            (source[length] == '\0' || (source[length] >= '0' && source[length] <= '9'))) {
             mounted = 1;
             break;
         }
@@ -564,13 +546,11 @@ static int write_all(int fd, const void *buffer, size_t size) {
     return 0;
 }
 
-static int partition_disk(const char *disk, char *boot_partition,
-                          size_t boot_partition_size, char *root_partition,
-                          size_t root_partition_size) {
+static int partition_disk(const char *disk, char *boot_partition, size_t boot_partition_size,
+                          char *root_partition, size_t root_partition_size) {
     uint64_t bytes = get_device_size(disk);
     uint64_t sectors64 = bytes / 512u;
-    if (sectors64 <= ROOT_PARTITION_LBA + 4096u ||
-        sectors64 - ROOT_PARTITION_LBA > UINT32_MAX) {
+    if (sectors64 <= ROOT_PARTITION_LBA + 4096u || sectors64 - ROOT_PARTITION_LBA > UINT32_MAX) {
         errno = EFBIG;
         return -1;
     }
@@ -580,8 +560,7 @@ static int partition_disk(const char *disk, char *boot_partition,
 
     mbr_t mbr;
     memset(&mbr, 0, sizeof(mbr));
-    mbr.disk_signature =
-        (uint32_t) getpid() ^ (uint32_t) bytes ^ (uint32_t) (bytes >> 32);
+    mbr.disk_signature = (uint32_t) getpid() ^ (uint32_t) bytes ^ (uint32_t) (bytes >> 32);
     mbr.partitions[0].status = 0x80;
     mbr.partitions[0].chs_first[0] = 0x00;
     mbr.partitions[0].chs_first[1] = 0x02;
@@ -594,12 +573,10 @@ static int partition_disk(const char *disk, char *boot_partition,
     memset(mbr.partitions[1].chs_first, 0xFF, 3);
     memset(mbr.partitions[1].chs_last, 0xFF, 3);
     mbr.partitions[1].lba_first = ROOT_PARTITION_LBA;
-    mbr.partitions[1].sectors =
-        (uint32_t) (sectors64 - ROOT_PARTITION_LBA);
+    mbr.partitions[1].sectors = (uint32_t) (sectors64 - ROOT_PARTITION_LBA);
     mbr.signature = 0xAA55;
 
-    if (lseek(fd, 0, SEEK_SET) < 0 || write_all(fd, &mbr, sizeof(mbr)) < 0 ||
-        fsync(fd) < 0) {
+    if (lseek(fd, 0, SEEK_SET) < 0 || write_all(fd, &mbr, sizeof(mbr)) < 0 || fsync(fd) < 0) {
         close(fd);
         return -1;
     }
@@ -613,9 +590,7 @@ static int partition_disk(const char *disk, char *boot_partition,
     snprintf(boot_partition, boot_partition_size, "%s1", disk);
     snprintf(root_partition, root_partition_size, "%s2", disk);
     for (int attempt = 0; attempt < 50; attempt++) {
-        if (access(boot_partition, F_OK) == 0 &&
-            access(root_partition, F_OK) == 0)
-            return 0;
+        if (access(boot_partition, F_OK) == 0 && access(root_partition, F_OK) == 0) return 0;
         usleep(100000);
     }
     errno = ENOENT;
@@ -636,8 +611,7 @@ static int copy_boot_image(const char *partition) {
     uint64_t total = 0;
     for (int chunk = 0; chunk < 16 && result == 0; chunk++) {
         char path[64];
-        snprintf(path, sizeof(path),
-                 "/usr/share/kyronix/boot.fat.%02d", chunk);
+        snprintf(path, sizeof(path), "/usr/share/kyronix/boot.fat.%02d", chunk);
         int in = open(path, O_RDONLY);
         if (in < 0) {
             result = -1;
@@ -659,8 +633,7 @@ static int copy_boot_image(const char *partition) {
         }
         close(in);
     }
-    if (result == 0 &&
-        total != (uint64_t) BOOT_PARTITION_SECTORS * 512u) {
+    if (result == 0 && total != (uint64_t) BOOT_PARTITION_SECTORS * 512u) {
         errno = EIO;
         result = -1;
     }
@@ -679,35 +652,27 @@ static int ensure_directory(const char *path, mode_t mode) {
 
 static int copy_entry(const char *source, const char *target);
 
-static int path_is(const char *path, const char *candidate) {
-    return strcmp(path, candidate) == 0;
-}
+static int path_is(const char *path, const char *candidate) { return strcmp(path, candidate) == 0; }
 
 static int path_is_below(const char *path, const char *directory) {
     size_t length = strlen(directory);
-    return strncmp(path, directory, length) == 0 &&
-           (path[length] == '\0' || path[length] == '/');
+    return strncmp(path, directory, length) == 0 && (path[length] == '\0' || path[length] == '/');
 }
 
 static int excluded_component_path(const char *source) {
     if (!active_config) return 0;
     uint32_t components = active_config->components;
 
-    if (!(components & COMPONENT_EDITOR) && path_is(source, "/bin/vi"))
-        return 1;
+    if (!(components & COMPONENT_EDITOR) && path_is(source, "/bin/vi")) return 1;
     if (!(components & COMPONENT_NETWORK) &&
-        (path_is(source, "/bin/nc") ||
-         path_is(source, "/bin/nslookup") ||
-         path_is(source, "/bin/ping") ||
-         path_is(source, "/bin/wget")))
+        (path_is(source, "/bin/nc") || path_is(source, "/bin/nslookup") ||
+         path_is(source, "/bin/ping") || path_is(source, "/bin/wget")))
         return 1;
     if (!(components & COMPONENT_DEVELOPMENT) &&
-        (path_is_below(source, "/usr/include") ||
-         path_is(source, "/usr/lib/libc.a")))
+        (path_is_below(source, "/usr/include") || path_is(source, "/usr/lib/libc.a")))
         return 1;
     if (!(components & COMPONENT_INSTALLER) &&
-        (path_is(source, "/bin/installer") ||
-         path_is(source, "/bin/mkfs.ext2") ||
+        (path_is(source, "/bin/installer") || path_is(source, "/bin/mkfs.ext2") ||
          path_is(source, "/usr/libexec/limine-install")))
         return 1;
     return 0;
@@ -721,15 +686,14 @@ static int copy_directory(const char *source, const char *target, const struct s
     int result = 0;
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-            continue;
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
 
         char child_source[1024];
         char child_target[1024];
-        if (snprintf(child_source, sizeof(child_source), "%s/%s", source,
-                     entry->d_name) >= (int) sizeof(child_source) ||
-            snprintf(child_target, sizeof(child_target), "%s/%s", target,
-                     entry->d_name) >= (int) sizeof(child_target)) {
+        if (snprintf(child_source, sizeof(child_source), "%s/%s", source, entry->d_name) >=
+                (int) sizeof(child_source) ||
+            snprintf(child_target, sizeof(child_target), "%s/%s", target, entry->d_name) >=
+                (int) sizeof(child_target)) {
             errno = ENAMETOOLONG;
             result = -1;
             break;
@@ -781,17 +745,13 @@ static int copy_regular(const char *source, const char *target, const struct sta
     close(out);
     chmod(target, st->st_mode & 07777u);
     copied_files++;
-    if (ui_active && copied_files % 10u == 0)
-        show_progress(current_step, 6, 9);
+    if (ui_active && copied_files % 10u == 0) show_progress(current_step, 6, 9);
     return result;
 }
 
 static int copy_entry(const char *source, const char *target) {
-    static const char boot_chunk_prefix[] =
-        "/usr/share/kyronix/boot.fat.";
-    if (strncmp(source, boot_chunk_prefix,
-                sizeof(boot_chunk_prefix) - 1u) == 0)
-        return 0;
+    static const char boot_chunk_prefix[] = "/usr/share/kyronix/boot.fat.";
+    if (strncmp(source, boot_chunk_prefix, sizeof(boot_chunk_prefix) - 1u) == 0) return 0;
     if (excluded_component_path(source)) return 0;
 
     struct stat st;
@@ -827,15 +787,13 @@ static int copy_rootfs(const char *target) {
     int result = 0;
     while ((entry = readdir(root)) != NULL) {
         if (entry->d_name[0] == '\0' || strcmp(entry->d_name, ".") == 0 ||
-            strcmp(entry->d_name, "..") == 0 ||
-            excluded_root_entry(entry->d_name))
+            strcmp(entry->d_name, "..") == 0 || excluded_root_entry(entry->d_name))
             continue;
 
         char source[512];
         char destination[1024];
         snprintf(source, sizeof(source), "/%s", entry->d_name);
-        snprintf(destination, sizeof(destination), "%s/%s", target,
-                 entry->d_name);
+        snprintf(destination, sizeof(destination), "%s/%s", target, entry->d_name);
         if (copy_entry(source, destination) < 0) {
             result = -1;
             break;
@@ -857,8 +815,7 @@ static int copy_rootfs(const char *target) {
     return 0;
 }
 
-static int write_fstab(const char *target, const char *partition,
-                       int noatime) {
+static int write_fstab(const char *target, const char *partition, int noatime) {
     char etc[1024];
     char path[1024];
     snprintf(etc, sizeof(etc), "%s/etc", target);
@@ -867,8 +824,7 @@ static int write_fstab(const char *target, const char *partition,
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) return -1;
     char line[256];
-    int length = snprintf(line, sizeof(line),
-                          "%s / ext2 rw,%s 0 1\n", partition,
+    int length = snprintf(line, sizeof(line), "%s / ext2 rw,%s 0 1\n", partition,
                           noatime ? "noatime" : "relatime");
     int result = write_all(fd, line, (size_t) length);
     if (fsync(fd) < 0) result = -1;
@@ -905,8 +861,7 @@ static int preflight(void) {
     };
     for (int i = 0; required[i]; i++) {
         if (access(required[i], R_OK) == 0) continue;
-        if (log_file)
-            fprintf(log_file, "missing installer payload: %s\n", required[i]);
+        if (log_file) fprintf(log_file, "missing installer payload: %s\n", required[i]);
         errno = ENOENT;
         return -1;
     }
@@ -929,8 +884,8 @@ static int perform_install(const install_config_t *config) {
     if (preflight() < 0) goto fail;
 
     show_progress("Writing MBR partition table", 2, 9);
-    if (partition_disk(disk->path, boot_partition, sizeof(boot_partition),
-                       root_partition, sizeof(root_partition)) < 0)
+    if (partition_disk(disk->path, boot_partition, sizeof(boot_partition), root_partition,
+                       sizeof(root_partition)) < 0)
         goto fail;
 
     show_progress("Writing FAT16 boot filesystem", 3, 9);
@@ -945,17 +900,14 @@ static int perform_install(const install_config_t *config) {
         goto fail;
     }
 
-    if (ensure_directory("/mnt", 0755) < 0 ||
-        ensure_directory(mountpoint, 0755) < 0)
-        goto fail;
+    if (ensure_directory("/mnt", 0755) < 0 || ensure_directory(mountpoint, 0755) < 0) goto fail;
     show_progress("Mounting root filesystem", 5, 9);
     if (mount(root_partition, mountpoint, "ext2", 0, NULL) < 0) goto fail;
     mounted = 1;
 
     show_progress("Copying Kyronix system", 6, 9);
     if (copy_rootfs(mountpoint) < 0) goto fail;
-    if (write_fstab(mountpoint, root_partition, config->noatime) < 0)
-        goto fail;
+    if (write_fstab(mountpoint, root_partition, config->noatime) < 0) goto fail;
     if (write_hostname(mountpoint, config->hostname) < 0) goto fail;
     sync();
 
@@ -965,7 +917,10 @@ static int perform_install(const install_config_t *config) {
 
     show_progress("Installing Limine bootloader", 8, 9);
     char *limine_argv[] = {
-        "/usr/libexec/limine-install", "bios-install", (char *) disk->path, NULL,
+        "/usr/libexec/limine-install",
+        "bios-install",
+        (char *) disk->path,
+        NULL,
     };
     if (run_command(limine_argv) != 0) {
         errno = EIO;
@@ -1011,17 +966,13 @@ static void print_plan(const install_config_t *config) {
     format_size(disk->bytes, size, sizeof(size));
     printf("Kyronix installer dry-run\n");
     printf("  target:     %s (%s)\n", disk->path, size);
-    printf("  boot:       %s1, FAT16, 16 MiB, active, Limine BIOS\n",
-           disk->path);
+    printf("  boot:       %s1, FAT16, 16 MiB, active, Limine BIOS\n", disk->path);
     printf("  root:       %s2, ext2, label kyronix\n", disk->path);
-    printf("  mount:      rw,%s\n",
-           config->noatime ? "noatime" : "relatime");
+    printf("  mount:      rw,%s\n", config->noatime ? "noatime" : "relatime");
     printf("  hostname:   %s\n", config->hostname);
     printf("  components:");
-    for (int i = 0; i < (int) (sizeof(component_table) /
-                                sizeof(component_table[0])); i++)
-        if (config->components & component_table[i].flag)
-            printf(" %s", component_table[i].name);
+    for (int i = 0; i < (int) (sizeof(component_table) / sizeof(component_table[0])); i++)
+        if (config->components & component_table[i].flag) printf(" %s", component_table[i].name);
     printf("\n");
     printf("  source:     current live rootfs\n");
     printf("No changes were made.\n");
@@ -1029,7 +980,8 @@ static void print_plan(const install_config_t *config) {
 
 static void usage(const char *program) {
     printf("usage: %s [--target /dev/sdX] [--hostname NAME] "
-           "[--yes] [--dry-run]\n", program);
+           "[--yes] [--dry-run]\n",
+           program);
     printf("  --target PATH  preselect a disk\n");
     printf("  --hostname NAME set the installed system hostname\n");
     printf("  --yes          skip ncurses confirmation (requires --target)\n");
@@ -1042,11 +994,9 @@ int main(int argc, char **argv) {
     int dry_run = 0;
     install_config_t config;
     memset(&config, 0, sizeof(config));
-    config.components =
-        COMPONENT_EDITOR | COMPONENT_NETWORK | COMPONENT_SECURITY;
+    config.components = COMPONENT_EDITOR | COMPONENT_NETWORK | COMPONENT_SECURITY;
     config.noatime = 1;
-    snprintf(config.hostname, sizeof(config.hostname), "%s",
-             DEFAULT_HOSTNAME);
+    snprintf(config.hostname, sizeof(config.hostname), "%s", DEFAULT_HOSTNAME);
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--target") == 0 && i + 1 < argc)
@@ -1054,14 +1004,11 @@ int main(int argc, char **argv) {
         else if (strcmp(argv[i], "--hostname") == 0 && i + 1 < argc) {
             const char *hostname = argv[++i];
             if (!valid_hostname(hostname)) {
-                fprintf(stderr, "installer: invalid hostname '%s'\n",
-                        hostname);
+                fprintf(stderr, "installer: invalid hostname '%s'\n", hostname);
                 return 2;
             }
-            snprintf(config.hostname, sizeof(config.hostname), "%s",
-                     hostname);
-        }
-        else if (strcmp(argv[i], "--yes") == 0)
+            snprintf(config.hostname, sizeof(config.hostname), "%s", hostname);
+        } else if (strcmp(argv[i], "--yes") == 0)
             assume_yes = 1;
         else if (strcmp(argv[i], "--dry-run") == 0)
             dry_run = 1;
@@ -1084,15 +1031,13 @@ int main(int argc, char **argv) {
     }
 
     log_file = fopen("/tmp/kyronix-install.log", "w");
-    if (log_file)
-        fprintf(log_file, "Kyronix Installer %s\n", INSTALLER_VERSION);
+    if (log_file) fprintf(log_file, "Kyronix Installer %s\n", INSTALLER_VERSION);
 
     if (target) {
         snprintf(config.disk.path, sizeof(config.disk.path), "%s", target);
         config.disk.bytes = get_device_size(target);
         if (config.disk.bytes < MINIMUM_DISK_BYTES) {
-            fprintf(stderr,
-                    "installer: target is missing or smaller than 128 MiB\n");
+            fprintf(stderr, "installer: target is missing or smaller than 128 MiB\n");
             if (log_file) fclose(log_file);
             return 1;
         }
@@ -1121,8 +1066,7 @@ int main(int argc, char **argv) {
     }
     if (disk_is_mounted(config.disk.path)) {
         if (ui_active) ui_shutdown();
-        fprintf(stderr, "installer: %s or one of its partitions is mounted\n",
-                config.disk.path);
+        fprintf(stderr, "installer: %s or one of its partitions is mounted\n", config.disk.path);
         if (log_file) fclose(log_file);
         return 1;
     }

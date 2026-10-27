@@ -172,10 +172,8 @@ int64_t sys_settimeofday(const void *tv, const void *tz) {
     if (!uptr_ok(tv, 16)) return -(int64_t) EFAULT;
 
     const int64_t *timeval = (const int64_t *) tv;
-    if (timeval[0] < 0 || timeval[1] < 0 || timeval[1] >= 1000000LL)
-        return -(int64_t) EINVAL;
-    if ((uint64_t) timeval[0] > ((uint64_t) INT64_MAX / 1000ULL))
-        return -(int64_t) EINVAL;
+    if (timeval[0] < 0 || timeval[1] < 0 || timeval[1] >= 1000000LL) return -(int64_t) EINVAL;
+    if ((uint64_t) timeval[0] > ((uint64_t) INT64_MAX / 1000ULL)) return -(int64_t) EINVAL;
 
     uint64_t ms = (uint64_t) timeval[0] * 1000ULL + (uint64_t) timeval[1] / 1000ULL;
     return realtime_set_ms(ms) ? 0 : -(int64_t) EINVAL;

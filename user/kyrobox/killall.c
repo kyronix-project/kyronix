@@ -1,20 +1,17 @@
 #include "common.h"
 
 static int sig_from_name(const char *s) {
-    static const struct { const char *name; int sig; } tbl[] = {
-        {"SIGTERM", SIGTERM}, {"TERM", SIGTERM},
-        {"SIGKILL", SIGKILL}, {"KILL", SIGKILL},
-        {"SIGINT", SIGINT},   {"INT", SIGINT},
-        {"SIGHUP", SIGHUP},   {"HUP", SIGHUP},
-        {"SIGQUIT", SIGQUIT}, {"QUIT", SIGQUIT},
-        {"SIGSTOP", SIGSTOP}, {"STOP", SIGSTOP},
-        {"SIGTSTP", SIGTSTP}, {"TSTP", SIGTSTP},
-        {"SIGCONT", SIGCONT}, {"CONT", SIGCONT},
-        {"SIGALRM", SIGALRM}, {"ALRM", SIGALRM},
-        {"SIGABRT", SIGABRT}, {"ABRT", SIGABRT},
-        {"SIGPIPE", SIGPIPE}, {"PIPE", SIGPIPE},
-        {"SIGUSR1", SIGUSR1}, {"USR1", SIGUSR1},
-        {"SIGUSR2", SIGUSR2}, {"USR2", SIGUSR2},
+    static const struct {
+        const char *name;
+        int sig;
+    } tbl[] = {
+        { "SIGTERM", SIGTERM }, { "TERM", SIGTERM }, { "SIGKILL", SIGKILL }, { "KILL", SIGKILL },
+        { "SIGINT", SIGINT },   { "INT", SIGINT },   { "SIGHUP", SIGHUP },   { "HUP", SIGHUP },
+        { "SIGQUIT", SIGQUIT }, { "QUIT", SIGQUIT }, { "SIGSTOP", SIGSTOP }, { "STOP", SIGSTOP },
+        { "SIGTSTP", SIGTSTP }, { "TSTP", SIGTSTP }, { "SIGCONT", SIGCONT }, { "CONT", SIGCONT },
+        { "SIGALRM", SIGALRM }, { "ALRM", SIGALRM }, { "SIGABRT", SIGABRT }, { "ABRT", SIGABRT },
+        { "SIGPIPE", SIGPIPE }, { "PIPE", SIGPIPE }, { "SIGUSR1", SIGUSR1 }, { "USR1", SIGUSR1 },
+        { "SIGUSR2", SIGUSR2 }, { "USR2", SIGUSR2 },
     };
     for (size_t i = 0; i < sizeof(tbl) / sizeof(tbl[0]); i++)
         if (strcmp(s, tbl[i].name) == 0) return tbl[i].sig;
@@ -57,9 +54,8 @@ int main(int argc, char **argv) {
     while (fgets(line, sizeof(line), f)) {
         unsigned int pid, ppid, uid;
         char state;
-        char exe[512] = {0};
-        if (sscanf(line, "%u %u %c %u %511s", &pid, &ppid, &state, &uid, exe) < 4)
-            continue;
+        char exe[512] = { 0 };
+        if (sscanf(line, "%u %u %c %u %511s", &pid, &ppid, &state, &uid, exe) < 4) continue;
 
         const char *name = strrchr(exe, '/');
         name = name ? name + 1 : exe;

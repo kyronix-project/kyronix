@@ -65,8 +65,14 @@ static void redirect_service_output(const struct service *svc) {
     snprintf(path, sizeof(path), "%s/%s%s", SERVICE_LOG_DIR, svc->name, SERVICE_LOG_SUFFIX);
     int fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd < 0) return;
-    if (dup2(fd, STDOUT_FILENO) < 0) { close(fd); return; }
-    if (dup2(fd, STDERR_FILENO) < 0) { close(fd); return; }
+    if (dup2(fd, STDOUT_FILENO) < 0) {
+        close(fd);
+        return;
+    }
+    if (dup2(fd, STDERR_FILENO) < 0) {
+        close(fd);
+        return;
+    }
     close(fd);
 }
 
@@ -80,7 +86,7 @@ static char *trim(char *s) {
 
 static bool valid_service_name(const char *name) {
     if (!name || !*name) return false;
-    for (const unsigned char *p = (const unsigned char *)name; *p; p++)
+    for (const unsigned char *p = (const unsigned char *) name; *p; p++)
         if (!isalnum(*p) && *p != '_' && *p != '-' && *p != '.') return false;
     return true;
 }
@@ -160,39 +166,44 @@ static void release_service(struct service *svc) {
 }
 
 static void reap_children(int sig) {
-    (void)sig;
+    (void) sig;
     got_signal = 1;
 }
 
 static void handle_reload(int sig) {
-    (void)sig;
+    (void) sig;
     reload_flag = 1;
 }
 
 static void handle_shutdown(int sig) {
     switch (sig) {
-    case SIGUSR1: shutdown_cmd = RB_AUTOBOOT; break;
-    case SIGUSR2: shutdown_cmd = RB_POWER_OFF; break;
-    case SIGTERM: shutdown_cmd = RB_HALT_SYSTEM; break;
+    case SIGUSR1:
+        shutdown_cmd = RB_AUTOBOOT;
+        break;
+    case SIGUSR2:
+        shutdown_cmd = RB_POWER_OFF;
+        break;
+    case SIGTERM:
+        shutdown_cmd = RB_HALT_SYSTEM;
+        break;
     }
 }
 
 static void do_shutdown(int cmd) {
-    const char *action = (unsigned)cmd == RB_POWER_OFF ? "Powering off" :
-                         (unsigned)cmd == RB_HALT_SYSTEM ? "Halting" : "Rebooting";
+    const char *action = (unsigned) cmd == RB_POWER_OFF   ? "Powering off" :
+                         (unsigned) cmd == RB_HALT_SYSTEM ? "Halting" :
+                                                            "Rebooting";
     info(action);
     status("Shutting down services", 1);
     for (int i = 0; i < nservices; i++) {
-        if (services[i].pid > 0)
-            kill(services[i].pid, SIGTERM);
+        if (services[i].pid > 0) kill(services[i].pid, SIGTERM);
     }
 
     sync();
     sleep(1);
 
     for (int i = 0; i < nservices; i++) {
-        if (services[i].pid > 0)
-            kill(services[i].pid, SIGKILL);
+        if (services[i].pid > 0) kill(services[i].pid, SIGKILL);
     }
 
     status("Halting system", 1);
@@ -200,9 +211,9 @@ static void do_shutdown(int cmd) {
     log_event("system halted");
     sync();
 
-    if ((unsigned)cmd == RB_POWER_OFF)
+    if ((unsigned) cmd == RB_POWER_OFF)
         reboot(RB_POWER_OFF);
-    else if ((unsigned)cmd == RB_HALT_SYSTEM)
+    else if ((unsigned) cmd == RB_HALT_SYSTEM)
         reboot(RB_HALT_SYSTEM);
     else
         reboot(RB_AUTOBOOT);
@@ -262,8 +273,7 @@ static void apply_hostname(void) {
     fclose(f);
 
     char *hostname = trim(line);
-    if (!*hostname ||
-        sethostname(hostname, strlen(hostname)) < 0) {
+    if (!*hostname || sethostname(hostname, strlen(hostname)) < 0) {
         status("Setting hostname", 0);
         return;
     }
@@ -332,7 +342,7 @@ static void write_services(void) {
 static void write_init_pid(void) {
     FILE *f = fopen(INIT_PID_PATH ".tmp", "w");
     if (!f) return;
-    fprintf(f, "%d\n", (int)getpid());
+    fprintf(f, "%d\n", (int) getpid());
     fflush(f);
     fsync(fileno(f));
     fclose(f);
@@ -361,11 +371,8 @@ static void reload_config(void) {
                 break;
             }
         }
-        if (!matched && old[i].pid > 0) {
-            kill(old[i].pid, SIGTERM);
-        }
-        for (int k = 0; k < MAX_ARGS && old[i].argv[k]; k++)
-            free(old[i].argv[k]);
+        if (!matched && old[i].pid > 0) { kill(old[i].pid, SIGTERM); }
+        for (int k = 0; k < MAX_ARGS && old[i].argv[k]; k++) free(old[i].argv[k]);
     }
 
     for (int i = 0; i < nservices; i++) {

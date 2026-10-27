@@ -1,5 +1,5 @@
-#ifndef	_SYS_XATTR_H
-#define	_SYS_XATTR_H
+#ifndef _SYS_XATTR_H
+#define _SYS_XATTR_H
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -24,7 +24,7 @@ int removexattr(const char *, const char *);
 int lremovexattr(const char *, const char *);
 int fremovexattr(int, const char *);
 
-#define __UAPI_DEF_XATTR        0
+#define __UAPI_DEF_XATTR 0
 
 #ifdef __cplusplus
 }

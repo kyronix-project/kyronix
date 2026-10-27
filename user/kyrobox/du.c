@@ -87,8 +87,7 @@ int main(int argc, char **argv) {
             puts("usage: du [-abchkmst] [-d DEPTH] [FILE...]");
             return 0;
         }
-        if ((strcmp(arg, "-d") == 0 || strcmp(arg, "--max-depth") == 0) &&
-            first + 1 < argc) {
+        if ((strcmp(arg, "-d") == 0 || strcmp(arg, "--max-depth") == 0) && first + 1 < argc) {
             o.max_depth = atoi(argv[++first]);
             if (o.max_depth < 0) kx_die("invalid depth");
             continue;
@@ -100,14 +99,32 @@ int main(int argc, char **argv) {
         }
         for (const char *p = arg + 1; *p; p++) {
             switch (*p) {
-            case 'a': o.all = true; break;
-            case 'b': o.apparent = true; o.unit = 1; break;
-            case 'c': o.total = true; break;
-            case 'h': o.human = true; break;
-            case 'k': o.human = false; o.unit = 1024; break;
-            case 'm': o.human = false; o.unit = 1024 * 1024; break;
-            case 's': o.summarize = true; break;
-            default: kx_die("invalid option");
+            case 'a':
+                o.all = true;
+                break;
+            case 'b':
+                o.apparent = true;
+                o.unit = 1;
+                break;
+            case 'c':
+                o.total = true;
+                break;
+            case 'h':
+                o.human = true;
+                break;
+            case 'k':
+                o.human = false;
+                o.unit = 1024;
+                break;
+            case 'm':
+                o.human = false;
+                o.unit = 1024 * 1024;
+                break;
+            case 's':
+                o.summarize = true;
+                break;
+            default:
+                kx_die("invalid option");
             }
         }
     }

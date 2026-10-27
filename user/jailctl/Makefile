@@ -1,7 +1,7 @@
-CC := musl-gcc
+CC := gcc
 CFLAGS ?= -std=c11 -Wall -Wextra -Werror -O2 -march=x86-64 -mtune=generic -fno-pie -L../../build
 CFLAGS += -I../kyrobox
-LDFLAGS ?= -static -no-pie
+LDFLAGS ?= -static 
 OUT := ../../build/bin/jailctl
 
 FNO_LINK_LIBATOMIC := $(shell echo 'int main(void){return 0;}' | $(CC) -x c - -fno-link-libatomic -o /dev/null 2>/dev/null && echo '-fno-link-libatomic')

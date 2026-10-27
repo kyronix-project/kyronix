@@ -134,11 +134,15 @@ int main(int argc, char **argv) {
         }
         if (show_headers) print_header(argv[a] ? argv[a] : "standard input", &first);
         if (hmode == MODE_LINES) {
-            if (count >= 0) head_lines(f, count);
-            else head_lines_omit(f, -count);
+            if (count >= 0)
+                head_lines(f, count);
+            else
+                head_lines_omit(f, -count);
         } else {
-            if (count >= 0) head_bytes(f, count);
-            else head_bytes_omit(f, -count);
+            if (count >= 0)
+                head_bytes(f, count);
+            else
+                head_bytes_omit(f, -count);
         }
         if (argv[a]) fclose(f);
     }

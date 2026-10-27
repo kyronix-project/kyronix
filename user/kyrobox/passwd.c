@@ -21,7 +21,7 @@ static int write_all(int fd, const char *buf, size_t len) {
             return -1;
         }
         buf += n;
-        len -= (size_t)n;
+        len -= (size_t) n;
     }
     return 0;
 }
@@ -31,7 +31,7 @@ static int read_secret(int fd, const char *prompt, char *buf, size_t size) {
     if (size < 2 || tcgetattr(fd, &saved) < 0) return -1;
 
     struct termios input = saved;
-    input.c_lflag &= (tcflag_t)~(ECHO | ICANON | ISIG);
+    input.c_lflag &= (tcflag_t) ~(ECHO | ICANON | ISIG);
     input.c_cc[VMIN] = 1;
     input.c_cc[VTIME] = 0;
     if (tcsetattr(fd, TCSAFLUSH, &input) < 0) return -1;
@@ -65,13 +65,13 @@ static int read_secret(int fd, const char *prompt, char *buf, size_t size) {
             continue;
         }
         if (used + 1 < size)
-            buf[used++] = (char)c;
+            buf[used++] = (char) c;
         else
             overflow = 1;
     }
 
     buf[used] = '\0';
-    (void)write_all(fd, "\n", 1);
+    (void) write_all(fd, "\n", 1);
     if (tcsetattr(fd, TCSAFLUSH, &saved) < 0) result = -1;
     if (overflow) {
         errno = EOVERFLOW;
@@ -84,11 +84,11 @@ static int secure_equal(const char *a, const char *b) {
     size_t alen = strlen(a);
     size_t blen = strlen(b);
     size_t max = alen > blen ? alen : blen;
-    unsigned char diff = (unsigned char)(alen ^ blen);
+    unsigned char diff = (unsigned char) (alen ^ blen);
     for (size_t i = 0; i < max; i++) {
-        unsigned char ac = i < alen ? (unsigned char)a[i] : 0;
-        unsigned char bc = i < blen ? (unsigned char)b[i] : 0;
-        diff |= (unsigned char)(ac ^ bc);
+        unsigned char ac = i < alen ? (unsigned char) a[i] : 0;
+        unsigned char bc = i < blen ? (unsigned char) b[i] : 0;
+        diff |= (unsigned char) (ac ^ bc);
     }
     return diff == 0;
 }
@@ -130,12 +130,11 @@ static int make_hash(const char *password, char *out, size_t out_size) {
             errno = EIO;
             return -1;
         }
-        done += (size_t)n;
+        done += (size_t) n;
     }
 
     char salt[21] = "$6$";
-    for (size_t i = 0; i < sizeof(random); i++)
-        salt[3 + i] = alphabet[random[i] & 63U];
+    for (size_t i = 0; i < sizeof(random); i++) salt[3 + i] = alphabet[random[i] & 63U];
     salt[19] = '$';
     salt[20] = '\0';
     wipe(random, sizeof(random));
@@ -159,11 +158,11 @@ static int rewrite_shadow(const char *user, const char *hash) {
     char *line = NULL;
     size_t capacity = 0;
     int found = 0;
-    long today = (long)(time(NULL) / 86400);
+    long today = (long) (time(NULL) / 86400);
     char temporary[64];
 
-    if (snprintf(temporary, sizeof(temporary), "/etc/.shadow.passwd.%ld",
-                 (long)getpid()) >= (int)sizeof(temporary)) {
+    if (snprintf(temporary, sizeof(temporary), "/etc/.shadow.passwd.%ld", (long) getpid()) >=
+        (int) sizeof(temporary)) {
         errno = ENAMETOOLONG;
         return -1;
     }
@@ -190,7 +189,7 @@ static int rewrite_shadow(const char *user, const char *hash) {
     ssize_t length;
     while ((length = getline(&line, &capacity, input)) >= 0) {
         char *first = strchr(line, ':');
-        if (first && (size_t)(first - line) == strlen(user) &&
+        if (first && (size_t) (first - line) == strlen(user) &&
             memcmp(line, user, strlen(user)) == 0) {
             char *second = strchr(first + 1, ':');
             char *third = second ? strchr(second + 1, ':') : NULL;
@@ -198,21 +197,20 @@ static int rewrite_shadow(const char *user, const char *hash) {
                 errno = EINVAL;
                 goto out;
             }
-            if (fwrite(line, 1, (size_t)(first - line + 1), output) !=
-                    (size_t)(first - line + 1) ||
-                fputs(hash, output) == EOF ||
-                fprintf(output, ":%ld", today) < 0 || fputs(third, output) == EOF)
+            if (fwrite(line, 1, (size_t) (first - line + 1), output) !=
+                    (size_t) (first - line + 1) ||
+                fputs(hash, output) == EOF || fprintf(output, ":%ld", today) < 0 ||
+                fputs(third, output) == EOF)
                 goto out;
             found = 1;
-        } else if (fwrite(line, 1, (size_t)length, output) != (size_t)length) {
+        } else if (fwrite(line, 1, (size_t) length, output) != (size_t) length) {
             goto out;
         }
     }
     if (ferror(input)) goto out;
 
     if (!found) {
-        if (fprintf(output, "%s:%s:%ld:0:99999:7:::\n", user, hash, today) < 0)
-            goto out;
+        if (fprintf(output, "%s:%s:%ld:0:99999:7:::\n", user, hash, today) < 0) goto out;
     }
     if (fflush(output) < 0 || fsync(fileno(output)) < 0) goto out;
     if (fclose(output) < 0) {
@@ -223,23 +221,20 @@ static int rewrite_shadow(const char *user, const char *hash) {
     if (rename(temporary, "/etc/shadow") < 0) goto out;
     result = 0;
 
-out:
-    {
-        int saved_errno = errno;
-        free(line);
-        if (input) fclose(input);
-        if (output) fclose(output);
-        if (input_fd >= 0) close(input_fd);
-        if (output_fd >= 0) close(output_fd);
-        if (result < 0) unlink(temporary);
-        errno = saved_errno;
-    }
+out: {
+    int saved_errno = errno;
+    free(line);
+    if (input) fclose(input);
+    if (output) fclose(output);
+    if (input_fd >= 0) close(input_fd);
+    if (output_fd >= 0) close(output_fd);
+    if (result < 0) unlink(temporary);
+    errno = saved_errno;
+}
     return result;
 }
 
-static void usage(void) {
-    fprintf(stderr, "usage: passwd [user]\n");
-}
+static void usage(void) { fprintf(stderr, "usage: passwd [user]\n"); }
 
 int main(int argc, char **argv) {
     kx_prog = "passwd";
@@ -256,7 +251,7 @@ int main(int argc, char **argv) {
 
     struct passwd *caller = getpwuid(real_uid);
     if (!caller) {
-        fprintf(stderr, "passwd: cannot identify caller uid %lu\n", (unsigned long)real_uid);
+        fprintf(stderr, "passwd: cannot identify caller uid %lu\n", (unsigned long) real_uid);
         return 1;
     }
     char caller_name[64];
@@ -289,21 +284,20 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    char old_password[PASSWORD_MAX] = {0};
-    char new_password[PASSWORD_MAX] = {0};
-    char confirmation[PASSWORD_MAX] = {0};
-    char expected[HASH_MAX] = {0};
-    char hash[HASH_MAX] = {0};
+    char old_password[PASSWORD_MAX] = { 0 };
+    char new_password[PASSWORD_MAX] = { 0 };
+    char confirmation[PASSWORD_MAX] = { 0 };
+    char expected[HASH_MAX] = { 0 };
+    char hash[HASH_MAX] = { 0 };
     int status = 1;
 
     if (real_uid != 0) {
-        if (current_hash(target_name, expected, sizeof(expected)) < 0 ||
-            expected[0] == '!' || expected[0] == '*') {
+        if (current_hash(target_name, expected, sizeof(expected)) < 0 || expected[0] == '!' ||
+            expected[0] == '*') {
             fprintf(stderr, "passwd: account is locked or has no usable password\n");
             goto out;
         }
-        if (read_secret(tty, "Current password: ", old_password,
-                        sizeof(old_password)) < 0) {
+        if (read_secret(tty, "Current password: ", old_password, sizeof(old_password)) < 0) {
             fprintf(stderr, "passwd: unable to read password\n");
             goto out;
         }

@@ -14,16 +14,26 @@ static unsigned long parse_flags(const char *opt) {
     char *save = NULL;
     char *tok = strtok_r(tmp, ",", &save);
     while (tok) {
-        if (strcmp(tok, "ro") == 0)          flags |= MS_RDONLY;
-        else if (strcmp(tok, "rw") == 0)     flags &= ~MS_RDONLY;
-        else if (strcmp(tok, "nosuid") == 0) flags |= MS_NOSUID;
-        else if (strcmp(tok, "nodev") == 0)  flags |= MS_NODEV;
-        else if (strcmp(tok, "noexec") == 0) flags |= MS_NOEXEC;
-        else if (strcmp(tok, "sync") == 0)   flags |= MS_SYNCHRONOUS;
-        else if (strcmp(tok, "remount") == 0) flags |= MS_REMOUNT;
-        else if (strcmp(tok, "noatime") == 0) flags |= MS_NOATIME;
-        else if (strcmp(tok, "nodiratime") == 0) flags |= MS_NODIRATIME;
-        else fprintf(stderr, "%s: unknown option: %s\n", kx_prog, tok);
+        if (strcmp(tok, "ro") == 0)
+            flags |= MS_RDONLY;
+        else if (strcmp(tok, "rw") == 0)
+            flags &= ~MS_RDONLY;
+        else if (strcmp(tok, "nosuid") == 0)
+            flags |= MS_NOSUID;
+        else if (strcmp(tok, "nodev") == 0)
+            flags |= MS_NODEV;
+        else if (strcmp(tok, "noexec") == 0)
+            flags |= MS_NOEXEC;
+        else if (strcmp(tok, "sync") == 0)
+            flags |= MS_SYNCHRONOUS;
+        else if (strcmp(tok, "remount") == 0)
+            flags |= MS_REMOUNT;
+        else if (strcmp(tok, "noatime") == 0)
+            flags |= MS_NOATIME;
+        else if (strcmp(tok, "nodiratime") == 0)
+            flags |= MS_NODIRATIME;
+        else
+            fprintf(stderr, "%s: unknown option: %s\n", kx_prog, tok);
         tok = strtok_r(NULL, ",", &save);
     }
     return flags;
@@ -58,15 +68,13 @@ int main(int argc, char **argv) {
             return 1;
         }
         char line[256];
-        while (fgets(line, sizeof(line), f)) {
-            fputs(line, stdout);
-        }
+        while (fgets(line, sizeof(line), f)) { fputs(line, stdout); }
         fclose(f);
         return 0;
     }
 
     const char *dev = argv[ai];
-    const char *mp  = argv[ai + 1];
+    const char *mp = argv[ai + 1];
 
     unsigned long flags = opt ? parse_flags(opt) : 0;
     const char *data = NULL;

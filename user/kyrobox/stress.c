@@ -25,8 +25,7 @@ static void worker(int write_fd, int duration) {
 
         if ((ops & 0xFF) == 0) {
             clock_gettime(CLOCK_MONOTONIC, &now);
-            if (now.tv_sec - start.tv_sec >= (time_t) duration)
-                break;
+            if (now.tv_sec - start.tv_sec >= (time_t) duration) break;
         }
     }
 
@@ -41,11 +40,10 @@ static double elapsed_sec(struct timespec *t0) {
 }
 
 static void usage(void) {
-    fprintf(stderr,
-        "Usage: stress [-c workers] [-t seconds]\n"
-        "  -c N   number of worker processes (default: all CPUs)\n"
-        "  -t N   duration in seconds (default: 10)\n"
-        "  -h     show this help\n");
+    fprintf(stderr, "Usage: stress [-c workers] [-t seconds]\n"
+                    "  -c N   number of worker processes (default: all CPUs)\n"
+                    "  -t N   duration in seconds (default: 10)\n"
+                    "  -h     show this help\n");
     exit(1);
 }
 
@@ -72,8 +70,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    printf("stress: %d workers x %d seconds on %d CPU(s)\n\n",
-           g_nworkers, g_duration, ncores);
+    printf("stress: %d workers x %d seconds on %d CPU(s)\n\n", g_nworkers, g_duration, ncores);
 
     struct timespec t0;
     clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -108,7 +105,7 @@ int main(int argc, char **argv) {
     printf("  -------\n");
 
     while (elapsed_sec(&t0) < (double) g_duration) {
-        struct timespec ts = {1, 0};
+        struct timespec ts = { 1, 0 };
         nanosleep(&ts, NULL);
         printf("\r  %5.1fs  ", elapsed_sec(&t0));
         fflush(stdout);
@@ -130,8 +127,7 @@ int main(int argc, char **argv) {
             if (pids[i] == w) {
                 unsigned long long ops = 0;
                 ssize_t n = read(pipes[i][0], &ops, sizeof(ops));
-                if (n == (ssize_t) sizeof(ops))
-                    total_ops += ops;
+                if (n == (ssize_t) sizeof(ops)) total_ops += ops;
                 close(pipes[i][0]);
                 break;
             }
@@ -144,8 +140,7 @@ int main(int argc, char **argv) {
     printf("\n  ELAPSED   WORKERS   OPS\n");
     printf("  -------   -------   ---\n");
     printf("  %5.1fs     %3d    %llu\n\n", total, spawned, total_ops);
-    printf("stress: %.1f sec, %d workers, %llu ops, %.0f ops/sec\n",
-           total, spawned, total_ops,
+    printf("stress: %.1f sec, %d workers, %llu ops, %.0f ops/sec\n", total, spawned, total_ops,
            total > 0 ? (double) total_ops / total : 0);
 
     free(pids);

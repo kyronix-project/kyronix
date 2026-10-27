@@ -1,8 +1,8 @@
 #include "phantom.h"
 
-#include "internal.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/percpu.h"
+#include "internal.h"
 #include "lib/string.h"
 #include "proc/smp.h"
 #include "security/phantom.h"
@@ -10,8 +10,7 @@
 static bool phantom_proc_on_cpu(const proc_t *target) {
     uint32_t ncpu = g_cpu_count < MAX_CPUS ? g_cpu_count : MAX_CPUS;
     for (uint32_t i = 0; i < ncpu; i++)
-        if (__atomic_load_n(&g_cpu_local[i].current, __ATOMIC_ACQUIRE) == target)
-            return true;
+        if (__atomic_load_n(&g_cpu_local[i].current, __ATOMIC_ACQUIRE) == target) return true;
     return false;
 }
 
@@ -23,8 +22,7 @@ int64_t sys_phantom_mode(int mode) {
 }
 
 int64_t sys_phantom_read(void *out, uint32_t max_events) {
-    if (!out || !max_events || max_events > PHANTOM_EVENT_RING)
-        return -(int64_t) EINVAL;
+    if (!out || !max_events || max_events > PHANTOM_EVENT_RING) return -(int64_t) EINVAL;
     if (!host_priv()) return -(int64_t) EPERM;
     uint64_t bytes = (uint64_t) max_events * sizeof(phantom_event_t);
     if (!uptr_ok_w(out, bytes)) return -(int64_t) EFAULT;
@@ -69,8 +67,7 @@ int64_t sys_phantom_control(uint32_t action, uint32_t pid) {
     if (action == PHANTOM_CTL_TERMINATE && fault_pending) {
         target->phantom_quarantine_action = PHANTOM_CTL_TERMINATE;
         spin_unlock(&g_proctable_lock);
-        phantom_record_for(target, PHANTOM_EVENT_QUARANTINE,
-                           PHANTOM_QUARANTINEF_TERMINATE, pid, 0,
+        phantom_record_for(target, PHANTOM_EVENT_QUARANTINE, PHANTOM_QUARANTINEF_TERMINATE, pid, 0,
                            "fault-source termination queued");
         proc_unref(target);
         return 0;
@@ -80,9 +77,9 @@ int64_t sys_phantom_control(uint32_t action, uint32_t pid) {
     target->phantom_quarantined = 0;
     spin_unlock(&g_proctable_lock);
 
-     // the target marked itself quarantined before calling sched_switch().
-     // do not publish its kernel stack on another cpu until that switch has
-     // removed it from every per-cpu current slot
+    // the target marked itself quarantined before calling sched_switch().
+    // do not publish its kernel stack on another cpu until that switch has
+    // removed it from every per-cpu current slot
 
     while (phantom_proc_on_cpu(target)) cpu_relax();
 
@@ -94,13 +91,11 @@ int64_t sys_phantom_control(uint32_t action, uint32_t pid) {
     spin_unlock(&g_proctable_lock);
 
     phantom_record_for(target, PHANTOM_EVENT_QUARANTINE,
-                       action == PHANTOM_CTL_TERMINATE
-                           ? PHANTOM_QUARANTINEF_TERMINATE
-                           : PHANTOM_QUARANTINEF_RESUME,
+                       action == PHANTOM_CTL_TERMINATE ? PHANTOM_QUARANTINEF_TERMINATE :
+                                                         PHANTOM_QUARANTINEF_RESUME,
                        pid, sandbox_pid,
-                       action == PHANTOM_CTL_TERMINATE
-                           ? "source timeline terminated"
-                           : "source timeline resumed");
+                       action == PHANTOM_CTL_TERMINATE ? "source timeline terminated" :
+                                                         "source timeline resumed");
     proc_unref(target);
     return 0;
 }

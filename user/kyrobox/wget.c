@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "common.h"
 #include <arpa/inet.h>
 #include <netdb.h>

@@ -9,7 +9,7 @@ extern "C" {
 #define __GNU_GETTEXT_SUPPORTED_REVISION(major) ((major) == 0 ? 1 : -1)
 
 #if __GNUC__ >= 3
-#define __fa(n) __attribute__ ((__format_arg__ (n)))
+#define __fa(n) __attribute__((__format_arg__(n)))
 #else
 #define __fa(n)
 #endif
@@ -21,7 +21,7 @@ char *ngettext(const char *, const char *, unsigned long) __fa(1) __fa(2);
 char *dngettext(const char *, const char *, const char *, unsigned long) __fa(2) __fa(3);
 char *dcngettext(const char *, const char *, const char *, unsigned long, int) __fa(2) __fa(3);
 char *textdomain(const char *);
-char *bindtextdomain (const char *, const char *);
+char *bindtextdomain(const char *, const char *);
 char *bind_textdomain_codeset(const char *, const char *);
 
 #undef __fa

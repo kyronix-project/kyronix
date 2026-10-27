@@ -22,7 +22,9 @@ static char *strcasestr_own(const char *hay, const char *needle) {
     if (nlen == 0) return (char *) hay;
     for (const char *p = hay; *p; p++) {
         size_t i = 0;
-        while (i < nlen && p[i] && tolower((unsigned char) p[i]) == tolower((unsigned char) needle[i])) i++;
+        while (i < nlen && p[i] &&
+               tolower((unsigned char) p[i]) == tolower((unsigned char) needle[i]))
+            i++;
         if (i == nlen) return (char *) p;
     }
     return NULL;
@@ -135,15 +137,32 @@ int main(int argc, char **argv) {
         }
         for (const char *c = a + 1; *c; c++) {
             switch (*c) {
-                case 'i': o.icase = true; break;
-                case 'r': o.recursive = true; break;
-                case 'v': o.invert = true; break;
-                case 'E': o.ere = true; break;
-                case 'c': o.count = true; break;
-                case 'l': o.list = true; break;
-                case 'n': o.number = true; break;
-                case 'o': o.only = true; break;
-                default: kx_die("usage: grep [-ircvElno] PATTERN [FILE...]");
+            case 'i':
+                o.icase = true;
+                break;
+            case 'r':
+                o.recursive = true;
+                break;
+            case 'v':
+                o.invert = true;
+                break;
+            case 'E':
+                o.ere = true;
+                break;
+            case 'c':
+                o.count = true;
+                break;
+            case 'l':
+                o.list = true;
+                break;
+            case 'n':
+                o.number = true;
+                break;
+            case 'o':
+                o.only = true;
+                break;
+            default:
+                kx_die("usage: grep [-ircvElno] PATTERN [FILE...]");
             }
         }
     }

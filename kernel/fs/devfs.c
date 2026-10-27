@@ -242,8 +242,8 @@ static int64_t pty_common_ioctl(pty_inst_t *p, uint64_t req, uint64_t arg) {
         memcpy((void *) (uintptr_t) arg, &p->termios, sizeof(p->termios));
         return 0;
     }
-    case 0x5402: /* TCSETS */
-    case 0x5403: /* TCSETSW */
+    case 0x5402:   /* TCSETS */
+    case 0x5403:   /* TCSETSW */
     case 0x5404: { /* TCSETSF */
         if (!p || !uptr_ok((void *) (uintptr_t) arg, sizeof(pty_termios_t))) return -EFAULT;
         memcpy(&p->termios, (const void *) (uintptr_t) arg, sizeof(p->termios));
@@ -397,16 +397,16 @@ static int ptmx_open(vfs_node_t *n, int flags) {
     pty->pgid = g_current_proc ? (int) g_current_proc->pgid : 0;
     pty->canon_len = 0;
     memset(&pty->termios, 0, sizeof(pty->termios));
-    pty->termios.c_iflag = 0x2500;  /* ICRNL | IXON | IUTF8 */
-    pty->termios.c_oflag = 0x5;     /* OPOST | ONLCR */
-    pty->termios.c_cflag = 0xBF;    /* B38400 | CS8 | CREAD */
-    pty->termios.c_lflag = 0x8A3B;  /* ISIG ICANON ECHO ECHOE ECHOK IEXTEN */
-    pty->termios.c_cc[0] = 3;       /* VINTR  ^C */
-    pty->termios.c_cc[1] = 28;      /* VQUIT  ^\ */
-    pty->termios.c_cc[2] = 127;     /* VERASE DEL */
-    pty->termios.c_cc[3] = 21;      /* VKILL  ^U */
-    pty->termios.c_cc[4] = 4;       /* VEOF   ^D */
-    pty->termios.c_cc[6] = 1;       /* VMIN */
+    pty->termios.c_iflag = 0x2500; /* ICRNL | IXON | IUTF8 */
+    pty->termios.c_oflag = 0x5;    /* OPOST | ONLCR */
+    pty->termios.c_cflag = 0xBF;   /* B38400 | CS8 | CREAD */
+    pty->termios.c_lflag = 0x8A3B; /* ISIG ICANON ECHO ECHOE ECHOK IEXTEN */
+    pty->termios.c_cc[0] = 3;      /* VINTR  ^C */
+    pty->termios.c_cc[1] = 28;     /* VQUIT  ^\ */
+    pty->termios.c_cc[2] = 127;    /* VERASE DEL */
+    pty->termios.c_cc[3] = 21;     /* VKILL  ^U */
+    pty->termios.c_cc[4] = 4;      /* VEOF   ^D */
+    pty->termios.c_cc[6] = 1;      /* VMIN */
     pty->ws.ws_row = 24;
     pty->ws.ws_col = 80;
 

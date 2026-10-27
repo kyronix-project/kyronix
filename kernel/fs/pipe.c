@@ -13,9 +13,7 @@
 #define EIO 5
 #define EINTR 4
 
-static uint64_t pipe_pending_signals(proc_t *p) {
-    return proc_blocking_sig_mask(p);
-}
+static uint64_t pipe_pending_signals(proc_t *p) { return proc_blocking_sig_mask(p); }
 
 pipe_t *pipe_alloc(void) {
     pipe_t *p = (pipe_t *) kcalloc(1, sizeof(pipe_t));
@@ -36,14 +34,12 @@ void pipe_free(pipe_t *p) {
         int slot = __builtin_ctzll(waiters);
         proc_t *t = &g_proctable[slot];
         if (t->blocked_pipe == p) t->blocked_pipe = NULL;
-        if (__sync_bool_compare_and_swap(&t->state, PROC_WAITING, PROC_READY))
-            proc_set_ready(t);
+        if (__sync_bool_compare_and_swap(&t->state, PROC_WAITING, PROC_READY)) proc_set_ready(t);
         waiters &= waiters - 1;
     }
     while (p->anc_rd != p->anc_wr) {
         pipe_anc_t *slot = &p->anc_q[p->anc_rd];
-        for (int i = 0; i < slot->nfds; i++)
-            vfs_file_close((vfs_file_t *) slot->files[i]);
+        for (int i = 0; i < slot->nfds; i++) vfs_file_close((vfs_file_t *) slot->files[i]);
         p->anc_rd = (p->anc_rd + 1) % PIPE_ANC_SLOTS;
     }
     p->magic = 0;
@@ -73,8 +69,8 @@ void pipe_unref_read(pipe_t *p) {
     if (!p) return;
     uint32_t refs = __atomic_load_n(&p->read_refs, __ATOMIC_ACQUIRE);
     while (refs) {
-        if (__atomic_compare_exchange_n(&p->read_refs, &refs, refs - 1, false,
-                                        __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        if (__atomic_compare_exchange_n(&p->read_refs, &refs, refs - 1, false, __ATOMIC_ACQ_REL,
+                                        __ATOMIC_ACQUIRE)) {
             if (refs == 1) pipe_wake(p, 0);
             pipe_endpoint_put(p);
             return;
@@ -86,8 +82,8 @@ void pipe_unref_write(pipe_t *p) {
     if (!p) return;
     uint32_t refs = __atomic_load_n(&p->write_refs, __ATOMIC_ACQUIRE);
     while (refs) {
-        if (__atomic_compare_exchange_n(&p->write_refs, &refs, refs - 1, false,
-                                        __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        if (__atomic_compare_exchange_n(&p->write_refs, &refs, refs - 1, false, __ATOMIC_ACQ_REL,
+                                        __ATOMIC_ACQUIRE)) {
             if (refs == 1) pipe_wake(p, 1);
             pipe_endpoint_put(p);
             return;
@@ -164,8 +160,7 @@ int64_t pipe_read(pipe_t *p, void *buf, uint64_t len) {
                 spin_unlock(&p->lock);
                 if (_rp) sched_block_current();
                 pipe_cancel_wait(p, _rp);
-                if (pipe_pending_signals(_rp))
-                    return done ? (int64_t) done : -(int64_t) EINTR;
+                if (pipe_pending_signals(_rp)) return done ? (int64_t) done : -(int64_t) EINTR;
                 goto restart_read;
             }
             uint64_t take = len - done;
@@ -210,8 +205,7 @@ int64_t pipe_peek(pipe_t *p, void *buf, uint64_t len, uint64_t skip) {
                 spin_unlock(&p->lock);
                 if (_rp) sched_block_current();
                 pipe_cancel_wait(p, _rp);
-                if (pipe_pending_signals(_rp))
-                    return done ? (int64_t) done : -(int64_t) EINTR;
+                if (pipe_pending_signals(_rp)) return done ? (int64_t) done : -(int64_t) EINTR;
                 goto restart_peek;
             }
 
@@ -260,8 +254,7 @@ int64_t pipe_write(pipe_t *p, const void *buf, uint64_t len) {
                 pipe_wake(p, 1); /* let readers drain so space frees up */
                 if (_wp) sched_block_current();
                 pipe_cancel_wait(p, _wp);
-                if (pipe_pending_signals(_wp))
-                    return done ? (int64_t) done : -(int64_t) EINTR;
+                if (pipe_pending_signals(_wp)) return done ? (int64_t) done : -(int64_t) EINTR;
                 goto restart_write;
             }
             uint32_t wpos = (p->rpos + p->count) % PIPE_BUFSZ;

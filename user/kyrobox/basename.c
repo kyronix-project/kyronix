@@ -14,8 +14,7 @@ static void print_name(const char *path, const char *suffix, bool zero) {
     if (suffix && suffix[0]) {
         size_t nlen = strlen(name);
         size_t slen = strlen(suffix);
-        if (slen < nlen && memcmp(name + nlen - slen, suffix, slen) == 0)
-            name[nlen - slen] = '\0';
+        if (slen < nlen && memcmp(name + nlen - slen, suffix, slen) == 0) name[nlen - slen] = '\0';
     }
     fputs(name, stdout);
     putchar(zero ? '\0' : '\n');

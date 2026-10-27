@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809
 #include <ctype.h>
 #include <dirent.h>
@@ -63,11 +64,14 @@ static void expand_env(char *buf, size_t size) {
     int quote = 0;
     for (char *p = buf; *p && pos < size - 1; p++) {
         if (*p == '\\' && p[1]) {
-            tmp[pos++] = *p++; if (pos < size - 1) tmp[pos++] = *p;
+            tmp[pos++] = *p++;
+            if (pos < size - 1) tmp[pos++] = *p;
             continue;
         }
         if ((*p == '\'' || *p == '"') && (quote == 0 || quote == *p)) {
-            quote = quote ? 0 : *p; tmp[pos++] = *p; continue;
+            quote = quote ? 0 : *p;
+            tmp[pos++] = *p;
+            continue;
         }
         if (*p == '$' && quote != '\'') {
             p++;
@@ -76,8 +80,10 @@ static void expand_env(char *buf, size_t size) {
                 const char *start = p;
                 int depth = 1;
                 while (*p && depth > 0) {
-                    if (*p == '(') depth++;
-                    else if (*p == ')') depth--;
+                    if (*p == '(')
+                        depth++;
+                    else if (*p == ')')
+                        depth--;
                     if (depth > 0) p++;
                 }
                 size_t cmd_len = p - start;
@@ -91,7 +97,7 @@ static void expand_env(char *buf, size_t size) {
                         char line[1024];
                         while (fgets(line, sizeof(line), fp)) {
                             size_t llen = strlen(line);
-                            while (llen > 0 && (line[llen-1] == '\n' || line[llen-1] == '\r')) {
+                            while (llen > 0 && (line[llen - 1] == '\n' || line[llen - 1] == '\r')) {
                                 line[--llen] = '\0';
                             }
                             size_t rem = size - pos - 1;
@@ -105,13 +111,18 @@ static void expand_env(char *buf, size_t size) {
                     continue;
                 }
             }
-            char name[64]; int ni = 0, brace = 0;
-            if (*p == '{') { brace = 1; p++; }
-            while (*p && ni < 63 && (isalnum(*p) || *p == '_')) { name[ni++] = *p++; } name[ni] = '\0';
+            char name[64];
+            int ni = 0, brace = 0;
+            if (*p == '{') {
+                brace = 1;
+                p++;
+            }
+            while (*p && ni < 63 && (isalnum(*p) || *p == '_')) { name[ni++] = *p++; }
+            name[ni] = '\0';
             if (brace && *p == '}') p++;
             if (ni) {
                 const char *val = NULL;
-                if (isdigit((unsigned char)name[0])) {
+                if (isdigit((unsigned char) name[0])) {
                     int idx = atoi(name) - 1;
                     if (idx >= 0 && idx < g_npositional) val = g_positional[idx];
                 } else {
@@ -123,8 +134,11 @@ static void expand_env(char *buf, size_t size) {
                     memcpy(tmp + pos, val, vlen < rem ? vlen : rem);
                     pos += vlen < rem ? vlen : rem;
                 }
-            } else { tmp[pos++] = '$'; }
-            p--; continue;
+            } else {
+                tmp[pos++] = '$';
+            }
+            p--;
+            continue;
         }
         tmp[pos++] = *p;
     }
@@ -165,7 +179,8 @@ static void alias_add(const char *name, const char *value) {
 static int alias_remove(const char *name) {
     for (int i = 0; i < g_naliases; i++) {
         if (strcmp(g_aliases[i].name, name) == 0) {
-            memmove(&g_aliases[i], &g_aliases[i + 1], (size_t)(g_naliases - i - 1) * sizeof(alias_t));
+            memmove(&g_aliases[i], &g_aliases[i + 1],
+                    (size_t) (g_naliases - i - 1) * sizeof(alias_t));
             g_naliases--;
             return 1;
         }
@@ -281,13 +296,19 @@ static void build_prompt(char *buf, size_t size) {
 
     size_t pos = 0;
     for (const char *p = ps1; *p && pos < size - 1; p++) {
-        if (*p != '\\') { buf[pos++] = *p; continue; }
+        if (*p != '\\') {
+            buf[pos++] = *p;
+            continue;
+        }
         p++;
         char ch = *p;
-        if (ch == '\\') { buf[pos++] = '\\'; }
-        else if (ch == 'n') { buf[pos++] = '\n'; }
-        else if (ch == '$') { buf[pos++] = (cached_uid == 0) ? '#' : '$'; }
-        else if (ch == 'u') {
+        if (ch == '\\') {
+            buf[pos++] = '\\';
+        } else if (ch == 'n') {
+            buf[pos++] = '\n';
+        } else if (ch == '$') {
+            buf[pos++] = (cached_uid == 0) ? '#' : '$';
+        } else if (ch == 'u') {
             size_t ulen = strlen(username_buf);
             size_t rem = size - pos - 1;
             size_t cp = ulen < rem ? ulen : rem;
@@ -295,7 +316,7 @@ static void build_prompt(char *buf, size_t size) {
             pos += cp;
         } else if (ch == 'h') {
             char *dot = strchr(hostname_buf, '.');
-            size_t hlen = dot ? (size_t)(dot - hostname_buf) : strlen(hostname_buf);
+            size_t hlen = dot ? (size_t) (dot - hostname_buf) : strlen(hostname_buf);
             size_t rem = size - pos - 1;
             size_t cp = hlen < rem ? hlen : rem;
             memcpy(buf + pos, hostname_buf, cp);
@@ -331,7 +352,10 @@ static void build_prompt(char *buf, size_t size) {
                 pos += cp;
             }
         } else {
-            if (pos < size - 2) { buf[pos++] = '\\'; buf[pos++] = ch; }
+            if (pos < size - 2) {
+                buf[pos++] = '\\';
+                buf[pos++] = ch;
+            }
         }
     }
     buf[pos] = '\0';
@@ -1586,7 +1610,8 @@ static int run_while_block(FILE *f, const char *cond_line, int outer_status) {
     cond[sizeof(cond) - 1] = '\0';
     char *semi = strstr(cond, "; do");
     if (!semi) semi = strstr(cond, ";do");
-    if (semi) *semi = '\0';
+    if (semi)
+        *semi = '\0';
     else {
         char *doe = strstr(cond, " do");
         if (doe) *doe = '\0';
@@ -1605,8 +1630,10 @@ static int run_while_block(FILE *f, const char *cond_line, int outer_status) {
         char *p = line;
         while (isspace((unsigned char) *p)) p++;
         if (*p == '\0' || *p == '#') continue;
-        if (strncmp(p, "while ", 6) == 0 || strcmp(p, "while") == 0) depth++;
-        else if (strncmp(p, "for ", 4) == 0) depth++;
+        if (strncmp(p, "while ", 6) == 0 || strcmp(p, "while") == 0)
+            depth++;
+        else if (strncmp(p, "for ", 4) == 0)
+            depth++;
         else if (strcmp(p, "done") == 0) {
             if (--depth == 0) break;
         }
@@ -1618,9 +1645,7 @@ static int run_while_block(FILE *f, const char *cond_line, int outer_status) {
 
     int cond_status = run_line_logic(cond);
     while (cond_status == 0) {
-        for (int i = 0; i < body_count; i++) {
-            status = run_line_logic(body_lines[i]);
-        }
+        for (int i = 0; i < body_count; i++) { status = run_line_logic(body_lines[i]); }
         cond_status = run_line_logic(cond);
     }
     return status;
@@ -1641,7 +1666,8 @@ static int run_for_block(FILE *f, const char *for_line, int outer_status) {
     items_str[sizeof(items_str) - 1] = '\0';
     char *semi = strstr(items_str, "; do");
     if (!semi) semi = strstr(items_str, ";do");
-    if (semi) *semi = '\0';
+    if (semi)
+        *semi = '\0';
     else {
         char *doe = strstr(items_str, " do");
         if (doe) *doe = '\0';
@@ -1660,8 +1686,10 @@ static int run_for_block(FILE *f, const char *for_line, int outer_status) {
         char *p = line;
         while (isspace((unsigned char) *p)) p++;
         if (*p == '\0' || *p == '#') continue;
-        if (strncmp(p, "while ", 6) == 0 || strcmp(p, "while") == 0) depth++;
-        else if (strncmp(p, "for ", 4) == 0) depth++;
+        if (strncmp(p, "while ", 6) == 0 || strcmp(p, "while") == 0)
+            depth++;
+        else if (strncmp(p, "for ", 4) == 0)
+            depth++;
         else if (strcmp(p, "done") == 0) {
             if (--depth == 0) break;
         }
@@ -1685,9 +1713,7 @@ static int run_for_block(FILE *f, const char *for_line, int outer_status) {
     char *tok = strtok_r(items_copy, " \t", &save);
     while (tok) {
         setenv(var, tok, 1);
-        for (int i = 0; i < body_count; i++) {
-            status = run_line_logic(body_lines[i]);
-        }
+        for (int i = 0; i < body_count; i++) { status = run_line_logic(body_lines[i]); }
         tok = strtok_r(NULL, " \t", &save);
     }
     free(items_copy);
@@ -1783,8 +1809,7 @@ int main(int argc, char **argv) {
     if (!path_env || !*path_env || !strstr(path_env, "/usr/bin"))
         setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin", 1);
 
-    if (!getenv("PS1"))
-        setenv("PS1", "[\\u@\\h: \\w] \\$ ", 0);
+    if (!getenv("PS1")) setenv("PS1", "[\\u@\\h: \\w] \\$ ", 0);
 
     if (getcwd(shell_pwd, sizeof(shell_pwd)) == NULL) {
         const char *env = getenv("PWD");
@@ -1804,7 +1829,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "ksh (Kyronix Shell) %s\n", KSH_VERSION);
         return 0;
     }
-    
+
     /* skip flags like -i/-l/-s that xterm passes for interactive/login shells;
        only treat a non-flag argument as a script path */
     {
@@ -1815,7 +1840,8 @@ int main(int argc, char **argv) {
                 break;
             }
         }
-        if (script_arg) return run_script(argv[script_arg], argc - script_arg - 1, argv + script_arg + 1);
+        if (script_arg)
+            return run_script(argv[script_arg], argc - script_arg - 1, argv + script_arg + 1);
     }
 
     puts("");

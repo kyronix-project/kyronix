@@ -11,11 +11,7 @@ static bool parse_time(const char *value, time_t *result) {
     }
 
     const char *formats[] = {
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d %H:%M",
-        "%Y-%m-%d",
-        "%H:%M:%S",
-        NULL,
+        "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%H:%M:%S", NULL,
     };
     time_t now = time(NULL);
     for (int i = 0; formats[i]; i++) {
@@ -49,8 +45,7 @@ int main(int argc, char **argv) {
         }
         if (strcmp(arg, "-u") == 0 || strcmp(arg, "--utc") == 0) {
             utc = true;
-        } else if ((strcmp(arg, "-d") == 0 || strcmp(arg, "--date") == 0) &&
-                   i + 1 < argc) {
+        } else if ((strcmp(arg, "-d") == 0 || strcmp(arg, "--date") == 0) && i + 1 < argc) {
             date_value = argv[++i];
         } else if (strcmp(arg, "-r") == 0 && i + 1 < argc) {
             reference = argv[++i];

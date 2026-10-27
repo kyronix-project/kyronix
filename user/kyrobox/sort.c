@@ -126,10 +126,17 @@ int main(int argc, char **argv) {
         }
         for (const char *c = a + 1; *c; c++) {
             switch (*c) {
-                case 'n': o.numeric = true; break;
-                case 'r': o.reverse = true; break;
-                case 'u': o.unique = true; break;
-                default: kx_die("usage: sort [-nru] [-k KEYDEF] [-t SEP] [FILE...]");
+            case 'n':
+                o.numeric = true;
+                break;
+            case 'r':
+                o.reverse = true;
+                break;
+            case 'u':
+                o.unique = true;
+                break;
+            default:
+                kx_die("usage: sort [-nru] [-k KEYDEF] [-t SEP] [FILE...]");
             }
         }
     }

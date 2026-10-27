@@ -4,9 +4,7 @@ int test_fork_basic(void) {
     pid_t pid = fork();
     ASSERT_GE(pid, 0);
 
-    if (pid == 0) {
-        _exit(42);
-    }
+    if (pid == 0) { _exit(42); }
 
     int status;
     ASSERT_EQ(pid, waitpid(pid, &status, 0));
@@ -73,8 +71,8 @@ REGISTER_TEST(fork_cow, "Phase 3: Process & Scheduling");
 
 int test_fork_cow_pages(void) {
     const size_t length = 8 * 1024 * 1024;
-    unsigned char *mem = mmap(NULL, length, PROT_READ | PROT_WRITE,
-                              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    unsigned char *mem =
+        mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     ASSERT_NE(mem, MAP_FAILED);
     for (size_t off = 0; off < length; off += 4096) mem[off] = (unsigned char) (off >> 12);
 
@@ -98,8 +96,7 @@ int test_fork_cow_pages(void) {
 REGISTER_TEST(fork_cow_pages, "Phase 3: Process & Scheduling");
 
 int test_fork_shared_mapping(void) {
-    int *shared = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
-                       MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    int *shared = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     ASSERT_NE(shared, MAP_FAILED);
     *shared = 7;
 
@@ -516,14 +513,13 @@ int test_memory_argument_validation(void) {
     ASSERT_EQ(cur, (void *) syscall(SYS_brk, 0));
 
     errno = 0;
-    void *p = mmap(NULL, 4096, PROT_WRITE | PROT_EXEC,
-                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void *p = mmap(NULL, 4096, PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     ASSERT_EQ(MAP_FAILED, p);
     ASSERT_ERRNO(EINVAL);
 
     errno = 0;
-    long raw = syscall(SYS_mmap, 0, SIZE_MAX, PROT_READ | PROT_WRITE,
-                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    long raw =
+        syscall(SYS_mmap, 0, SIZE_MAX, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     ASSERT_EQ(-1L, raw);
     ASSERT_ERRNO(EINVAL);
     return 1;
@@ -685,8 +681,10 @@ static size_t kx_collect_pids(int fd, char *raw, size_t bufsz, int open_during_w
                 if (n < 512) out[n++] = (size_t) atoi(d->d_name);
                 if (open_during_walk) {
                     int pfd = openat(fd, d->d_name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
-                    if (pfd < 0) (*open_fails)++;
-                    else close(pfd);
+                    if (pfd < 0)
+                        (*open_fails)++;
+                    else
+                        close(pfd);
                 }
             }
             off += (int) d->d_reclen;
@@ -703,7 +701,10 @@ int test_proc_getdents_stability(void) {
     for (int i = 0; i < nchild; i++) {
         kids[i] = fork();
         ASSERT_GE(kids[i], 0);
-        if (kids[i] == 0) { sleep(30); _exit(0); }
+        if (kids[i] == 0) {
+            sleep(30);
+            _exit(0);
+        }
     }
 
     /* primary walk: tiny buffer (many resumed getdents64 calls) + openat per pid,
@@ -721,8 +722,7 @@ int test_proc_getdents_stability(void) {
     /* no zero/empty pid entries, no duplicates */
     for (size_t i = 0; i < n1; i++) {
         ASSERT_GT(walk1[i], (size_t) 0);
-        for (size_t j = i + 1; j < n1; j++)
-            ASSERT_NE(walk1[i], walk1[j]);
+        for (size_t j = i + 1; j < n1; j++) ASSERT_NE(walk1[i], walk1[j]);
     }
 
     /* every forked child must be visible */
