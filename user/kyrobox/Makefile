@@ -1,6 +1,6 @@
 CC := gcc
 CFLAGS ?= -std=c11 -Wall -Wextra -Werror -O2 -march=x86-64 -mtune=generic -fno-pie -L../../build
-LDFLAGS ?= -static 
+LDFLAGS ?= -static -lm -lcrypt 
 OUT := ../../build/bin
 UTILS := awk basename cat chgrp chmod chown cksum clear cmp cp cut date dd diff dirname du echo env false \
 	fdisk file find grep head hostname id insmod kill killall less link ln ls lsblk lspci lsmod mkdir mktemp mount mv nc nslookup ntpd patch ping printenv printf ps pwd readlink realpath \
@@ -18,7 +18,7 @@ all: $(UTILS:%=$(OUT)/%)
 $(OUT)/%: %.c common.h
 	@$(call step,CC $<)
 	@mkdir -p ../../build/bin
-	@$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $<
+	@$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) -lm
 
 clean:
 	rm -f $(UTILS:%=$(OUT)/%)

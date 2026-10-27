@@ -1,4 +1,7 @@
 #include "common.h"
+#ifndef S_ISVTX
+#define S_ISVTX 01000
+#endif
 #include <sys/socket.h>
 
 typedef struct {

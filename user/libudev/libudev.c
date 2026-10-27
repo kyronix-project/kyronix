@@ -1,6 +1,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <stdint.h>
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

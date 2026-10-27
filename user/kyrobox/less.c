@@ -114,7 +114,10 @@ static void print_line(const char *s, size_t lineno, bool highlight) {
         if (c == '\t') {
             int stop = TAB_WIDTH - (vpos % TAB_WIDTH);
             if (vpos + stop > (size_t) cols) stop = (int) ((size_t) cols - vpos);
-            fputs("        " + (TAB_WIDTH - stop), stdout);
+            {
+                static const char sp[] = "        ";
+                fputs(sp + (TAB_WIDTH - stop), stdout);
+            }
             vpos += stop;
         } else if (c < 32) {
             if (vpos + 2 > (size_t) cols) break;

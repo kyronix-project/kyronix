@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
         usage();
         return 1;
     }
-    double first = 1.0, step = 1.0, last;
+    double first = 1.0, step = 1.0, last = 0.0;
     const char *first_s = "1", *step_s = "1", *last_s;
     if (operands == 1) {
         last_s = argv[i];
