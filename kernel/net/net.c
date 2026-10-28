@@ -96,8 +96,16 @@ static void net_worker_main(void) {
 
         const net_driver_ops_t *ops = driver_acquire(true);
         if (ops) {
-            ops->poll();
+            int work_done = 0;
+            for (int budget = 0; budget < 64; budget++) {
+                int n = ops->poll();
+                if (n <= 0) break;
+                work_done += n;
+            }
             driver_release();
+            if (work_done > 50) {
+                net_schedule_poll();
+            }
         }
         if (g_lwip_initialized) sys_check_timeouts();
         net_addr_monitor();

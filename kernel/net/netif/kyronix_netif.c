@@ -13,24 +13,15 @@
 #include "../../mm/heap.h"
 #include "../net.h"
 
-/* called from irq/ poll context: hand a raw ethernet frame to lwip */
 void kyronix_netif_input(struct netif *nif, const uint8_t *data, uint16_t len) {
-    struct pbuf *p = pbuf_alloc(PBUF_RAW, len, PBUF_POOL);
+    struct pbuf *p = pbuf_alloc(PBUF_RAW, len, PBUF_REF);
     if (!p) return;
 
-    /* copy frame into pbuf chain */
-    struct pbuf *q = p;
-    const uint8_t *src = data;
-    uint16_t rem = len;
-    while (q && rem) {
-        uint16_t chunk = (rem < q->len) ? rem : (uint16_t) q->len;
-        memcpy(q->payload, src, chunk);
-        src += chunk;
-        rem -= chunk;
-        q = q->next;
-    }
+    p->payload = (void *) data;
 
-    if (nif->input(p, nif) != ERR_OK) pbuf_free(p);
+    if (nif->input(p, nif) != ERR_OK) {
+        pbuf_free(p);
+    }
 }
 
 /* called by lwip when it wants to send a frame */

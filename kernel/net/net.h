@@ -10,7 +10,7 @@
 
 typedef struct {
     bool (*send)(const uint8_t *data, uint16_t len);
-    void (*poll)(void);
+    int (*poll)(void);
     const uint8_t *(*mac)(void);
 } net_driver_ops_t;
 

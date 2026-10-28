@@ -118,9 +118,10 @@ static bool rtl_send(const uint8_t *data, uint16_t len) {
     return true;
 }
 
-static void rtl_poll(void) {
-    if (!g_ready) return;
+static int rtl_poll(void) {
+    if (!g_ready) return 0;
     spin_lock_irqsave(&g_rx_lock);
+    int count = 0;
     for (unsigned n = 0; n < RTL_DESC_COUNT; n++) {
         uint16_t idx = g_rx_cur;
         rtl_desc_t *d = &g_rx_ring[idx];
@@ -135,8 +136,10 @@ static void rtl_poll(void) {
         d->opts2 = 0;
         d->opts1 = DESC_OWN | RTL_BUF_SIZE | (idx == RTL_DESC_COUNT - 1 ? DESC_EOR : 0);
         g_rx_cur = (idx + 1) % RTL_DESC_COUNT;
+        count++;
     }
     spin_unlock_irqrestore(&g_rx_lock);
+    return count;
 }
 
 static void rtl_irq(int irq, void *arg) {

@@ -144,8 +144,8 @@ static void e1000_read_mac(void) {
 
 static const uint8_t *e1000_mac(void) { return g_mac; }
 
-static void e1000_poll(void) {
-    if (!__atomic_load_n(&g_ready, __ATOMIC_ACQUIRE)) return;
+static int e1000_poll(void) {
+    if (!__atomic_load_n(&g_ready, __ATOMIC_ACQUIRE)) return 0;
 
     spin_lock_irqsave(&g_rx_lock);
     int count = 0;
@@ -174,6 +174,7 @@ static void e1000_poll(void) {
 
     if (count > 0) { e1000_write32(E1000_REG_RDT, last_processed); }
     spin_unlock_irqrestore(&g_rx_lock);
+    return count;
 }
 
 static bool e1000_send(const uint8_t *data, uint16_t len) {

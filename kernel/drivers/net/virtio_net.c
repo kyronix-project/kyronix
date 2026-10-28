@@ -159,7 +159,7 @@ static bool setup_queue(uint16_t qidx, virtq_t *q) {
     return true;
 }
 
-static void virtnet_poll(void);
+static int virtnet_poll(void);
 
 static void virtnet_irq(int irq, void *arg) {
     (void) irq;
@@ -170,9 +170,10 @@ static void virtnet_irq(int irq, void *arg) {
 
 static const uint8_t *virtnet_mac(void) { return g_mac; }
 
-static void virtnet_poll(void) {
-    if (!__atomic_load_n(&g_ready, __ATOMIC_ACQUIRE)) return;
+static int virtnet_poll(void) {
+    if (!__atomic_load_n(&g_ready, __ATOMIC_ACQUIRE)) return 0;
     spin_lock_irqsave(&g_rxq_lock);
+    int count = 0;
     while (g_rxq.last_used != g_rxq.used->idx) {
         uint16_t ui = g_rxq.last_used % g_rxq.size;
         vq_elem_t elem = g_rxq.used->ring[ui];
@@ -186,8 +187,10 @@ static void virtnet_poll(void) {
         if (total > sizeof(vnet_hdr_t))
             net_receive(buf + sizeof(vnet_hdr_t), (uint16_t) (total - sizeof(vnet_hdr_t)));
         rx_post_buf(desc, g_rxq.desc[desc].addr);
+        count++;
     }
     spin_unlock_irqrestore(&g_rxq_lock);
+    return count;
 }
 
 static bool virtnet_send(const uint8_t *data, uint16_t len) {
