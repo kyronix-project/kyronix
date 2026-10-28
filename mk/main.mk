@@ -49,20 +49,20 @@ help:
 	@echo "Container build: append CRUNTIME=podman or CRUNTIME=docker"
 
 clean:
-	rm -rf $(BUILD)
-	rm -rf .config include/config include/generated scripts/kconfig
-	rm -rf build/iso-root build/test-rootfs build/test-iso-root
-	rm -f test.log
-	rm -f $(ISO) $(TEST_ISO)
-	rm -f $(BUILD)/initrd-weston.cpio $(BUILD)/initrd-console.cpio
-	rm -rf $(BUILD)/initrd-root-weston $(BUILD)/initrd-root-console
-	rm -f $(DIST)/kernel.elf $(DIST)/kyronix-boot.fat
-	rm -f $(DIST)/test-initrd.cpio $(DIST)/test-disk.img $(DIST)/disk.img
-	rm -f $(DIST)/kyronix-*-$(ARCH).iso
-	rm -f $(DIST)/kyronix-*-$(ARCH)-live.iso $(DIST)/kyronix-*-$(ARCH)-test.iso
-	rm -f $(DIST)/kyronix-*-$(ARCH)-live.iso.sha256
-	rm -f $(BUILD)/os-release-INDEV $(BUILD)/os-release-RELEASE
-	$(MAKE) -C user clean
+	@if [ -d $(BUILD) ]; then chmod -R u+w $(BUILD) 2>/dev/null || true; rm -rf $(BUILD); fi
+	rm -rf .config include/config include/generated scripts/kconfig 2>/dev/null || true
+	rm -rf build/iso-root build/test-rootfs build/test-iso-root 2>/dev/null || true
+	rm -f test.log 2>/dev/null || true
+	rm -f $(ISO) $(TEST_ISO) 2>/dev/null || true
+	rm -f $(BUILD)/initrd-weston.cpio $(BUILD)/initrd-console.cpio 2>/dev/null || true
+	rm -rf $(BUILD)/initrd-root-weston $(BUILD)/initrd-root-console 2>/dev/null || true
+	rm -f $(DIST)/kernel.elf $(DIST)/kyronix-boot.fat 2>/dev/null || true
+	rm -f $(DIST)/test-initrd.cpio $(DIST)/test-disk.img $(DIST)/disk.img 2>/dev/null || true
+	rm -f $(DIST)/kyronix-*-$(ARCH).iso 2>/dev/null || true
+	rm -f $(DIST)/kyronix-*-$(ARCH)-live.iso $(DIST)/kyronix-*-$(ARCH)-test.iso 2>/dev/null || true
+	rm -f $(DIST)/kyronix-*-$(ARCH)-live.iso.sha256 2>/dev/null || true
+	rm -f $(BUILD)/os-release-INDEV $(BUILD)/os-release-RELEASE 2>/dev/null || true
+	$(MAKE) -C user clean 2>/dev/null || true
 	$(MAKE) -C limine clean 2>/dev/null || true
 	@rmdir $(DIST) 2>/dev/null || true
 	@$(call ok,Kept: $(DISK))
