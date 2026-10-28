@@ -57,18 +57,18 @@ void input_push(int dev, uint16_t type, uint16_t code, int32_t value) {
     if (e->count >= EVBUF) {
         if (!e->stall_logged && e->last_read && (int64_t) (g_ticks - e->last_read) > 200) {
             e->stall_logged = 1;
-            log_warn("INPUT: evdev dev=%d reader stalled (%llu ms since last read, count=%u) "
-                     "last reader=%s(pid=%u)",
-                     dev, (unsigned long long) (g_ticks - e->last_read), e->count, e->rd_name,
-                     e->rd_pid);
+            /* log_warn("INPUT: evdev dev=%d reader stalled (%llu ms since last read, count=%u) "
+                    "last reader=%s(pid=%u)",
+                    dev, (unsigned long long) (g_ticks - e->last_read), e->count, e->rd_name,
+                    e->rd_pid); */
         }
         e->tail = (e->tail + 1) % EVBUF;
         e->count--;
         e->dropped++;
         e->syn_dropped = 1;
-        if (evdev_log_gate(&e->last_drop_log, 1000))
+        /* if (evdev_log_gate(&e->last_drop_log, 1000))
             log_warn("INPUT: evdev dev=%d dropping oldest (%u dropped so far in burst)", dev,
-                     e->dropped);
+                e->dropped); */
     }
     /* On overflow the next SYN carries SYN_DROPPED so libinput resyncs. */
     if (type == EV_SYN && e->syn_dropped) {

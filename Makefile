@@ -32,7 +32,9 @@ container-build:
 container-run: container-build
 	@$(call phase,Running build inside container)
 	$(CONTAINER_RUNTIME) run --rm \
-	    -v $(CURDIR):/src:Z -w /src \
+	    -v $(CURDIR):/src:Z \
+	    -v $(CURDIR)/./pkg-registry-src:/src/./pkg-registry-src:Z \
+	    -w /src \
 	    $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
 	    make -j$$(nproc) INSIDE_CONTAINER=1 $(REQUESTED_GOALS)
 

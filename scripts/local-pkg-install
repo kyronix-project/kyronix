@@ -1,0 +1,173 @@
+#!/bin/sh
+
+set -e
+
+REGISTRY=""
+TARGET=""
+LIST="packages.list"
+
+usage() {
+	echo "Usage: $0 --registry <path> --target <rootfs> [--list packages.list]" >&2
+	exit 1
+}
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--registry)
+			REGISTRY="$2"
+			shift 2
+			;;
+		--target)
+			TARGET="$2"
+			shift 2
+			;;
+		--list)
+			LIST="$2"
+			shift 2
+			;;
+		*)
+			usage
+			;;
+	esac
+done
+
+[ -n "$REGISTRY" ] || usage
+[ -n "$TARGET" ] || usage
+[ -d "$REGISTRY" ] || { echo "local-pkg-install: registry not found: $REGISTRY" >&2; exit 1; }
+[ -f "$LIST" ] || { echo "local-pkg-install: list not found: $LIST" >&2; exit 1; }
+
+if [ ! -d "$TARGET" ]; then
+	mkdir -p "$TARGET" 2>/dev/null || true
+fi
+if command -v readlink >/dev/null 2>&1; then
+	TARGET=$(readlink -f "$TARGET" 2>/dev/null || echo "$TARGET")
+fi
+[ -d "$TARGET" ] || { echo "local-pkg-install: target not found: $TARGET" >&2; exit 1; }
+
+TMPDIR_ALL=$(mktemp -d)
+trap 'rm -rf "$TMPDIR_ALL"' EXIT
+
+INSTALLED_FILE="$TMPDIR_ALL/installed_order"
+: > "$INSTALLED_FILE"
+
+REQUESTED_TMP="$TMPDIR_ALL/requested"
+: > "$REQUESTED_TMP"
+
+while IFS= read -r line; do
+	line=$(printf '%s' "$line" | sed 's/#.*$//' | sed 's/[[:space:]]//g')
+	[ -z "$line" ] && continue
+	echo "$line" >> "$REQUESTED_TMP"
+done < "$LIST"
+
+get_depends() {
+	local pkg="$1"
+	local cfg="$REGISTRY/$pkg/config.toml"
+	[ -f "$cfg" ] || { echo "local-pkg-install: missing config.toml for $pkg" >&2; return 1; }
+	awk '
+		BEGIN { in_dep=0 }
+		/depends[[:space:]]*=/ { in_dep=1; next }
+		in_dep && /\]/ { exit }
+		in_dep {
+			gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0)
+			gsub(/",?$/, "", $0)
+			gsub(/^"/, "", $0)
+			if ($0 != "") print $0
+		}
+	' "$cfg"
+}
+
+is_installed_target() {
+	local pkg="$1"
+	[ -f "$TARGET/var/lib/pkg/installed/$pkg/manifest" ] && return 0
+	return 1
+}
+
+mark_installed() {
+	local pkg="$1"
+	local cfg="$REGISTRY/$pkg/config.toml"
+	local deps
+	[ -f "$cfg" ] || return 0
+	local mdir="$TARGET/var/lib/pkg/installed/$pkg"
+	mkdir -p "$mdir"
+	{
+		grep '^name' "$cfg" | head -1
+		grep '^version' "$cfg" | head -1
+		grep '^revision' "$cfg" | head -1
+		grep '^description' "$cfg" | head -1
+		grep '^arch' "$cfg" | head -1
+		grep '^maintainer' "$cfg" | head -1
+		grep '^license' "$cfg" | head -1
+		grep '^homepage' "$cfg" | head -1
+		deps=$(get_depends "$pkg" 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+		if [ -n "$deps" ]; then
+			echo "depends=$deps"
+		else
+			echo "depends="
+		fi
+		echo "required_by="
+	} >> "$mdir/manifest" 2>/dev/null || true
+}
+
+ensure_exec() {
+	local dir="$1"
+	[ -d "$dir" ] || { return; }
+
+	find "$dir" -type f \
+		\( -path "$dir/bin/*" -o -path "$dir/sbin/*" \
+		-o -path "$dir/usr/bin/*" -o -path "$dir/usr/sbin/*" \
+		-o -path "$dir/usr/libexec/*" \) \
+		-exec chmod 0755 {} +
+}
+
+install_pkg() {
+	local pkg="$1"
+	local pdir exp act wdir pl d
+	if grep -qx "$pkg" "$INSTALLED_FILE"; then
+		return 0
+	fi
+	if is_installed_target "$pkg"; then
+		echo "$pkg" >> "$INSTALLED_FILE"
+		return 0
+	fi
+
+	pdir="$REGISTRY/$pkg"
+	if [ ! -d "$pdir" ] || [ ! -r "$pdir/package.gz" ]; then
+		cp -a "$REGISTRY/$pkg" "$TMPDIR_ALL/$pkg.copy" 2>/dev/null && pdir="$TMPDIR_ALL/$pkg.copy"
+	fi
+	[ -d "$pdir" ] || { echo "local-pkg-install: package dir not found: $pkg" >&2; return 1; }
+	[ -f "$pdir/package.gz" ] || { echo "local-pkg-install: package.gz missing for $pkg" >&2; return 1; }
+	[ -f "$pdir/package.gz.md5" ] || { echo "local-pkg-install: package.gz.md5 missing for $pkg" >&2; return 1; }
+
+	exp=$(cat "$pdir/package.gz.md5" | tr -d '\n\r ')
+	act=$(md5sum "$pdir/package.gz" | awk '{print $1}')
+	if [ "$exp" != "$act" ]; then
+		echo "local-pkg-install: md5 mismatch for $pkg" >&2
+		return 1
+	fi
+
+	for d in $(get_depends "$pkg" 2>/dev/null); do
+		install_pkg "$d"
+	done
+
+	echo "[local-pkg] installing $pkg"
+	wdir="$TMPDIR_ALL/$pkg"
+	rm -rf "$wdir"
+	mkdir -p "$wdir"
+	tar xzf "$pdir/package.gz" -C "$wdir" --no-same-owner
+	pl="$wdir/payload"
+	if [ ! -d "$pl" ]; then
+		pl=$(find "$wdir" -maxdepth 3 -type d -name payload | head -1)
+	fi
+	if [ -n "$pl" ] && [ -d "$pl" ]; then
+		ensure_exec "$pl"
+		( cd "$pl" && tar cf - . | ( cd "$TARGET" && tar xf - ) )
+	fi
+	mark_installed "$pkg"
+	echo "$pkg" >> "$INSTALLED_FILE"
+}
+
+for pkg in $(cat "$REQUESTED_TMP"); do
+	install_pkg "$pkg"
+done
+
+echo "[local-pkg] done"
