@@ -6,6 +6,7 @@
 #define NET_MY_IP 0x0A00020Fu /* 10.0.2.15  */
 #define NET_MASK 0xFFFFFF00u  /* /24         */
 #define NET_GW 0x0A000202u    /* 10.0.2.2   */
+#define NET_DNS 0x0A000203u   /* 10.0.2.3   */
 
 typedef struct {
     bool (*send)(const uint8_t *data, uint16_t len);

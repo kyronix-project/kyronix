@@ -1,0 +1,30 @@
+ip	0	IP		# internet protocol, pseudo protocol number
+hopopt	0	HOPOPT		# IPv6 Hop-by-Hop Options
+icmp	1	ICMP		# internet control message protocol
+igmp	2	IGMP		# internet group management protocol
+ggp	3	GGP		# gateway-gateway protocol
+ipencap	4	IPENCAP		# IP in IP encapsulation
+st	5	ST		# ST datagram mode
+tcp	6	TCP		# transmission control protocol
+egp	8	EGP		# exterior gateway protocol
+igp	9	IGP		# any private interior gateway
+pup	12	PUP		# PARC universal packet protocol
+udp	17	UDP		# user datagram protocol
+hmp	20	HMP		# host monitoring protocol
+xns-idp	22	XNS-IDP		# Xerox NS IDP
+rdp	27	RDP		# "reliable datagram" protocol
+iso-tp4	29	ISO-TP4		# ISO Transport Protocol Class 4
+dccp	33	DCCP		# Datagram Congestion Control Protocol
+ipv6	41	IPV6		# IPv6 encapsulation
+routing	43	ROUTING		# routing header for IPv6
+fragment 44	FRAGMENT	# fragmentation header for IPv6
+rsvp	46	RSVP		# reservation protocol
+gre	47	GRE		# general routing encapsulation
+esp	50	ESP		# encapsulating security payload
+ah	51	AH		# authentication header
+icmpv6	58	ICMPV6		# ICMP for IPv6
+none	59	NONE		# no next header for IPv6
+dstopts	60	DSTOPTS		# destination options for IPv6
+ospf	89	OSPF		# OSPF OSPF
+sctp	132	SCTP		# Stream Control Transmission Protocol
+udplite	136	UDPLITE		# UDP-Lite protocol

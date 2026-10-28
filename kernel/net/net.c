@@ -59,11 +59,14 @@ static void net_addr_monitor(void) {
 
     if (g_addr_fallback || g_ticks < g_addr_deadline) return;
 
-    ip4_addr_t addr, mask, gw;
+    ip4_addr_t addr, mask, gw, dns;
     ip4_addr_set_u32(&addr, lwip_htonl(NET_MY_IP));
     ip4_addr_set_u32(&mask, lwip_htonl(NET_MASK));
     ip4_addr_set_u32(&gw, lwip_htonl(NET_GW));
+    ip4_addr_set_u32(&dns, lwip_htonl(NET_DNS));
+
     netif_set_addr(&g_netif, &addr, &mask, &gw);
+    dns_setserver(0, &dns);
     g_addr_fallback = true;
     log_warn("net: no DHCP lease after %u ms, falling back to static address",
              (unsigned) NET_DHCP_TIMEOUT_MS);
@@ -87,9 +90,9 @@ static void net_worker_main(void) {
             irq_restore(flags);
             sched_block_current();
             sys_check_timeouts();
-            continue;
+        } else {
+            irq_restore(flags);
         }
-        irq_restore(flags);
 
         const net_driver_ops_t *ops = driver_acquire(true);
         if (ops) {
