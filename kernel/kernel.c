@@ -99,6 +99,8 @@ static volatile struct limine_kernel_address_request kaddr_req = {
 
 LIMINE_REQUESTS_END_MARKER;
 
+uint8_t boot_id[16];
+
 static void kernel_putchar(char c, void *ctx) {
     (void) ctx;
     tty_putchar(c);
@@ -416,6 +418,9 @@ void kmain(void) {
             for (int i = 16; i < 32; i++) seed[i] = (uint8_t) (tsc >> ((i % 8) * 8)) ^ 0xBB;
         }
         chacha20_rng_init(&g_chacha20_rng, seed);
+        chacha20_rng_bytes(&g_chacha20_rng, boot_id, sizeof(boot_id));
+        boot_id[6] = (uint8_t) (0x40 | (boot_id[6] & 0x0F));
+        boot_id[8] = (uint8_t) (0x80 | (boot_id[8] & 0x3F));
         kstatus("Initialising CSPRNG", true);
     }
 
