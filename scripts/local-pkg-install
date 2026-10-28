@@ -53,7 +53,7 @@ INSTALLED_FILE="$TMPDIR_ALL/installed_order"
 REQUESTED_TMP="$TMPDIR_ALL/requested"
 : > "$REQUESTED_TMP"
 
-while IFS= read -r line; do
+while IFS= read -r line || [ -n "$line" ]; do
 	line=$(printf '%s' "$line" | sed 's/#.*$//' | sed 's/[[:space:]]//g')
 	[ -z "$line" ] && continue
 	echo "$line" >> "$REQUESTED_TMP"
@@ -146,7 +146,7 @@ install_pkg() {
 	fi
 
 	for d in $(get_depends "$pkg" 2>/dev/null); do
-		install_pkg "$d"
+		install_pkg "$d" || return 1
 	done
 
 	echo "[local-pkg] installing $pkg"

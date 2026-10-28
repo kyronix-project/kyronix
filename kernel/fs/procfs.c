@@ -30,6 +30,8 @@
 #define EFAULT 14
 #define ENOMEM 12
 
+extern uint8_t boot_id[16];
+
 static int64_t read_buf(char *out, uint64_t len, uint64_t off, const char *src, uint64_t sz) {
     if (off >= sz) return 0;
     uint64_t r = sz - off;
@@ -421,6 +423,16 @@ static int64_t proc_pid_max_read(vfs_node_t *n, char *buf, uint64_t len, uint64_
 static int64_t proc_osrelease_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     (void) n;
     static const char s[] = KERNEL_VERSION "\n";
+    return read_buf(buf, len, off, s, sizeof(s) - 1);
+}
+
+static int64_t proc_boot_id_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
+    (void) n;
+    char s[38];
+    snprintf(s, sizeof(s), "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n",
+             boot_id[0], boot_id[1], boot_id[2], boot_id[3], boot_id[4], boot_id[5], boot_id[6],
+             boot_id[7], boot_id[8], boot_id[9], boot_id[10], boot_id[11], boot_id[12], boot_id[13],
+             boot_id[14], boot_id[15]);
     return read_buf(buf, len, off, s, sizeof(s) - 1);
 }
 
@@ -968,6 +980,7 @@ void procfs_init(void) {
     vfs_mkdir_p("/proc/bus/pci", 0555);
     vfs_mkdir_p("/proc/bus/input", 0555);
     vfs_mkdir_p("/proc/sys/kernel", 0555);
+    vfs_mkdir_p("/proc/sys/kernel/random", 0555);
 
     vfs_create_chr("/proc/version", proc_version_read, NULL);
     vfs_create_chr("/proc/bus/pci/devices", proc_pci_devices_read, NULL);
@@ -991,6 +1004,7 @@ void procfs_init(void) {
     vfs_create_chr("/proc/sys/kernel/osrelease", proc_osrelease_read, NULL);
     vfs_create_chr("/proc/sys/kernel/hostname", proc_hostname_read, NULL);
     vfs_create_chr("/proc/sys/kernel/pid_max", proc_pid_max_read, NULL);
+    vfs_create_chr("/proc/sys/kernel/random/boot_id", proc_boot_id_read, NULL);
 
     vfs_create_chr("/proc/self/exe", proc_self_exe_read, NULL);
     vfs_create_chr("/proc/self/cmdline", proc_self_cmdline_read, NULL);

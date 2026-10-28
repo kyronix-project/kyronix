@@ -84,6 +84,7 @@ $(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROO
 		./scripts/local-pkg-install --registry ./pkg-registry-src --target $(abspath $(INITRD_ROOT)) --list packages.list || true; \
 		$(call ok,Local packages); \
 	fi
+	@touch $(INITRD_ROOT)
 	@$(call ok,initrd root)
 
 # --- weston variant (desktop) ---
