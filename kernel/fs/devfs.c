@@ -79,6 +79,21 @@ static int64_t dev_tty_write(vfs_node_t *n, const char *buf, uint64_t len, uint6
 #define ENOSPC 28
 #define ENOMEM 12
 
+static int64_t dev_full_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
+    (void) n;
+    (void) off;
+    memset(buf, 0, len);
+    return (int64_t) len;
+}
+
+static int64_t dev_full_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t pos) {
+    (void) n;
+    (void) buf;
+    (void) len;
+    (void) pos;
+    return -(int64_t) ENOSPC;
+}
+
 #define PTY_NCCS 19
 
 /* Userspace termios/winsize as the Linux ioctls carry them */
@@ -442,6 +457,7 @@ static int ptmx_open(vfs_node_t *n, int flags) {
 void devfs_init(void) {
     vfs_mkdir_p("/dev", 0755);
     vfs_mkdir_p("/dev/input", 0755);
+    vfs_mkdir_p("/dev/shm", 01777);
 
     struct {
         const char *path;
@@ -451,6 +467,7 @@ void devfs_init(void) {
     } mem_devs[] = {
         { "/dev/null", dev_null_read, dev_null_write, VFS_MKDEV(1, 3) },
         { "/dev/zero", dev_zero_read, dev_null_write, VFS_MKDEV(1, 5) },
+        { "/dev/full", dev_full_read, dev_full_write, VFS_MKDEV(1, 7) },
         { "/dev/urandom", dev_urandom_read, dev_random_write, VFS_MKDEV(1, 9) },
         { "/dev/random", dev_urandom_read, dev_random_write, VFS_MKDEV(1, 8) },
     };

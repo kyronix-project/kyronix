@@ -29,12 +29,15 @@
 #include "phantom.h"
 #include "poll.h"
 #include "proc/jail.h"
+#include "proc/ns.h"
 #include "proc/proc.h"
 #include "proc/signal.h"
 #include "proc/smp.h"
 #include "procctl.h"
 #include "ptrace.h"
 #include "security/anti_toctou.h"
+#include "security/caps.h"
+#include "security/seccomp.h"
 #include "security/phantom.h"
 #include "sig.h"
 #include "socket.h"
@@ -111,13 +114,185 @@ static int64_t sys_getrandom(void *buf, uint64_t len, uint32_t flags) {
 #define AT_RESOLVED(ret, dfd, upath, out)                                                          \
     (((ret) = at_resolve((int) (dfd), (const char *) (upath), (out), sizeof(out))) >= 0)
 
-static int64_t sys_prctl(int op, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5) {
-    (void) op;
-    (void) a2;
-    (void) a3;
-    (void) a4;
-    (void) a5;
+#define PR_SET_PDEATHSIG 1
+#define PR_GET_PDEATHSIG 2
+#define PR_GET_DUMPABLE 3
+#define PR_SET_DUMPABLE 4
+#define PR_SET_KEEPCAPS 8
+#define PR_GET_KEEPCAPS 9
+#define PR_SET_NAME 15
+#define PR_GET_NAME 16
+#define PR_GET_SECCOMP 21
+#define PR_SET_SECCOMP 22
+#define PR_CAPBSET_READ 23
+#define PR_CAPBSET_DROP 24
+#define PR_SET_CHILD_SUBREAPER 36
+#define PR_GET_CHILD_SUBREAPER 37
+#define PR_SET_NO_NEW_PRIVS 38
+#define PR_GET_NO_NEW_PRIVS 39
+#define PR_CAP_AMBIENT 47
+#define PR_CAP_AMBIENT_IS_SET 1
+#define PR_CAP_AMBIENT_RAISE 2
+#define PR_CAP_AMBIENT_LOWER 3
+#define PR_CAP_AMBIENT_CLEAR_ALL 4
+
+static int64_t sys_seccomp_apply(proc_t *p, uint32_t mode, const void *uarg) {
+    if (mode == SECCOMP_MODE_STRICT) {
+        p->seccomp_mode = SECCOMP_MODE_STRICT;
+        return 0;
+    }
+    if (mode != SECCOMP_MODE_FILTER) return -(int64_t) EINVAL;
+    if (!p->no_new_privs && !cred_has_cap(p, CAP_SYS_ADMIN)) return -(int64_t) EACCES;
+    if (!uarg || !uptr_ok(uarg, sizeof(seccomp_fprog_t))) return -(int64_t) EFAULT;
+
+    seccomp_fprog_t prog = *(const seccomp_fprog_t *) uarg;
+    if (prog.len == 0 || prog.len > 4096 || !prog.filter) return -(int64_t) EINVAL;
+    if (!uptr_ok((const void *) (uintptr_t) prog.filter, (uint64_t) prog.len * sizeof(seccomp_insn_t)))
+        return -(int64_t) EFAULT;
+
+    struct seccomp_filter *filter =
+            seccomp_build((const seccomp_insn_t *) (uintptr_t) prog.filter, prog.len);
+    if (!filter) return -(int64_t) EINVAL;
+    seccomp_install(p, filter);
     return 0;
+}
+
+static int64_t sys_seccomp(uint32_t op, uint32_t flags, void *uargs) {
+    proc_t *p = cur();
+    if (!p) return -(int64_t) ESRCH;
+
+    if (op == SECCOMP_SET_MODE_STRICT) {
+        if (flags != 0) return -(int64_t) EINVAL;
+        return sys_seccomp_apply(p, SECCOMP_MODE_STRICT, NULL);
+    }
+    if (op == SECCOMP_SET_MODE_FILTER) {
+        if (flags & ~(SECCOMP_FILTER_FLAG_TSYNC | SECCOMP_FILTER_FLAG_LOG |
+                      SECCOMP_FILTER_FLAG_SPEC_ALLOW))
+            return -(int64_t) EINVAL;
+        return sys_seccomp_apply(p, SECCOMP_MODE_FILTER, uargs);
+    }
+    if (op == SECCOMP_GET_ACTION_AVAIL) {
+        if (!uargs || !uptr_ok(uargs, sizeof(uint32_t))) return -(int64_t) EFAULT;
+        uint32_t action = *(uint32_t *) uargs;
+        switch (action) {
+        case SECCOMP_RET_KILL_THREAD:
+        case SECCOMP_RET_KILL_PROCESS:
+        case SECCOMP_RET_TRAP:
+        case SECCOMP_RET_ERRNO:
+        case SECCOMP_RET_TRACE:
+        case SECCOMP_RET_LOG:
+        case SECCOMP_RET_ALLOW:
+            return 0;
+        default:
+            return -(int64_t) 95;
+        }
+    }
+    if (op == SECCOMP_GET_NOTIF_SIZES) {
+        if (!uargs || !uptr_ok_w(uargs, 6)) return -(int64_t) EFAULT;
+        uint8_t *sizes = (uint8_t *) uargs;
+        sizes[0] = 80;
+        sizes[1] = 0;
+        sizes[2] = 16;
+        sizes[3] = 0;
+        sizes[4] = 64;
+        sizes[5] = 0;
+        return 0;
+    }
+
+    return -(int64_t) EINVAL;
+}
+
+static int64_t sys_prctl(int op, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5) {
+    proc_t *p = cur();
+    if (!p) return -(int64_t) ESRCH;
+
+    switch (op) {
+    case PR_SET_PDEATHSIG:
+        if (a2 >= NSIG) return -(int64_t) EINVAL;
+        p->pdeathsig = (int) a2;
+        return 0;
+    case PR_GET_PDEATHSIG:
+        if (!uptr_ok_w((void *) a2, sizeof(int))) return -(int64_t) EFAULT;
+        *(int *) a2 = p->pdeathsig;
+        return 0;
+    case PR_GET_DUMPABLE:
+        return p->dumpable;
+    case PR_SET_DUMPABLE:
+        if (a2 > 1) return -(int64_t) EINVAL;
+        p->dumpable = (uint8_t) a2;
+        return 0;
+    case PR_SET_KEEPCAPS:
+        if (a2 > 1) return -(int64_t) EINVAL;
+        p->keepcaps = (uint8_t) a2;
+        return 0;
+    case PR_GET_KEEPCAPS:
+        return p->keepcaps;
+    case PR_SET_NAME: {
+        if (!uptr_ok((const void *) a2, 1)) return -(int64_t) EFAULT;
+        char name[16];
+        memset(name, 0, sizeof(name));
+        for (int i = 0; i < 15; i++) {
+            if (!uptr_ok((const void *) (a2 + (uint64_t) i), 1)) return -(int64_t) EFAULT;
+            name[i] = *(const char *) (a2 + (uint64_t) i);
+            if (!name[i]) break;
+        }
+        memcpy(p->comm, name, sizeof(p->comm));
+        return 0;
+    }
+    case PR_GET_NAME:
+        if (!uptr_ok_w((void *) a2, sizeof(p->comm))) return -(int64_t) EFAULT;
+        memset((void *) a2, 0, sizeof(p->comm));
+        memcpy((void *) a2, p->comm, sizeof(p->comm) - 1);
+        return 0;
+    case PR_GET_SECCOMP:
+        return p->seccomp_mode;
+    case PR_SET_SECCOMP:
+        return sys_seccomp_apply(p, (uint32_t) a2, (const void *) a3);
+    case PR_CAPBSET_READ:
+        if (a2 > CAP_LAST_CAP) return -(int64_t) EINVAL;
+        return (p->cap_bounding >> a2) & 1;
+    case PR_CAPBSET_DROP:
+        if (a2 > CAP_LAST_CAP) return -(int64_t) EINVAL;
+        if (!cred_has_cap(p, CAP_SETPCAP)) return -(int64_t) EPERM;
+        p->cap_bounding &= ~(1ULL << a2);
+        return 0;
+    case PR_SET_CHILD_SUBREAPER:
+        if (a2 > 1) return -(int64_t) EINVAL;
+        p->child_subreaper = (uint8_t) a2;
+        return 0;
+    case PR_GET_CHILD_SUBREAPER:
+        if (!uptr_ok_w((void *) a2, sizeof(int))) return -(int64_t) EFAULT;
+        *(int *) a2 = p->child_subreaper;
+        return 0;
+    case PR_SET_NO_NEW_PRIVS:
+        if (a2 != 1 || a3 || a4 || a5) return -(int64_t) EINVAL;
+        p->no_new_privs = 1;
+        return 0;
+    case PR_GET_NO_NEW_PRIVS:
+        return p->no_new_privs;
+    case PR_CAP_AMBIENT: {
+        if (a2 == PR_CAP_AMBIENT_CLEAR_ALL) {
+            p->cap_ambient = 0;
+            return 0;
+        }
+        if (a3 > CAP_LAST_CAP) return -(int64_t) EINVAL;
+        uint64_t bit = 1ULL << a3;
+        if (a2 == PR_CAP_AMBIENT_IS_SET) return (p->cap_ambient & bit) != 0;
+        if (a2 == PR_CAP_AMBIENT_RAISE) {
+            if ((p->cap_inheritable & bit) == 0 || (p->cap_permitted & bit) == 0)
+                return -(int64_t) EPERM;
+            p->cap_ambient |= bit;
+            return 0;
+        }
+        if (a2 == PR_CAP_AMBIENT_LOWER) {
+            p->cap_ambient &= ~bit;
+            return 0;
+        }
+        return -(int64_t) EINVAL;
+    }
+    default:
+        return -(int64_t) EINVAL;
+    }
 }
 
 void syscall_dispatch(syscall_frame_t *f) {
@@ -141,6 +316,9 @@ void syscall_dispatch(syscall_frame_t *f) {
     }
 
     int64_t ret;
+    if (tp && seccomp_check(tp, nr, (const uint64_t[]){ a1, a2, a3, a4, a5, a6 }, &ret)) {
+        goto syscall_done;
+    }
     switch (nr) {
     case 0:
         ret = fd_read((int) a1, (void *) a2, a3);
@@ -596,18 +774,11 @@ void syscall_dispatch(syscall_frame_t *f) {
         break;
     }
     case 125:
-        if (a2) {
-            if (!uptr_ok_w((void *) a2, 40)) {
-                ret = -(int64_t) EFAULT;
-                break;
-            }
-            memset((void *) a2, 0, 40);
-        }
-        ret = 0;
-        break; /* capget: no caps */
+        ret = sys_capget((void *) a1, (void *) a2);
+        break;
     case 126:
-        ret = -(int64_t) EPERM;
-        break; /* capset */
+        ret = sys_capset((void *) a1, (const void *) a2);
+        break;
     case 127: {
         if (a1) {
             if (!uptr_ok_w((void *) a1, 8)) {
@@ -706,6 +877,9 @@ void syscall_dispatch(syscall_frame_t *f) {
     case 138:
         ret = sys_statfs(NULL, (void *) a2);
         break;
+    case 155:
+        ret = sys_pivot_root((const char *) a1, (const char *) a2);
+        break;
     case 157:
         ret = sys_prctl((int) a1, a2, a3, a4, a5);
         break;
@@ -719,8 +893,8 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = sys_getrlimit(a1, (void *) a2); /* setrlimit: accept silently */
         break;
     case 161:
-        ret = is_root() ? 0 : -(int64_t) EPERM;
-        break; /* chroot: no-op until real roots exist */
+        ret = sys_chroot((const char *) a1);
+        break;
     case 162:
         vfs_sync_all();
         ret = 0;
@@ -779,7 +953,7 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = sys_umount2((const char *) a1, (int) a2);
         break;
     case 170: /* sethostname(name, length) */
-        ret = host_priv() ? sys_sethostname((const char *) a1, a2) : -(int64_t) EPERM;
+        ret = sys_sethostname((const char *) a1, a2);
         break;
     case 171:
         ret = host_priv() ? 0 : -(int64_t) EPERM;
@@ -1039,7 +1213,7 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = sys_ppoll((struct pollfd_s *) a1, a2, (void *) a3, (const void *) a4, a5);
         break;
     case 272:
-        ret = -(int64_t) ENOSYS;
+        ret = sys_unshare((uint64_t) a1);
         break; /* unshare */
     case 273:
         ret = sys_set_robust_list((void *) a1, a2);
@@ -1197,9 +1371,15 @@ void syscall_dispatch(syscall_frame_t *f) {
     } /* renameat2 */
     case 307:
         ret = -(int64_t) ENOSYS;
-        break; /* seccomp not implemented */
+        break; /* sendmmsg */
+    case 308:
+        ret = sys_setns((int) a1, (int) a2);
+        break; /* setns */
     case 313:  /* finit_module(fd, params, flags) */
         ret = sys_finit_module((int) a1, (const char *) a2, (uint32_t) a3);
+        break;
+    case 317:
+        ret = sys_seccomp((uint32_t) a1, (uint32_t) a2, (void *) a3);
         break;
     case 318:
         ret = sys_getrandom((void *) a1, a2, (uint32_t) a3);
@@ -1284,6 +1464,7 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = -(int64_t) ENOSYS;
         break;
     }
+syscall_done:
     f->rax = (uint64_t) ret;
 
     if (tp && tp->ptrace_syscall_trace && nr != 101) {

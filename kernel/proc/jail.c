@@ -2,6 +2,7 @@
 #include "lib/log.h"
 #include "lib/printf.h"
 #include "lib/string.h"
+#include "proc/ns.h"
 #include "proc/proc.h"
 
 #define EPERM 1
@@ -115,6 +116,7 @@ bool jail_can_see(const struct proc *observer, const struct proc *target) {
 bool jail_host_priv(const struct proc *p) {
     if (!p) return true;
     if (p->euid != 0) return false;
+    if (!ns_user_is_initial(p)) return false;
     jail_t *j = jail_find(p->jail_id);
     if (j && (j->flags & JAILF_PRIV)) return false;
     return true;

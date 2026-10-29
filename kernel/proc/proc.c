@@ -1,4 +1,6 @@
 #include "proc.h"
+#include "security/caps.h"
+#include "security/seccomp.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/syscall_setup.h"
 #include "lib/log.h"
@@ -7,6 +9,7 @@
 #include "mm/pmm.h"
 #include "mm/vmm.h"
 #include "proc/jail.h"
+#include "proc/ns.h"
 #include "proc/smp.h"
 #include "syscall/syscall.h"
 
@@ -107,10 +110,18 @@ proc_t *proc_alloc(uint32_t ppid) {
         }
         *p->fds_refcnt = 1;
 
+        p->nsproxy = nsproxy_get(&init_nsproxy);
+
         p->mmap_bump = 0x0000500000000000ULL;
         p->umask = 0022;
         p->cwd[0] = '/';
         p->cwd[1] = '\0';
+        p->cap_effective = CAP_FULL_MASK;
+        p->cap_permitted = CAP_FULL_MASK;
+        p->cap_inheritable = CAP_FULL_MASK;
+        p->cap_bounding = CAP_FULL_MASK;
+        p->dumpable = 1;
+        strncpy(p->comm, "kx", sizeof(p->comm) - 1);
 
         // default x87 fpu + sse state: clean area, mask all exceptions
         memset(p->fpu_state, 0, sizeof(p->fpu_state));
@@ -122,6 +133,36 @@ proc_t *proc_alloc(uint32_t ppid) {
     }
     spin_unlock(&g_proctable_lock);
     return NULL;
+}
+
+bool proc_security_inherit(proc_t *child, proc_t *parent) {
+    if (!child || !parent) return false;
+
+    child->cap_effective = parent->cap_effective;
+    child->cap_permitted = parent->cap_permitted;
+    child->cap_inheritable = parent->cap_inheritable;
+    child->cap_bounding = parent->cap_bounding;
+    child->cap_ambient = parent->cap_ambient;
+    child->no_new_privs = parent->no_new_privs;
+    child->keepcaps = parent->keepcaps;
+    child->dumpable = parent->dumpable;
+    child->seccomp_mode = parent->seccomp_mode;
+    memcpy(child->comm, parent->comm, sizeof(child->comm));
+    child->pdeathsig = 0;
+    child->child_subreaper = 0;
+    child->seccomp_filter = seccomp_chain_clone(parent->seccomp_filter);
+    if (parent->seccomp_filter && !child->seccomp_filter) {
+        return false;
+    }
+
+    return true;
+}
+
+void proc_security_release(proc_t *p) {
+    if (!p) return;
+    seccomp_chain_free(p->seccomp_filter);
+    p->seccomp_filter = NULL;
+    p->seccomp_mode = SECCOMP_MODE_DISABLED;
 }
 
 void proc_reap_pending(void) {

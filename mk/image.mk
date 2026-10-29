@@ -71,6 +71,11 @@ $(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROO
 		./scripts/local-pkg-install --registry ./pkg-registry-src --target $(abspath $(INITRD_ROOT)) --list packages.list || true; \
 		$(call ok,Local packages); \
 	fi
+	@mkdir -p $(INITRD_ROOT)/var/lib/flatpak $(INITRD_ROOT)/var/lib/dbus \
+	    $(INITRD_ROOT)/run/user/0 $(INITRD_ROOT)/dev/shm
+	@chmod 0700 $(INITRD_ROOT)/run/user/0
+	@chmod 01777 $(INITRD_ROOT)/dev/shm
+	@ln -sf /etc/machine-id $(INITRD_ROOT)/var/lib/dbus/machine-id
 	@cp $(OS_RELEASE) $(INITRD_ROOT)/etc/os-release
 	@cp $(KERNEL_MODULES) $(INITRD_ROOT)/lib/modules/
 	@cp $(KERNEL) $(INITRD_ROOT)/boot/kernel.elf
@@ -142,5 +147,5 @@ $(ISO): $(KERNEL) $(WESTON_INITRD) $(CONSOLE_INITRD) boot/limine.conf \
 
 $(DISK):
 	@mkdir -p $(@D)
-	truncate -s 512M $@
+	truncate -s 16G $@
 	@$(call ok,Created persistent install disk: $@)

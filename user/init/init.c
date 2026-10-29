@@ -413,6 +413,8 @@ int main(void) {
     setenv("HOME", "/", 1);
     setenv("SHELL", "/bin/ksh", 1);
     setenv("TERM", "xterm-color", 1);
+    setenv("XDG_RUNTIME_DIR", "/run/user/0", 1);
+    setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/0/bus", 1);
 
     apply_hostname();
     read_rc_conf();

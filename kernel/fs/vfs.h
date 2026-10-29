@@ -168,6 +168,7 @@ typedef struct {
     vfs_node_t *node;
     uint64_t pos;
     int flags;
+    char path[512];
     pipe_t *pipe;
     int pipe_end;
     pipe_t *wpipe;
@@ -269,6 +270,11 @@ int fd_connect_unix(int fd, const char *path);
 
 vfs_node_t *vfs_lookup(const char *path);
 vfs_node_t *vfs_lookup_nofollow(const char *path);
+vfs_node_t *vfs_root_node(void);
+vfs_node_t *vfs_proc_root(void);
+vfs_node_t *vfs_dev_root(void);
+vfs_node_t *vfs_sys_root(void);
+vfs_node_t *vfs_create_mount_root(uint32_t mode);
 vfs_node_t *vfs_mkdir_p(const char *path, uint32_t mode);
 vfs_node_t *vfs_create_file(const char *path, uint32_t mode, const void *data, uint64_t size);
 vfs_node_t *vfs_create_symlink(const char *path, const char *target);

@@ -19,6 +19,7 @@
 #include "mm/vmm.h"
 #include "module/loader.h"
 #include "proc/jail.h"
+#include "proc/ns.h"
 #include "proc/proc.h"
 #include "syscall/fsops.h"
 #include "syscall/mount.h"
@@ -42,7 +43,9 @@ static int64_t read_buf(char *out, uint64_t len, uint64_t off, const char *src, 
 }
 
 static const char *proc_name(proc_t *p) {
-    if (!p || !p->exe_path[0]) return "unknown";
+    if (!p) return "unknown";
+    if (p->comm[0]) return p->comm;
+    if (!p->exe_path[0]) return "unknown";
     const char *s = p->exe_path;
     for (const char *c = p->exe_path; *c; c++)
         if (*c == '/') s = c + 1;
@@ -343,19 +346,15 @@ static int64_t proc_stat_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t o
 
 static int64_t proc_mounts_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     (void) n;
-    char tmp[2048];
-    int sz = snprintf(tmp, sizeof(tmp),
-                      "ramfs / ramfs rw 0 0\n"
-                      "proc /proc proc rw,nosuid,nodev,noexec 0 0\n"
-                      "sysfs /sys sysfs rw,nosuid,nodev,noexec 0 0\n"
-                      "devtmpfs /dev devtmpfs rw,nosuid 0 0\n");
-    mount_entry_t *mt = mount_table();
-    int mc = mount_count();
-    for (int i = 0; i < mc && sz < (int) sizeof(tmp) - 128; i++) {
-        if (!mt[i].used) continue;
-        sz += snprintf(tmp + sz, sizeof(tmp) - (uint64_t) sz, "%s %s %s rw 0 0\n", mt[i].source,
-                       mt[i].target, mt[i].fstype);
-    }
+    char tmp[4096];
+    int sz = ns_mnt_list(tmp, sizeof(tmp), false);
+    return read_buf(buf, len, off, tmp, (uint64_t) sz);
+}
+
+static int64_t proc_mountinfo_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
+    (void) n;
+    char tmp[4096];
+    int sz = ns_mnt_list(tmp, sizeof(tmp), true);
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
@@ -483,10 +482,99 @@ static int64_t proc_self_environ_read(vfs_node_t *n, char *buf, uint64_t len, ui
     return 0;
 }
 
+static int64_t proc_uid_map_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
+    proc_t *p = node_to_proc(n);
+    if (!p) return 0;
+    char tmp[256];
+    int sz = ns_user_map_read(p, false, tmp, sizeof(tmp));
+    if (n->fs_private) proc_unref(p);
+    if (sz < 0) return sz;
+    return read_buf(buf, len, off, tmp, (uint64_t) sz);
+}
+
+static int64_t proc_gid_map_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
+    proc_t *p = node_to_proc(n);
+    if (!p) return 0;
+    char tmp[256];
+    int sz = ns_user_map_read(p, true, tmp, sizeof(tmp));
+    if (n->fs_private) proc_unref(p);
+    if (sz < 0) return sz;
+    return read_buf(buf, len, off, tmp, (uint64_t) sz);
+}
+
+static int64_t proc_setgroups_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
+    proc_t *p = node_to_proc(n);
+    if (!p) return 0;
+    char tmp[16];
+    int sz = ns_user_setgroups_read(p, tmp, sizeof(tmp));
+    if (n->fs_private) proc_unref(p);
+    if (sz < 0) return sz;
+    return read_buf(buf, len, off, tmp, (uint64_t) sz);
+}
+
+static int64_t proc_uid_map_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t pos) {
+    (void) pos;
+    proc_t *p = node_to_proc(n);
+    if (!p) return -(int64_t) ENOENT;
+    int r = ns_user_map_write(p, false, buf, len);
+    if (n->fs_private) proc_unref(p);
+    return r < 0 ? r : (int64_t) len;
+}
+
+static int64_t proc_gid_map_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t pos) {
+    (void) pos;
+    proc_t *p = node_to_proc(n);
+    if (!p) return -(int64_t) ENOENT;
+    int r = ns_user_map_write(p, true, buf, len);
+    if (n->fs_private) proc_unref(p);
+    return r < 0 ? r : (int64_t) len;
+}
+
+static int64_t proc_setgroups_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t pos) {
+    (void) pos;
+    proc_t *p = node_to_proc(n);
+    if (!p) return -(int64_t) ENOENT;
+    int r = ns_user_setgroups_write(p, buf, len);
+    if (n->fs_private) proc_unref(p);
+    return r < 0 ? r : (int64_t) len;
+}
+
 static int64_t proc_self_status_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     proc_t *p = node_to_proc(n);
     if (!p) return 0;
-    char tmp[1024];
+    user_namespace_t *uns = p->nsproxy ? p->nsproxy->user_ns : &init_user_ns;
+    uint32_t u0, u1, u2, u3, g0, g1, g2, g3, ppid = 0;
+    ns_uid_to_local(uns, p->uid, &u0);
+    ns_uid_to_local(uns, p->euid, &u1);
+    ns_uid_to_local(uns, p->suid, &u2);
+    ns_uid_to_local(uns, p->fsuid, &u3);
+    ns_gid_to_local(uns, p->gid, &g0);
+    ns_gid_to_local(uns, p->egid, &g1);
+    ns_gid_to_local(uns, p->sgid, &g2);
+    ns_gid_to_local(uns, p->fsgid, &g3);
+    if (p->ppid) {
+        proc_t *pp = proc_find(p->ppid);
+        if (pp) {
+            ppid = ns_proc_pid_in(pp, p->nsproxy ? p->nsproxy->pid_ns : &init_pid_ns);
+            proc_unref(pp);
+        }
+    }
+    char nspid[128];
+    int nspos = 0;
+    uint32_t chain[8];
+    int nchain = ns_pid_chain(p, chain, 8);
+    for (int i = 0; i < nchain && nspos < (int) sizeof(nspid); i++) {
+        int r = snprintf(nspid + nspos, sizeof(nspid) - (uint64_t) nspos, "%s%u", i ? " " : "",
+                         chain[i]);
+        if (r < 0) break;
+        nspos += r;
+    }
+    if (nspos == 0) {
+        nspid[0] = '0';
+        nspid[1] = '\0';
+    }
+
+    char tmp[2048];
     int threads = 0;
     for (int i = 0; i < PROC_MAX; i++)
         if (g_proctable[i].state != PROC_UNUSED && g_proctable[i].space == p->space) threads++;
@@ -497,8 +585,16 @@ static int64_t proc_self_status_read(vfs_node_t *n, char *buf, uint64_t len, uin
         "Tgid:\t%u\n"
         "Pid:\t%u\n"
         "PPid:\t%u\n"
+        "NSpid:\t%s\n"
         "Uid:\t%u\t%u\t%u\t%u\n"
         "Gid:\t%u\t%u\t%u\t%u\n"
+        "CapInh:\t%016lx\n"
+        "CapPrm:\t%016lx\n"
+        "CapEff:\t%016lx\n"
+        "CapBnd:\t%016lx\n"
+        "CapAmb:\t%016lx\n"
+        "NoNewPrivs:\t%d\n"
+        "Seccomp:\t%d\n"
         "FDSize:\t%d\n"
         "Threads:\t%d\n"
         "SigPnd:\t%016lx\n"
@@ -508,9 +604,12 @@ static int64_t proc_self_status_read(vfs_node_t *n, char *buf, uint64_t len, uin
         "VmSize:\t0 kB\n"
         "VmRSS:\t%lu kB\n"
         "VmLeak:\t%ld kB\n",
-        proc_name(p), proc_state_char(p), p->pid, p->pid, p->ppid, p->uid, p->euid, p->suid,
-        p->fsuid, p->gid, p->egid, p->sgid, p->fsgid, VFS_FD_MAX, threads ? threads : 1,
-        p->pending_sigs, p->sig_mask, (unsigned long) p->ptrace_orig_rax,
+        proc_name(p), proc_state_char(p), ns_proc_pid(p), ns_proc_pid(p), ppid, nspid, u0, u1, u2,
+        u3, g0, g1, g2, g3, (unsigned long) p->cap_inheritable,
+        (unsigned long) p->cap_permitted, (unsigned long) p->cap_effective,
+        (unsigned long) p->cap_bounding, (unsigned long) p->cap_ambient, p->no_new_privs,
+        p->seccomp_mode, VFS_FD_MAX, threads ? threads : 1, p->pending_sigs, p->sig_mask,
+        (unsigned long) p->ptrace_orig_rax,
         (unsigned long) ((p->pages_alloc * PAGE_SIZE) / 1024),
         (long) ((int64_t) (p->pages_alloc - p->pages_freed) * (int64_t) (PAGE_SIZE / 1024)));
     if (n->fs_private) proc_unref(p);
@@ -705,11 +804,76 @@ static int parse_fd_link(const char *path) {
     return fd;
 }
 
+static bool procfs_ns_link(const char *path, char *buf, uint64_t bufsz, int *out) {
+    if (strncmp(path, "/proc/", 6) != 0) return false;
+    const char *s = path + 6;
+    bool self = false;
+    uint32_t pid = 0;
+    if (strncmp(s, "self/ns/", 8) == 0) {
+        self = true;
+        s += 8;
+    } else {
+        while (*s >= '0' && *s <= '9') {
+            pid = pid * 10 + (uint32_t) (*s - '0');
+            s++;
+        }
+        if (s == path + 6 || strncmp(s, "/ns/", 4) != 0) return false;
+        s += 4;
+    }
+
+    uint32_t type;
+    bool for_children = false;
+    if (strcmp(s, "user") == 0) {
+        type = NS_TYPE_USER;
+    } else if (strcmp(s, "pid") == 0) {
+        type = NS_TYPE_PID;
+    } else if (strcmp(s, "pid_for_children") == 0) {
+        type = NS_TYPE_PID;
+        for_children = true;
+    } else if (strcmp(s, "mnt") == 0) {
+        type = NS_TYPE_MNT;
+    } else if (strcmp(s, "uts") == 0) {
+        type = NS_TYPE_UTS;
+    } else if (strcmp(s, "ipc") == 0) {
+        type = NS_TYPE_IPC;
+    } else if (strcmp(s, "net") == 0) {
+        type = NS_TYPE_NET;
+    } else if (strcmp(s, "cgroup") == 0) {
+        type = NS_TYPE_CGROUP;
+    } else {
+        return false;
+    }
+
+    proc_t *p = self ? g_current_proc : proc_find(pid);
+    if (!p) {
+        *out = -(int) ENOENT;
+        return true;
+    }
+    ns_common_t *ns = ns_for_proc(p, type, for_children);
+    if (!ns) {
+        if (!self) proc_unref(p);
+        *out = -(int) ENOENT;
+        return true;
+    }
+    char tmp[64];
+    int n = snprintf(tmp, sizeof(tmp), "%s:[%u]", ns_type_name(type),
+                     (uint32_t) (uintptr_t) ns);
+    if (n < 0) n = 0;
+    uint64_t copy = (uint64_t) n;
+    if (copy > bufsz) copy = bufsz;
+    memcpy(buf, tmp, copy);
+    *out = (int) copy;
+    if (!self) proc_unref(p);
+    return true;
+}
+
 bool procfs_readlink(const char *path, char *buf, uint64_t bufsz, int *out) {
     if (!uptr_ok_w(buf, bufsz)) {
         *out = -(int) EFAULT;
         return true;
     }
+
+    if (procfs_ns_link(path, buf, bufsz, out)) return true;
 
     if (strcmp(path, "/proc/self/exe") == 0) {
         proc_t *p = g_current_proc;
@@ -765,7 +929,9 @@ bool procfs_readlink(const char *path, char *buf, uint64_t bufsz, int *out) {
     }
 
     char tmp[512];
-    if (f->node)
+    if (f->node && f->path[0])
+        snprintf(tmp, sizeof(tmp), "%s", f->path);
+    else if (f->node)
         vfs_node_abspath(f->node, tmp, sizeof(tmp));
     else if (f->wpipe)
         snprintf(tmp, sizeof(tmp), "socket:[%d]", fd);
@@ -773,13 +939,15 @@ bool procfs_readlink(const char *path, char *buf, uint64_t bufsz, int *out) {
         snprintf(tmp, sizeof(tmp), "pipe:[%d]", fd);
     else
         snprintf(tmp, sizeof(tmp), "anon_inode:[%d]", fd);
-
     uint64_t n = strlen(tmp);
     if (n > bufsz) n = bufsz;
     memcpy(buf, tmp, n);
     *out = (int) n;
     return true;
 }
+
+static void procfs_create_ns_dir(const char *dir);
+static void procfs_create_user_files(const char *dir, void *tag);
 
 bool procfs_try_pid_dir(vfs_node_t *parent, const char *name) {
     if (!parent || !name || !*name) return false;
@@ -833,6 +1001,11 @@ bool procfs_try_pid_dir(vfs_node_t *parent, const char *name) {
     snprintf(maps_path, sizeof(maps_path), "%s/maps", dir_path);
     vfs_node_t *maps = vfs_create_chr(maps_path, proc_self_maps_read, NULL);
     if (maps) maps->fs_private = pid_tag;
+
+    char ns_path[160];
+    snprintf(ns_path, sizeof(ns_path), "%s/ns", dir_path);
+    procfs_create_ns_dir(ns_path);
+    procfs_create_user_files(dir_path, pid_tag);
 
     return true;
 }
@@ -973,6 +1146,43 @@ static int64_t sysfs_cpu_online_read(vfs_node_t *n, char *buf, uint64_t len, uin
     return read_buf(buf, len, off, on, sizeof(on) - 1);
 }
 
+static int64_t proc_overflowuid_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
+    (void) n;
+    static const char v[] = "65534\n";
+    return read_buf(buf, len, off, v, sizeof(v) - 1);
+}
+
+static int64_t proc_overflowgid_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
+    (void) n;
+    static const char v[] = "65534\n";
+    return read_buf(buf, len, off, v, sizeof(v) - 1);
+}
+
+static void procfs_create_ns_dir(const char *dir) {
+    vfs_mkdir_p(dir, 0555);
+    static const char *names[] = { "user", "pid", "pid_for_children", "mnt",
+                                   "uts",  "ipc", "net",              "cgroup" };
+    char path[192];
+    for (int i = 0; i < (int) (sizeof(names) / sizeof(names[0])); i++) {
+        snprintf(path, sizeof(path), "%s/%s", dir, names[i]);
+        vfs_node_t *n = vfs_create_chr(path, NULL, NULL);
+        if (n) n->mode = S_IFCHR | 0444;
+    }
+}
+
+static void procfs_create_user_files(const char *dir, void *tag) {
+    char path[192];
+    snprintf(path, sizeof(path), "%s/uid_map", dir);
+    vfs_node_t *n = vfs_create_chr(path, proc_uid_map_read, proc_uid_map_write);
+    if (n) n->fs_private = tag;
+    snprintf(path, sizeof(path), "%s/gid_map", dir);
+    n = vfs_create_chr(path, proc_gid_map_read, proc_gid_map_write);
+    if (n) n->fs_private = tag;
+    snprintf(path, sizeof(path), "%s/setgroups", dir);
+    n = vfs_create_chr(path, proc_setgroups_read, proc_setgroups_write);
+    if (n) n->fs_private = tag;
+}
+
 void procfs_init(void) {
     vfs_mkdir_p("/proc", 0555);
     vfs_mkdir_p("/proc/self", 0555);
@@ -996,6 +1206,7 @@ void procfs_init(void) {
     vfs_create_chr("/proc/loadavg", proc_loadavg_read, NULL);
     vfs_create_chr("/proc/stat", proc_stat_read, NULL);
     vfs_create_chr("/proc/mounts", proc_mounts_read, NULL);
+    vfs_create_chr("/proc/self/mountinfo", proc_mountinfo_read, NULL);
     vfs_create_symlink("/proc/self/mounts", "/proc/mounts");
     vfs_create_chr("/proc/filesystems", proc_filesystems_read, NULL);
     vfs_create_chr("/proc/devices", proc_devices_read, NULL);
@@ -1003,6 +1214,8 @@ void procfs_init(void) {
     vfs_create_chr("/proc/sys/kernel/ostype", proc_ostype_read, NULL);
     vfs_create_chr("/proc/sys/kernel/osrelease", proc_osrelease_read, NULL);
     vfs_create_chr("/proc/sys/kernel/hostname", proc_hostname_read, NULL);
+    vfs_create_chr("/proc/sys/kernel/overflowuid", proc_overflowuid_read, NULL);
+    vfs_create_chr("/proc/sys/kernel/overflowgid", proc_overflowgid_read, NULL);
     vfs_create_chr("/proc/sys/kernel/pid_max", proc_pid_max_read, NULL);
     vfs_create_chr("/proc/sys/kernel/random/boot_id", proc_boot_id_read, NULL);
 
@@ -1012,6 +1225,8 @@ void procfs_init(void) {
     vfs_create_chr("/proc/self/status", proc_self_status_read, NULL);
     vfs_create_chr("/proc/self/stat", proc_self_stat_read, NULL);
     vfs_create_chr("/proc/self/maps", proc_self_maps_read, NULL);
+    procfs_create_ns_dir("/proc/self/ns");
+    procfs_create_user_files("/proc/self", NULL);
 
     vfs_node_t *pm = vfs_create_chr("/proc/self/pagemap", proc_self_pagemap_read, NULL);
     if (pm) pm->mode = S_IFCHR | 0400;

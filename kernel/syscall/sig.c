@@ -6,6 +6,7 @@
 #include "internal.h"
 #include "lib/string.h"
 #include "proc/jail.h"
+#include "proc/ns.h"
 #include "proc/proc.h"
 #include "proc/signal.h"
 
@@ -23,7 +24,10 @@ int64_t sys_kill(int64_t pid, int sig) {
 
     // sig == 0 is an existence/permission probe: validate the target but deliver nothing
     if (pid > 0) {
-        proc_t *target = proc_find((uint32_t) pid);
+        uint32_t global = ns_pid_to_global((self && self->nsproxy) ? self->nsproxy->pid_ns : &init_pid_ns,
+                                            (uint32_t) pid);
+        if (!global) return -(int64_t) ESRCH;
+        proc_t *target = proc_find(global);
         if (!target) return -(int64_t) ESRCH;
         if (!jail_can_see(self, target)) {
             proc_unref(target);
@@ -42,6 +46,9 @@ int64_t sys_kill(int64_t pid, int sig) {
             if (g_proctable[i].pid == 1) continue;
             if (self == &g_proctable[i]) continue;
             if (!jail_can_see(self, &g_proctable[i])) continue;
+            if (!ns_proc_pid_in(&g_proctable[i],
+                                (self && self->nsproxy) ? self->nsproxy->pid_ns : &init_pid_ns))
+                continue;
             found = true;
             if (!kill_permitted(self, &g_proctable[i])) continue;
             permitted = true;

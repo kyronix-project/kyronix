@@ -2,7 +2,7 @@
 # Start the Weston (Wayland) session on the framebuffer.
 #
 # Weston takes over /dev/fb0 and the VT, so it needs root: launcher-direct is
-# the only launcher available here (there is no logind and no dbus daemon).
+# the only launcher available here (there is no logind).
 
 user=$(whoami)
 if [ "$user" != "root" ]; then
@@ -19,6 +19,7 @@ mkdir -p /run/user/0
 chmod 0700 /run/user/0
 
 export XDG_RUNTIME_DIR=/run/user/0
+export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/0/bus
 # weston looks for weston.ini under XDG_CONFIG_HOME, so point it at /etc
 export XDG_CONFIG_HOME=/etc
 export XKB_CONFIG_ROOT=/usr/share/X11/xkb
