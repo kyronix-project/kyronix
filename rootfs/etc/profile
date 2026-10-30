@@ -5,3 +5,4 @@ export LIBGL_ALWAYS_SOFTWARE=1
 # Wayland session (see startw)
 export XDG_RUNTIME_DIR=/run/user/0
 export XDG_CONFIG_HOME=/etc
+export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/0/bus

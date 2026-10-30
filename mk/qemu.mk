@@ -20,7 +20,7 @@ QEMU_NET_ARGS = -netdev user,id=n0 -device virtio-net-pci,netdev=n0
 run: $(ISO) $(DISK)
 	@$(call phase,Launching QEMU (live ISO))
 	$(QEMU) \
-	    -M q35 $(QEMU_ACCEL_ARGS) -smp 4 -m 2G \
+	    -M q35 $(QEMU_ACCEL_ARGS) -smp 4 -m 4G \
 	    -device qemu-xhci,id=xhci \
 	    -device usb-kbd,bus=xhci.0 \
 	    -device usb-mouse,bus=xhci.0 \
@@ -33,7 +33,7 @@ run: $(ISO) $(DISK)
 boot: $(DISK)
 	@$(call phase,Launching QEMU (installed disk))
 	$(QEMU) \
-	    -M q35 $(QEMU_ACCEL_ARGS) -smp 4 -m 2G \
+	    -M q35 $(QEMU_ACCEL_ARGS) -smp 4 -m 4G \
 	    -device qemu-xhci,id=xhci \
 	    -device usb-kbd,bus=xhci.0 \
 	    -device usb-mouse,bus=xhci.0 \

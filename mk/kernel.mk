@@ -36,6 +36,7 @@ KERNEL_C_SRCS := \
 	kernel/mm/vma.c \
 	kernel/security/phantom.c \
 	kernel/security/anti_toctou.c \
+	kernel/security/seccomp.c \
 	kernel/mm/heap.c \
 	kernel/mm/shm.c \
 	kernel/mm/shmem.c \
@@ -62,6 +63,7 @@ KERNEL_C_SRCS := \
 	kernel/module/loader.c \
 	kernel/prof/profiler.c \
 	kernel/proc/proc.c \
+	kernel/proc/ns.c \
 	kernel/proc/jail.c \
 	kernel/proc/signal.c \
 	kernel/proc/smp.c \

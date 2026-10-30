@@ -18,6 +18,7 @@
 #include "mm/vma.h"
 #include "mm/vmm.h"
 #include "proc/jail.h"
+#include "proc/ns.h"
 #include "proc/proc.h"
 #include "proc/signal.h"
 #include "proc/smp.h"
@@ -36,6 +37,10 @@ static void proc_release_fdtable(proc_t *p) {
 
 static void proc_discard_embryo(proc_t *p) {
     if (!p) return;
+    proc_security_release(p);
+    ns_proc_unregister(p);
+    nsproxy_put(p->nsproxy);
+    p->nsproxy = NULL;
     proc_release_fdtable(p);
     if (p->space) vmm_space_free(p->space);
     proc_kstack_free(p);
@@ -61,12 +66,19 @@ static bool proc_has_private_space(proc_t *p) {
 }
 
 static int64_t sys_fork_at_mode(proc_t *parent, syscall_frame_t *f, uint64_t child_stack, bool cow,
-                                uint64_t child_rax, bool publish, proc_t **prepared_child) {
+                                uint64_t child_rax, bool publish, proc_t **prepared_child,
+                                uint64_t clone_flags) {
     if (!parent) return -(int64_t) ENOMEM;
     if (!jail_can_fork(parent->jail_id)) return -(int64_t) EAGAIN;
 
     proc_t *child = proc_alloc(parent->pid);
     if (!child) return -(int64_t) ENOMEM;
+
+    int ns_rc = ns_child_prepare(parent, child, clone_flags, false);
+    if (ns_rc < 0) {
+        proc_discard_embryo(child);
+        return ns_rc;
+    }
 
     child->space = vmm_space_new();
     if (!child->space) goto fail_space;
@@ -100,6 +112,10 @@ static int64_t sys_fork_at_mode(proc_t *parent, syscall_frame_t *f, uint64_t chi
     for (int _gi = 0; _gi < parent->ngroups && _gi < 64; _gi++)
         child->sup_groups[_gi] = parent->sup_groups[_gi];
     child->umask = parent->umask;
+    if (!proc_security_inherit(child, parent)) {
+        proc_discard_embryo(child);
+        return -(int64_t) ENOMEM;
+    }
     memcpy(child->cwd, parent->cwd, sizeof(child->cwd));
     memcpy(child->exe_path, parent->exe_path, sizeof(child->exe_path));
     child->jail_id = parent->jail_id;
@@ -123,7 +139,8 @@ static int64_t sys_fork_at_mode(proc_t *parent, syscall_frame_t *f, uint64_t chi
     if (prepared_child) *prepared_child = child;
     if (publish) proc_publish_ready(child);
 
-    return (int64_t) child->pid;
+    uint32_t local = ns_proc_pid_in(child, parent->nsproxy ? parent->nsproxy->pid_ns : &init_pid_ns);
+    return (int64_t) (local ? local : child->pid);
 
 fail_fork:
 fail_space:
@@ -131,10 +148,14 @@ fail_space:
     return -(int64_t) ENOMEM;
 }
 
-static int64_t sys_fork_at(syscall_frame_t *f, uint64_t child_stack) {
+static int64_t sys_fork_at_flags(syscall_frame_t *f, uint64_t child_stack, uint64_t clone_flags) {
     proc_t *parent = cur();
     bool cow = parent && proc_has_private_space(parent);
-    return sys_fork_at_mode(parent, f, child_stack, cow, 0, true, NULL);
+    return sys_fork_at_mode(parent, f, child_stack, cow, 0, true, NULL, clone_flags);
+}
+
+static int64_t sys_fork_at(syscall_frame_t *f, uint64_t child_stack) {
+    return sys_fork_at_flags(f, child_stack, 0);
 }
 
 int64_t sys_fork(syscall_frame_t *f) { return sys_fork_at(f, 0); }
@@ -210,7 +231,7 @@ int64_t proc_phantom_clone(syscall_frame_t *f) {
     proc_t *parent = cur();
     if (!parent) return -(int64_t) EPERM;
     proc_t *child = NULL;
-    int64_t pid = sys_fork_at_mode(parent, f, 0, true, 0, false, &child);
+    int64_t pid = sys_fork_at_mode(parent, f, 0, true, 0, false, &child, 0);
     if (pid < 0) return pid;
     return proc_phantom_commit(parent, child, pid, 0, 0);
 }
@@ -222,7 +243,7 @@ int64_t proc_phantom_fault_clone(proc_t *source, const cpu_state_t *state, uint6
     memset(&placeholder, 0, sizeof(placeholder));
     proc_t *child = NULL;
     int64_t pid =
-        sys_fork_at_mode(source, &placeholder, state->rsp, true, state->rax, false, &child);
+        sys_fork_at_mode(source, &placeholder, state->rsp, true, state->rax, false, &child, 0);
     if (pid < 0) return pid;
 
     uint8_t *ksp = child->kstack + KSTACK_SIZE;
@@ -256,7 +277,8 @@ int64_t sys_clone(uint64_t flags, uint64_t child_stack, uint32_t *ptid, uint32_t
     proc_t *parent = cur();
     if (!parent) return -(int64_t) ENOMEM;
 
-    if (!(flags & CLONE_THREAD)) return sys_fork_at(f, child_stack);
+    if (!(flags & CLONE_THREAD)) return sys_fork_at_flags(f, child_stack, flags);
+    if (flags & NS_CLONE_ALL) return -(int64_t) EINVAL;
     if ((flags & CLONE_PARENT_SETTID) && (!ptid || !uptr_ok_w(ptid, sizeof(*ptid))))
         return -(int64_t) EFAULT;
     if ((flags & (CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID)) && ctid &&
@@ -266,6 +288,12 @@ int64_t sys_clone(uint64_t flags, uint64_t child_stack, uint32_t *ptid, uint32_t
 
     proc_t *child = proc_alloc(parent->pid);
     if (!child) return -(int64_t) ENOMEM;
+
+    int ns_rc = ns_child_prepare(parent, child, 0, true);
+    if (ns_rc < 0) {
+        proc_discard_embryo(child);
+        return ns_rc;
+    }
 
     child->space = parent->space; // shared address space
     vmm_space_retain(child->space);
@@ -302,6 +330,10 @@ int64_t sys_clone(uint64_t flags, uint64_t child_stack, uint32_t *ptid, uint32_t
     for (int _gi = 0; _gi < parent->ngroups && _gi < 64; _gi++)
         child->sup_groups[_gi] = parent->sup_groups[_gi];
     child->umask = parent->umask;
+    if (!proc_security_inherit(child, parent)) {
+        proc_discard_embryo(child);
+        return -(int64_t) ENOMEM;
+    }
     memcpy(child->cwd, parent->cwd, sizeof(child->cwd));
     memcpy(child->exe_path, parent->exe_path, sizeof(child->exe_path));
     child->jail_id = parent->jail_id;
@@ -575,8 +607,9 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
         res.interp_base = 0x7f0000000000ULL;
     }
 
-    uint32_t next_euid = (exec_mode & S_ISUID) ? exec_uid : cur()->euid;
-    uint32_t next_egid = (exec_mode & S_ISGID) ? exec_gid : cur()->egid;
+    bool no_new_privs = cur()->no_new_privs;
+    uint32_t next_euid = (!no_new_privs && (exec_mode & S_ISUID)) ? exec_uid : cur()->euid;
+    uint32_t next_egid = (!no_new_privs && (exec_mode & S_ISGID)) ? exec_gid : cur()->egid;
     bool secure_exec = next_euid != cur()->uid || next_egid != cur()->gid;
     uint64_t rsp = setup_user_stack(res.space, &res, argc, (const char *const *) kargv,
                                     (const char *const *) kenvp, cur()->uid, next_euid, cur()->gid,
@@ -596,10 +629,15 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
     p->brk_base = p->brk;
     p->mmap_bump = 0x0000500000000000ULL + ((kern_rand64() & 0x1FFULL) << 21);
     strncpy(p->exe_path, exec_path, sizeof(p->exe_path) - 1);
+    const char *base = exec_path;
+    for (const char *c = exec_path; *c; c++)
+        if (*c == '/') base = c + 1;
+    strncpy(p->comm, base, sizeof(p->comm) - 1);
+    p->comm[sizeof(p->comm) - 1] = '\0';
     g_current_space = p->space;
 
-    bool privileged_exec = ((exec_mode & S_ISUID) && exec_uid != p->euid) ||
-                           ((exec_mode & S_ISGID) && exec_gid != p->egid);
+    bool privileged_exec = !no_new_privs && (((exec_mode & S_ISUID) && exec_uid != p->euid) ||
+                                             ((exec_mode & S_ISGID) && exec_gid != p->egid));
     if (privileged_exec && p->tracer_pid) {
         p->tracer_pid = 0;
         p->ptrace_syscall_trace = 0;
@@ -609,8 +647,8 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
     }
 
     // setuid/setgid on exec: elevate euid/egid to file owner
-    if (exec_mode & S_ISUID) { p->suid = p->euid = p->fsuid = exec_uid; }
-    if (exec_mode & S_ISGID) { p->sgid = p->egid = p->fsgid = exec_gid; }
+    if (!no_new_privs && (exec_mode & S_ISUID)) { p->suid = p->euid = p->fsuid = exec_uid; }
+    if (!no_new_privs && (exec_mode & S_ISGID)) { p->sgid = p->egid = p->fsgid = exec_gid; }
 
     vmm_syscall_access_end();
     vmm_switch(p->space);
@@ -691,12 +729,15 @@ __attribute__((noreturn)) void proc_do_exit(int code) {
         }
     }
     jail_unref(p->jail_id);
+    proc_security_release(p);
     proc_release_fdtable(p);
 
     spin_lock(&g_proctable_lock);
     for (int i = 0; i < PROC_MAX; i++) {
         proc_t *child = &g_proctable[i];
-        if (child->state != PROC_UNUSED && child->ppid == p->pid) child->ppid = 1;
+        if (child->state == PROC_UNUSED || child->ppid != p->pid) continue;
+        if (child->pdeathsig > 0) proc_send_signal(child, child->pdeathsig);
+        child->ppid = 1;
     }
     spin_unlock(&g_proctable_lock);
 
@@ -705,6 +746,9 @@ __attribute__((noreturn)) void proc_do_exit(int code) {
             *p->cleartid_addr = 0;
             cleartid_wake(p->cleartid_addr);
         }
+        ns_proc_unregister(p);
+        nsproxy_put(p->nsproxy);
+        p->nsproxy = NULL;
         vmm_space_free(p->space);
         p->space = NULL;
         p->state = PROC_DYING;
@@ -772,14 +816,20 @@ int64_t sys_wait4(int pid, int *wstatus, int options, void *rusage) {
             bool is_tracee = c->tracer_pid == parent->pid;
             if (c->ppid != parent->pid && !is_tracee) continue;
             if (!jail_can_see(parent, c)) continue;
-            if (pid > 0 && (int) c->pid != pid) continue;
+            uint32_t local_pid =
+                ns_proc_pid_in(c, parent->nsproxy ? parent->nsproxy->pid_ns : &init_pid_ns);
+            if (!local_pid) continue;
+            if (pid > 0 && (int) local_pid != pid) continue;
             any_child = true;
 
             if (c->state == PROC_ZOMBIE) {
                 if (wstatus) *wstatus = (c->exit_code & 0xFF) << 8;
-                uint32_t cpid = c->pid;
+                uint32_t cpid = local_pid;
                 uint32_t child_jid = c->jail_id;
                 spin_lock(&g_proctable_lock);
+                ns_proc_unregister(c);
+                nsproxy_put(c->nsproxy);
+                c->nsproxy = NULL;
                 proc_release_fdtable(c);
                 vmm_space_free(c->space);
                 proc_kstack_free(c);
@@ -794,13 +844,13 @@ int64_t sys_wait4(int pid, int *wstatus, int options, void *rusage) {
             if (is_tracee && c->ptrace_stopped && !c->ptrace_reported) {
                 c->ptrace_reported = 1;
                 if (wstatus) *wstatus = ((c->ptrace_stop_sig & 0xFF) << 8) | 0x7f;
-                return (int64_t) c->pid;
+                return (int64_t) local_pid;
             }
 
             if ((options & 2) /* WUNTRACED */ && c->job_stopped && !c->stop_reported) {
                 c->stop_reported = 1;
                 if (wstatus) *wstatus = ((c->stop_sig & 0xFF) << 8) | 0x7f;
-                return (int64_t) c->pid;
+                return (int64_t) local_pid;
             }
         }
 

@@ -23,6 +23,7 @@
 #define SIGTTIN 21
 #define SIGTTOU 22
 #define SIGWINCH 28
+#define SIGSYS 31
 #define NSIG 64
 
 #define SIG_DFL 0ULL

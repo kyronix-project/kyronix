@@ -1,5 +1,9 @@
 #include "test_harness.h"
 
+#include <linux/capability.h>
+#include <linux/filter.h>
+#include <linux/seccomp.h>
+
 int test_fork_basic(void) {
     pid_t pid = fork();
     ASSERT_GE(pid, 0);
@@ -442,6 +446,104 @@ int test_prctl(void) {
     return 1;
 }
 REGISTER_TEST(prctl, "Phase 3: Process & Scheduling");
+
+int test_prctl_no_new_privs(void) {
+    pid_t pid = fork();
+    ASSERT_GE(pid, 0);
+    if (pid == 0) {
+        if (prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0) != 0) _exit(1);
+        if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) _exit(2);
+        if (prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0) != 1) _exit(3);
+        _exit(0);
+    }
+    int status = 0;
+    ASSERT_EQ(pid, waitpid(pid, &status, 0));
+    ASSERT_TRUE(WIFEXITED(status));
+    ASSERT_EQ(0, WEXITSTATUS(status));
+    return 1;
+}
+REGISTER_TEST(prctl_no_new_privs, "Phase 3: Process & Scheduling");
+
+int test_prctl_pdeathsig(void) {
+    int sig = 0;
+    ASSERT_EQ(0, prctl(PR_SET_PDEATHSIG, SIGUSR1, 0, 0, 0));
+    ASSERT_EQ(0, prctl(PR_GET_PDEATHSIG, &sig));
+    ASSERT_EQ(SIGUSR1, sig);
+    ASSERT_EQ(0, prctl(PR_SET_PDEATHSIG, 0, 0, 0, 0));
+    return 1;
+}
+REGISTER_TEST(prctl_pdeathsig, "Phase 3: Process & Scheduling");
+
+int test_capget_capset(void) {
+    pid_t pid = fork();
+    ASSERT_GE(pid, 0);
+    if (pid == 0) {
+        struct __user_cap_header_struct hdr = { _LINUX_CAPABILITY_VERSION_3, 0 };
+        struct __user_cap_data_struct data[2] = { { 0 } };
+        if (syscall(SYS_capget, &hdr, data) != 0) _exit(1);
+        if (data[0].effective == 0 && data[1].effective == 0) _exit(2);
+        data[0].effective = 0;
+        data[0].permitted = 0;
+        data[0].inheritable = 0;
+        data[1].effective = 0;
+        data[1].permitted = 0;
+        data[1].inheritable = 0;
+        if (syscall(SYS_capset, &hdr, data) != 0) _exit(3);
+        if (syscall(SYS_capget, &hdr, data) != 0) _exit(4);
+        if (data[0].effective != 0 || data[1].effective != 0) _exit(5);
+        _exit(0);
+    }
+    int status = 0;
+    ASSERT_EQ(pid, waitpid(pid, &status, 0));
+    ASSERT_TRUE(WIFEXITED(status));
+    ASSERT_EQ(0, WEXITSTATUS(status));
+    return 1;
+}
+REGISTER_TEST(capget_capset, "Phase 3: Process & Scheduling");
+
+static int install_getpid_filter(int use_prctl) {
+    struct sock_filter insns[] = {
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_getpid, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | 13),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    struct sock_fprog prog = { .len = (unsigned short) (sizeof(insns) / sizeof(insns[0])),
+                               .filter = insns };
+    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) return -1;
+    if (use_prctl) return prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog);
+    return (int) syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, 0, &prog);
+}
+
+int test_seccomp_filter(void) {
+    for (int use_prctl = 0; use_prctl < 2; use_prctl++) {
+        pid_t pid = fork();
+        ASSERT_GE(pid, 0);
+        if (pid == 0) {
+            int rc = install_getpid_filter(use_prctl);
+            if (rc != 0) {
+                _exit(20 + use_prctl * 10 + 1);
+            }
+            errno = 0;
+            long ret = syscall(SYS_getpid);
+            if (ret != -1 || errno != EACCES) {
+                _exit(20 + use_prctl * 10 + 2);
+            }
+            errno = 0;
+            ret = syscall(SYS_getuid);
+            if (ret < 0) {
+                _exit(20 + use_prctl * 10 + 3);
+            }
+            _exit(0);
+        }
+        int status = 0;
+        ASSERT_EQ(pid, waitpid(pid, &status, 0));
+        ASSERT_TRUE(WIFEXITED(status));
+        ASSERT_EQ(0, WEXITSTATUS(status));
+    }
+    return 1;
+}
+REGISTER_TEST(seccomp_filter, "Phase 3: Process & Scheduling");
 
 int test_arch_prctl(void) {
     /* ARCH_GET_FS via syscall - should succeed (tls is set by libc) */

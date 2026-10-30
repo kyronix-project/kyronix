@@ -11,6 +11,7 @@
 #include "boot/limine.h"
 #include "drivers/video/fb.h"
 #include "proc/loadavg.h"
+#include "proc/ns.h"
 #include "proc/smp.h"
 #include "version.h"
 
@@ -326,6 +327,7 @@ void kmain(void) {
     syscall_init();
     kstatus("Initialising syscalls", true);
     proc_init();
+    ns_init();
     kstatus("Initialising scheduler", true);
     loadavg_init();
     kstatus("Initialising load average", true);

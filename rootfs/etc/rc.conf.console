@@ -4,5 +4,7 @@
 # keeps CLOCK_REALTIME synchronized after the network becomes available
 ntpd:/bin/ntpd --quiet
 
+dbus:/usr/bin/dbus-session
+
 # authenticates and starts shell from /etc/passwd
 login:/bin/login

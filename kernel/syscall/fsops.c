@@ -6,20 +6,17 @@
 #include "internal.h"
 #include "lib/string.h"
 #include "proc/jail.h"
+#include "proc/ns.h"
 #include "proc/proc.h"
 #include "version.h"
 
-static spinlock_t hostname_lock;
-static char system_hostname[65] = "kx";
-
 uint64_t system_hostname_copy(char *out, uint64_t capacity) {
     if (!out || capacity == 0) return 0;
-    spin_lock(&hostname_lock);
-    uint64_t length = strlen(system_hostname);
+    const char *hostname = ns_uts_hostname(cur());
+    uint64_t length = strlen(hostname);
     if (length >= capacity) length = capacity - 1;
-    memcpy(out, system_hostname, length);
+    memcpy(out, hostname, length);
     out[length] = '\0';
-    spin_unlock(&hostname_lock);
     return length;
 }
 
@@ -36,14 +33,14 @@ int64_t sys_uname(struct utsname *buf) {
 }
 
 int64_t sys_sethostname(const char *name, uint64_t length) {
-    if (length == 0 || length > sizeof(system_hostname) - 1) return -(int64_t) EINVAL;
+    if (length == 0 || length > 64) return -(int64_t) EINVAL;
     if (!name || !uptr_ok(name, length)) return -(int64_t) EFAULT;
-
-    spin_lock(&hostname_lock);
-    memcpy(system_hostname, name, length);
-    system_hostname[length] = '\0';
-    spin_unlock(&hostname_lock);
-    return 0;
+    proc_t *p = cur();
+    if (!p) return -(int64_t) EPERM;
+    if (!host_priv() &&
+        (!p->nsproxy || p->nsproxy->uts_ns == &init_uts_ns || !ns_user_is_root(p)))
+        return -(int64_t) EPERM;
+    return (int64_t) ns_uts_sethostname(p, name, length);
 }
 
 int64_t sys_getcwd(char *buf, uint64_t size) {

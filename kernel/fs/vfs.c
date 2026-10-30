@@ -11,6 +11,7 @@
 #include "mm/shmem.h"
 #include "proc/jail.h"
 #include "proc/proc.h"
+#include "proc/ns.h"
 #include "procfs.h"
 #include "security/anti_toctou.h"
 #include "security/phantom.h"
@@ -60,6 +61,7 @@ static int g_filesystem_cnt;
 #define ENOTCONN 107
 #define EISCONN 106
 #define EADDRINUSE 98
+#define EROFS 30
 
 static vfs_node_t *node_alloc(const char *name, uint8_t type, uint32_t mode) {
     vfs_node_t *n = (vfs_node_t *) kcalloc(1, sizeof(vfs_node_t));
@@ -302,13 +304,44 @@ static int vfs_node_path(vfs_node_t *n, char *buf, size_t sz) {
     return 0;
 }
 
+static bool lookup_path_push(char *buf, size_t sz, size_t *len, const char *comp) {
+    size_t cl = strlen(comp);
+    if (*len + 1 + cl >= sz) return false;
+    if (*len > 1) buf[(*len)++] = '/';
+    memcpy(buf + *len, comp, cl);
+    *len += cl;
+    buf[*len] = '\0';
+    return true;
+}
+
+static void lookup_path_pop(char *buf, size_t *len) {
+    if (*len <= 1) return;
+    while (*len > 1 && buf[*len - 1] != '/') (*len)--;
+    if (*len > 1) (*len)--;
+    buf[*len] = '\0';
+    if (*len == 0) {
+        buf[0] = '/';
+        buf[1] = '\0';
+        *len = 1;
+    }
+}
+
 static vfs_node_t *lookup_internal(const char *path, bool follow_last, int depth) {
     if (!path || path[0] == '\0') return NULL;
     if (depth > 32) return NULL;
 
+    mnt_namespace_t *mns = ns_mnt_current();
     vfs_node_t *cur;
+    vfs_node_t *boundary;
+    char cur_path[512];
+    size_t cur_len;
+
     if (path[0] == '/') {
-        cur = g_root;
+        cur = mns->root ? mns->root : g_root;
+        boundary = cur;
+        cur_path[0] = '/';
+        cur_path[1] = '\0';
+        cur_len = 1;
     } else {
         const char *cwd = (g_current_proc && g_current_proc->cwd[0]) ? g_current_proc->cwd : g_cwd;
         size_t cwd_len = strlen(cwd);
@@ -333,7 +366,10 @@ static vfs_node_t *lookup_internal(const char *path, bool follow_last, int depth
 
         if (len == 1 && start[0] == '.') continue;
         if (len == 2 && start[0] == '.' && start[1] == '.') {
-            if (cur->parent) cur = cur->parent;
+            if (cur != boundary && cur->parent) {
+                cur = cur->parent;
+                lookup_path_pop(cur_path, &cur_len);
+            }
             continue;
         }
 
@@ -388,13 +424,31 @@ static vfs_node_t *lookup_internal(const char *path, bool follow_last, int depth
             if (root[0]) jail_canon_clamp(resolved, sizeof(resolved), root);
             return lookup_internal(resolved, true, depth + 1);
         }
-        cur = child;
+
+        char cand[512];
+        memcpy(cand, cur_path, cur_len + 1);
+        size_t cand_len = cur_len;
+        if (!lookup_path_push(cand, sizeof(cand), &cand_len, comp)) return NULL;
+
+        mnt_mount_t *mm = ns_mnt_find(mns, cand);
+        if (mm && mm->root) {
+            cur = mm->root;
+            boundary = mm->root;
+            memcpy(cur_path, cand, cand_len + 1);
+            cur_len = cand_len;
+        } else {
+            cur = child;
+            memcpy(cur_path, cand, cand_len + 1);
+            cur_len = cand_len;
+        }
     }
     return lookup_ref(cur);
 }
 
 vfs_node_t *vfs_lookup(const char *path) { return lookup_internal(path, true, 0); }
 vfs_node_t *vfs_lookup_nofollow(const char *path) { return lookup_internal(path, false, 0); }
+
+static bool mnt_write_denied(const char *path) { return ns_mnt_path_readonly(path); }
 
 vfs_node_t *vfs_mkdir_p(const char *path, uint32_t mode) {
     if (!path || path[0] != '/') return NULL;
@@ -436,7 +490,7 @@ static vfs_node_t *parent_of(const char *path, const char **leaf) {
         if (path[i] == '/') slash = path + i;
     if (!slash || slash == path) {
         *leaf = path + (path[0] == '/' ? 1 : 0);
-        return lookup_ref(g_root);
+        return vfs_lookup("/");
     }
     size_t plen = (size_t) (slash - path);
     char parent_path[512];
@@ -448,6 +502,7 @@ static vfs_node_t *parent_of(const char *path, const char **leaf) {
 }
 
 vfs_node_t *vfs_create_file(const char *path, uint32_t mode, const void *data, uint64_t size) {
+    if (mnt_write_denied(path)) return NULL;
     const char *leaf;
     vfs_node_t *parent = parent_of(path, &leaf);
     if (!parent || parent->type != VFS_TYPE_DIR) {
@@ -503,6 +558,7 @@ vfs_node_t *vfs_create_file(const char *path, uint32_t mode, const void *data, u
 }
 
 vfs_node_t *vfs_create_symlink(const char *path, const char *target) {
+    if (mnt_write_denied(path)) return NULL;
     const char *leaf;
     vfs_node_t *parent = parent_of(path, &leaf);
     if (!parent) return NULL;
@@ -566,6 +622,12 @@ vfs_node_t *vfs_create_chr(const char *path,
 }
 
 int vfs_mkdir(const char *path, uint32_t mode) {
+    vfs_node_t *existing = vfs_lookup_nofollow(path);
+    if (existing) {
+        node_unref(existing);
+        return -(int) EEXIST;
+    }
+    if (mnt_write_denied(path)) return -(int) EROFS;
     const char *leaf;
     vfs_node_t *parent = parent_of(path, &leaf);
     if (!parent || parent->type != VFS_TYPE_DIR || !leaf || !*leaf) {
@@ -595,6 +657,7 @@ int vfs_mkdir(const char *path, uint32_t mode) {
 }
 
 int vfs_unlink(const char *path) {
+    if (mnt_write_denied(path)) return -(int) EROFS;
     vfs_node_t *n = vfs_lookup_nofollow(path);
     if (!n) return -(int) ENOENT;
     if (n->type == VFS_TYPE_DIR) {
@@ -616,6 +679,7 @@ int vfs_unlink(const char *path) {
 }
 
 int vfs_rmdir(const char *path) {
+    if (mnt_write_denied(path)) return -(int) EROFS;
     vfs_node_t *n = vfs_lookup(path);
     if (!n) return -(int) ENOENT;
     if (n->type != VFS_TYPE_DIR) {
@@ -641,6 +705,7 @@ int vfs_rmdir(const char *path) {
 }
 
 int vfs_rename(const char *oldpath, const char *newpath) {
+    if (mnt_write_denied(oldpath) || mnt_write_denied(newpath)) return -(int) EROFS;
     vfs_node_t *n = vfs_lookup_nofollow(oldpath);
     if (!n || !n->parent) {
         node_unref(n);
@@ -849,6 +914,7 @@ int fd_open_node(vfs_node_t *n, int flags) {
     }
     f->node = n;
     f->flags = flags;
+    vfs_node_abspath(n, f->path, sizeof(f->path));
     node_ref(n);
     vfs_fd_install(fd, f);
     return fd;
@@ -1264,6 +1330,20 @@ void vfs_sync_all(void) {
         if (g_filesystems[i]->sync) g_filesystems[i]->sync();
 }
 
+vfs_node_t *vfs_root_node(void) { return g_root; }
+
+vfs_node_t *vfs_proc_root(void) { return g_root ? dir_find(g_root, "proc") : NULL; }
+
+vfs_node_t *vfs_dev_root(void) { return g_root ? dir_find(g_root, "dev") : NULL; }
+
+vfs_node_t *vfs_sys_root(void) { return g_root ? dir_find(g_root, "sys") : NULL; }
+
+vfs_node_t *vfs_create_mount_root(uint32_t mode) {
+    vfs_node_t *n = node_alloc("/", VFS_TYPE_DIR, (mode & 07777U) | S_IFDIR);
+    if (n) n->parent = n;
+    return n;
+}
+
 void vfs_init(void) {
     g_root = node_alloc("/", VFS_TYPE_DIR, 0755 | S_IFDIR);
     g_root->parent = g_root;
@@ -1386,6 +1466,9 @@ static int fd_open_impl(const char *path, int flags, int mode, bool reroot, bool
         vfs_abs_path(abspath, sizeof(abspath), path);
         if (abspath[0]) lpath = abspath;
     }
+    if (((flags & O_ACCMODE) != O_RDONLY || (flags & (O_CREAT | O_TRUNC))) &&
+        ns_mnt_path_readonly(lpath))
+        return -(int) EROFS;
 
     vfs_node_t *n = (flags & O_NOFOLLOW) ? vfs_lookup_nofollow(lpath) : vfs_lookup(lpath);
     bool from_lookup = (n != NULL);
@@ -1455,6 +1538,7 @@ static int fd_open_impl(const char *path, int flags, int mode, bool reroot, bool
     f->node = n;
     f->flags = flags;
     f->pos = 0;
+    if (lpath[0] == '/') path_canon(lpath, f->path, sizeof(f->path));
     f->cloexec = (flags & O_CLOEXEC) ? 1 : 0;
     /* n is already reffed: from_lookup -> lookup_ref bumped it; !from_lookup -> node_ref above */
     (void) from_lookup;
@@ -1885,37 +1969,87 @@ int fd_readlink_kpath(const char *path, char *buf, uint64_t bufsz) {
     return readlink_common(path, buf, bufsz);
 }
 
-char *vfs_node_abspath(vfs_node_t *n, char *buf, size_t sz) {
-    if (!n || !buf || sz == 0) return NULL;
-    if (n->parent == n) { /* root */
-        buf[0] = '/';
-        buf[1] = '\0';
-        return buf;
+static int node_depth_in(vfs_node_t *n, vfs_node_t *ancestor) {
+    int depth = 0;
+    vfs_node_t *cur = n;
+    while (cur && depth < 128) {
+        if (cur == ancestor) return depth;
+        if (cur->parent == cur) break;
+        cur = cur->parent;
+        depth++;
     }
+    return -1;
+}
 
+static bool node_relpath(vfs_node_t *n, vfs_node_t *ancestor, const char *target, char *out,
+                         size_t sz) {
     vfs_node_t *stack[128];
     int depth = 0;
     vfs_node_t *cur = n;
-    while (cur && cur->parent != cur && depth < 128) {
+    while (cur && cur != ancestor && depth < 128) {
         stack[depth++] = cur;
+        if (cur->parent == cur) return false;
         cur = cur->parent;
     }
+    if (cur != ancestor) return false;
 
-    char *p = buf;
-    char *end = buf + sz - 1;
-    for (int i = depth - 1; i >= 0; i--) {
-        if (p < end) *p++ = '/';
-        size_t nl = strlen(stack[i]->name);
-        if (p + nl > end) nl = (size_t) (end - p);
-        memcpy(p, stack[i]->name, nl);
-        p += nl;
+    size_t pos = 0;
+    size_t tl = strlen(target);
+    if (tl >= sz) return false;
+    memcpy(out, target, tl);
+    pos = tl;
+    if (depth == 0) {
+        out[pos] = '\0';
+        return true;
     }
-    if (p == buf) *p++ = '/';
-    *p = '\0';
+    if (pos == 0 || out[pos - 1] != '/') {
+        if (pos + 1 >= sz) return false;
+        out[pos++] = '/';
+    }
+    for (int i = depth - 1; i >= 0; i--) {
+        size_t nl = strlen(stack[i]->name);
+        if (pos + nl + 1 >= sz) return false;
+        memcpy(out + pos, stack[i]->name, nl);
+        pos += nl;
+        if (i > 0) out[pos++] = '/';
+    }
+    out[pos] = '\0';
+    return true;
+}
+
+char *vfs_node_abspath(vfs_node_t *n, char *buf, size_t sz) {
+    mnt_namespace_t *ns = ns_mnt_current();
+    char best[512];
+    int best_depth = -1;
+    best[0] = '\0';
+
+    if (ns->root) {
+        int d = node_depth_in(n, ns->root);
+        if (d >= 0 && node_relpath(n, ns->root, "/", best, sizeof(best))) {
+            best_depth = d;
+            if (d == 0) snprintf(best, sizeof(best), "/");
+        }
+    }
+
+    for (uint32_t i = 0; i < NS_MNT_MAX; i++) {
+        mnt_mount_t *m = &ns->mounts[i];
+        if (!m->used || !m->root) continue;
+        int d = node_depth_in(n, m->root);
+        if (d < 0 || d < best_depth) continue;
+        char cand[512];
+        if (!node_relpath(n, m->root, m->target, cand, sizeof(cand))) continue;
+        snprintf(best, sizeof(best), "%s", cand);
+        best_depth = d;
+    }
+
+    if (!best[0]) snprintf(best, sizeof(best), "/");
+    strncpy(buf, best, sz - 1);
+    buf[sz - 1] = '\0';
     return buf;
 }
 
 int vfs_link(const char *oldpath, const char *newpath) {
+    if (mnt_write_denied(newpath)) return -(int) EROFS;
     vfs_node_t *src = vfs_lookup(oldpath);
     if (!src) return -(int) ENOENT;
     if (src->type == VFS_TYPE_DIR) {
@@ -1986,6 +2120,7 @@ int vfs_link(const char *oldpath, const char *newpath) {
 }
 
 int vfs_chmod(const char *path, uint32_t mode) {
+    if (mnt_write_denied(path)) return -(int) EROFS;
     vfs_node_t *n = vfs_lookup(path);
     if (!n) return -(int) ENOENT;
     if (!may_change_mode(n)) {
@@ -2006,6 +2141,7 @@ int vfs_fchmod(int fd, uint32_t mode) {
 }
 
 int vfs_chown(const char *path, uint32_t uid, uint32_t gid) {
+    if (mnt_write_denied(path)) return -(int) EROFS;
     vfs_node_t *n = vfs_lookup(path);
     if (!n) return -(int) ENOENT;
     if (!may_change_owner(n)) {
@@ -2020,6 +2156,7 @@ int vfs_chown(const char *path, uint32_t uid, uint32_t gid) {
 }
 
 int vfs_lchown(const char *path, uint32_t uid, uint32_t gid) {
+    if (mnt_write_denied(path)) return -(int) EROFS;
     vfs_node_t *n = vfs_lookup_nofollow(path);
     if (!n) return -(int) ENOENT;
     if (!may_change_owner(n)) {
@@ -2068,6 +2205,7 @@ int vfs_node_truncate(vfs_node_t *n, uint64_t len) {
 }
 
 int vfs_truncate(const char *path, uint64_t len) {
+    if (mnt_write_denied(path)) return -(int) EROFS;
     vfs_node_t *n = vfs_lookup(path);
     if (!n) return -(int) ENOENT;
     if (n->type != VFS_TYPE_REG) {
@@ -2108,6 +2246,7 @@ int vfs_access(const char *path, int mode) {
 }
 
 int vfs_mknod(const char *path, uint32_t mode, uint64_t dev) {
+    if (mnt_write_denied(path)) return -(int) EROFS;
     (void) dev;
     const char *leaf;
     vfs_node_t *parent = parent_of(path, &leaf);
@@ -2159,7 +2298,11 @@ int at_resolve(int dirfd, const char *path, char *out, size_t sz) {
     vfs_file_t *df = fd_get(dirfd);
     if (!df || !df->node || df->node->type != VFS_TYPE_DIR) return -(int) EBADF;
     char dirpath[512];
-    if (!vfs_node_abspath(df->node, dirpath, sizeof(dirpath))) return -(int) EINVAL;
+    if (df->path[0])
+        strncpy(dirpath, df->path, sizeof(dirpath) - 1);
+    else if (!vfs_node_abspath(df->node, dirpath, sizeof(dirpath)))
+        return -(int) EINVAL;
+    dirpath[sizeof(dirpath) - 1] = '\0';
     size_t dl = strlen(dirpath);
     if (dl + 1 + strlen(path) >= sz) return -(int) ENAMETOOLONG;
     memcpy(out, dirpath, dl);
