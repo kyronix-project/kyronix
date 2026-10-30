@@ -8,7 +8,7 @@ CFLAGS += $(FNO_LINK_LIBATOMIC)
 
 include ../../mk/output.mk
 
-SRCS := testrunner.c tests_fs.c tests_proc.c tests_signal.c tests_ipc.c tests_time.c tests_io.c tests_misc.c tests_modules.c tests_utils.c tests_jail.c tests_disk.c tests_smp.c tests_tmp117.c tests_spi.c tests_security.c
+SRCS := testrunner.c tests_fs.c tests_proc.c tests_signal.c tests_ipc.c tests_time.c tests_io.c tests_misc.c tests_modules.c tests_utils.c tests_jail.c tests_disk.c tests_smp.c tests_tmp117.c tests_spi.c tests_security.c tests_inotify.c
 
 .PHONY: all clean
 

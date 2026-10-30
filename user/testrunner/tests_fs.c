@@ -635,6 +635,37 @@ int test_renameat_linkat(void) {
 }
 REGISTER_TEST(renameat_linkat, "Phase 2: File System");
 
+int test_renameat2(void) {
+    char a[PATH_MAX], b[PATH_MAX], buf[32];
+    tmpfile_path(a, sizeof(a), "r2_a");
+    tmpfile_path(b, sizeof(b), "r2_b");
+
+    write_file(a, "aaa");
+    ASSERT_EQ(0, syscall(SYS_renameat2, AT_FDCWD, a, AT_FDCWD, b, 0));
+    ASSERT_EQ(3, read_file(b, buf, sizeof(buf)));
+    ASSERT_EQ(0, memcmp(buf, "aaa", 3));
+
+    write_file(a, "new");
+    ASSERT_EQ(-1, syscall(SYS_renameat2, AT_FDCWD, a, AT_FDCWD, b, 1));
+    ASSERT_ERRNO(EEXIST);
+    ASSERT_EQ(3, read_file(b, buf, sizeof(buf)));
+    ASSERT_EQ(0, memcmp(buf, "aaa", 3));
+
+    ASSERT_EQ(-1, syscall(SYS_renameat2, AT_FDCWD, a, AT_FDCWD, b, 3));
+    ASSERT_ERRNO(EINVAL);
+
+    ASSERT_EQ(0, syscall(SYS_renameat2, AT_FDCWD, a, AT_FDCWD, b, 2));
+    ASSERT_EQ(3, read_file(a, buf, sizeof(buf)));
+    ASSERT_EQ(0, memcmp(buf, "aaa", 3));
+    ASSERT_EQ(3, read_file(b, buf, sizeof(buf)));
+    ASSERT_EQ(0, memcmp(buf, "new", 3));
+
+    unlink(a);
+    unlink(b);
+    return 1;
+}
+REGISTER_TEST(renameat2, "Phase 2: File System");
+
 int test_symlinkat_readlinkat(void) {
     char target[PATH_MAX], link[PATH_MAX];
     tmpfile_path(target, sizeof(target), "sla_target");

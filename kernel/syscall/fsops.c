@@ -5,6 +5,7 @@
 #include "fs/vfs_internal.h"
 #include "internal.h"
 #include "lib/string.h"
+#include "mm/pmm.h"
 #include "proc/jail.h"
 #include "proc/ns.h"
 #include "proc/proc.h"
@@ -156,15 +157,18 @@ int64_t sys_statfs(const char *path, void *buf) {
         if (!uptr_ok_w(buf, 120)) return -(int64_t) EFAULT;
         memset(buf, 0, 120);
         uint64_t *w = (uint64_t *) buf;
-        w[0] = 0x858458f6; // f_type = RAMFS_MAGIC
-        w[1] = 4096;       // f_bsize
-        w[2] = 65536;      // f_blocks
-        w[3] = 65536;      // f_bfree
-        w[4] = 65536;      // f_bavail
-        w[5] = 4096;       // f_files
-        w[6] = 4096;       // f_ffree
-        w[8] = 255;        // f_namelen
-        w[9] = 4096;       // f_frsize
+        uint64_t total = pmm_total_pages();
+        uint64_t free = pmm_free_pages();
+        if (!total) total = 65536;
+        w[0] = 0x858458f6;
+        w[1] = 4096;
+        w[2] = total;
+        w[3] = free;
+        w[4] = free;
+        w[5] = 4096;
+        w[6] = 4096;
+        w[8] = 255;
+        w[9] = 4096;
     }
     return 0;
 }

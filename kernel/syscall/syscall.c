@@ -10,6 +10,7 @@
 #include "exec/process.h"
 #include "file.h"
 #include "fs/inet_socket.h"
+#include "fs/inotify.h"
 #include "fs/vfs.h"
 #include "fs/vfs_internal.h"
 #include "fsops.h"
@@ -1106,10 +1107,14 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = 0;
         break; /* ioprio_get */
     case 253:
+        ret = fd_inotify_init(0);
+        break;
     case 254:
+        ret = fd_inotify_add_watch((int) a1, (const char *) a2, (uint32_t) a3);
+        break;
     case 255:
-        ret = -(int64_t) ENOSYS;
-        break; /* inotify */
+        ret = fd_inotify_rm_watch((int) a1, (int) a2);
+        break;
     case 247:  /* waitid */
         ret = sys_wait4((int) a2, NULL, (int) a4, NULL);
         break;
@@ -1329,8 +1334,8 @@ void syscall_dispatch(syscall_frame_t *f) {
         }
         break;
     case 294:
-        ret = -(int64_t) ENOSYS;
-        break; /* inotify_init1 */
+        ret = fd_inotify_init((int) a1);
+        break;
     case 295:
         ret = sys_preadv((int) a1, (const struct iovec *) a2, (int) a3, a4);
         break; /* preadv */
@@ -1341,8 +1346,8 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = host_priv() ? 0 : -(int64_t) EPERM;
         break; /* clock_adjtime */
     case 301:
-        ret = 0;
-        break; /* syncfs: no-op */
+        ret = -(int64_t) ENOSYS;
+        break;
     case 302:
         ret = sys_prlimit64(a1, a2, (void *) a3, (void *) a4);
         break;
@@ -1362,13 +1367,37 @@ void syscall_dispatch(syscall_frame_t *f) {
         }
         ret = 0;
         break; /* sched_getattr */
-    case 306: {
+    case 306:
+        if (!fd_valid((int) a1)) {
+            ret = -(int64_t) EBADF;
+            break;
+        }
+        vfs_sync_all();
+        ret = 0;
+        break;
+    case 316: {
         char ao[512], an[512];
+        if (a5 != 0 && a5 != 1 && a5 != 2) {
+            ret = -(int64_t) EINVAL;
+            break;
+        }
         if (!AT_RESOLVED(ret, a1, a2, ao)) break;
         if (!AT_RESOLVED(ret, a3, a4, an)) break;
+        if (a5 == 2) {
+            ret = (int64_t) vfs_rename_exchange(ao, an);
+            break;
+        }
+        if (a5 == 1) {
+            vfs_node_t *dst = vfs_lookup_nofollow(an);
+            if (dst) {
+                vfs_node_unref_internal(dst);
+                ret = -(int64_t) EEXIST;
+                break;
+            }
+        }
         ret = (int64_t) vfs_rename(ao, an);
         break;
-    } /* renameat2 */
+    }
     case 307:
         ret = -(int64_t) ENOSYS;
         break; /* sendmmsg */

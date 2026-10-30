@@ -178,6 +178,7 @@ typedef struct {
     eventfd_state_t *efd;
     timerfd_state_t *tfd;
     sigfd_state_t *sfd;
+    void *ifd;
     void *epoll;            /* non-null for epoll handles; survives dup() (see syscall/epoll.c) */
     struct net_conn *inet;  /* non-null for AF_INET sockets */
     volatile uint32_t refs; /* descriptor ownership plus in-flight syscall borrows */
@@ -293,6 +294,7 @@ int vfs_mkdir(const char *path, uint32_t mode);
 int vfs_unlink(const char *path);
 int vfs_rmdir(const char *path);
 int vfs_rename(const char *oldpath, const char *newpath);
+int vfs_rename_exchange(const char *path1, const char *path2);
 int vfs_link(const char *oldpath, const char *newpath);
 int vfs_chmod(const char *path, uint32_t mode);
 int vfs_fchmod(int fd, uint32_t mode);
