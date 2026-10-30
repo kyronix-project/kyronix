@@ -188,6 +188,10 @@ int64_t sys_pause(void) {
         }
         p->state = PROC_WAITING;
         proc_clear_ready(p);
+        if (p->pending_sigs & ~p->sig_mask) {
+            p->state = PROC_RUNNING;
+            continue;
+        }
         next->state = PROC_RUNNING;
         vfs_set_fdtable(next->fds);
         g_current_space = next->space;
@@ -229,6 +233,10 @@ int64_t sys_rt_sigsuspend(const uint64_t *mask, uint64_t sigsetsize) {
         }
         p->state = PROC_WAITING;
         proc_clear_ready(p);
+        if (p->pending_sigs & ~p->sig_mask) {
+            p->state = PROC_RUNNING;
+            continue;
+        }
         next->state = PROC_RUNNING;
         vfs_set_fdtable(next->fds);
         g_current_space = next->space;
