@@ -234,7 +234,7 @@ typedef struct {
     int (*func)(void);
 } test_entry_t;
 
-#define MAX_TESTS 256
+#define MAX_TESTS 320
 
 extern test_entry_t test_registry[MAX_TESTS];
 extern int test_count;

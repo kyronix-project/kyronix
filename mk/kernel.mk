@@ -72,6 +72,7 @@ KERNEL_C_SRCS := \
 	kernel/fs/vfs.c \
 	kernel/fs/devfs.c \
 	kernel/fs/eventfd.c \
+	kernel/fs/inotify.c \
 	kernel/fs/signalfd.c \
 	kernel/fs/fdctl.c \
 	kernel/fs/fdpipe.c \

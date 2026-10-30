@@ -3,6 +3,7 @@
 #include "devfs.h"
 #include "drivers/tty/tty.h"
 #include "eventfd.h"
+#include "inotify.h"
 #include "inet_socket.h"
 #include "lib/log.h"
 #include "lib/printf.h"
@@ -548,11 +549,13 @@ vfs_node_t *vfs_create_file(const char *path, uint32_t mode, const void *data, u
             memcpy(existing->data, data, size);
             existing->size = existing->capacity = size;
         }
+        inotify_notify_node(existing, IN_MODIFY, 0);
         node_unref(parent);
         return existing;
     }
     dir_insert_nolock(parent, n);
     irq_restore(_f);
+    inotify_notify_parent(parent, n->name, false, IN_CREATE, 0);
     node_unref(parent);
     return n;
 }
@@ -591,6 +594,7 @@ vfs_node_t *vfs_create_symlink(const char *path, const char *target) {
     }
     dir_insert_nolock(parent, n);
     irq_restore(_f);
+    inotify_notify_parent(parent, n->name, false, IN_CREATE, 0);
     node_unref(parent);
     return n;
 }
@@ -617,6 +621,7 @@ vfs_node_t *vfs_create_chr(const char *path,
     }
     dir_insert_nolock(parent, n);
     irq_restore(_f);
+    inotify_notify_parent(parent, n->name, false, IN_CREATE, 0);
     node_unref(parent);
     return n;
 }
@@ -652,6 +657,7 @@ int vfs_mkdir(const char *path, uint32_t mode) {
     }
     dir_insert_nolock(parent, n);
     irq_restore(_f);
+    inotify_notify_parent(parent, n->name, true, IN_CREATE, 0);
     node_unref(parent);
     return 0;
 }
@@ -672,7 +678,10 @@ int vfs_unlink(const char *path) {
         node_unref(n);
         return -(int) EACCES;
     }
-    dir_remove(n->parent, n);
+    vfs_node_t *parent = n->parent;
+    inotify_notify_parent(parent, n->name, false, IN_DELETE, 0);
+    inotify_notify_delete_self(n);
+    dir_remove(parent, n);
     node_unlink_or_destroy(n);
     node_unref(n);
     return 0;
@@ -698,7 +707,10 @@ int vfs_rmdir(const char *path) {
         node_unref(n);
         return -(int) EACCES;
     }
-    dir_remove(n->parent, n);
+    vfs_node_t *parent = n->parent;
+    inotify_notify_parent(parent, n->name, true, IN_DELETE, 0);
+    inotify_notify_delete_self(n);
+    dir_remove(parent, n);
     node_unlink_or_destroy(n);
     node_unref(n);
     return 0;
@@ -728,6 +740,12 @@ int vfs_rename(const char *oldpath, const char *newpath) {
         node_unref(new_parent);
         return -(int) EACCES;
     }
+
+    vfs_node_t *old_parent = n->parent;
+    char old_name[256];
+    strncpy(old_name, n->name, sizeof(old_name) - 1);
+    old_name[sizeof(old_name) - 1] = '\0';
+    uint32_t cookie = inotify_next_cookie();
 
     uint64_t _f = irq_save();
     vfs_node_t *existing = dir_find(new_parent, new_leaf);
@@ -761,16 +779,65 @@ int vfs_rename(const char *oldpath, const char *newpath) {
             node_unref(new_parent);
             return -(int) ENOTDIR;
         }
+        inotify_notify_parent(new_parent, existing->name,
+                              existing->type == VFS_TYPE_DIR, IN_DELETE, 0);
+        inotify_notify_delete_self(existing);
         dir_remove(new_parent, existing);
         node_unlink_or_destroy(existing);
         node_unref(existing);
     }
-    dir_remove(n->parent, n);
+    dir_remove(old_parent, n);
     strncpy(n->name, new_leaf, sizeof(n->name) - 1);
     n->name[sizeof(n->name) - 1] = '\0';
     dir_insert(new_parent, n);
+    inotify_notify_move(n, old_parent, old_name, new_parent, new_leaf, cookie);
     node_unref(n);
     node_unref(new_parent);
+    return 0;
+}
+
+int vfs_rename_exchange(const char *path1, const char *path2) {
+    if (mnt_write_denied(path1) || mnt_write_denied(path2)) return -(int) EROFS;
+    vfs_node_t *n1 = vfs_lookup_nofollow(path1);
+    vfs_node_t *n2 = vfs_lookup_nofollow(path2);
+    if (!n1 || !n2 || !n1->parent || !n2->parent) {
+        node_unref(n1);
+        node_unref(n2);
+        return -(int) ENOENT;
+    }
+    if (n1 == n2) {
+        node_unref(n1);
+        node_unref(n2);
+        return 0;
+    }
+    vfs_node_t *p1 = n1->parent;
+    vfs_node_t *p2 = n2->parent;
+    if (!may_delete_in(p1, n1) || !may_delete_in(p2, n2) ||
+        !may_create_in(p1) || !may_create_in(p2)) {
+        node_unref(n1);
+        node_unref(n2);
+        return -(int) EACCES;
+    }
+    char name1[256], name2[256];
+    strncpy(name1, n1->name, sizeof(name1) - 1);
+    name1[sizeof(name1) - 1] = '\0';
+    strncpy(name2, n2->name, sizeof(name2) - 1);
+    name2[sizeof(name2) - 1] = '\0';
+    uint32_t cookie = inotify_next_cookie();
+    uint64_t f = irq_save();
+    dir_remove(p1, n1);
+    dir_remove(p2, n2);
+    strncpy(n1->name, name2, sizeof(n1->name) - 1);
+    n1->name[sizeof(n1->name) - 1] = '\0';
+    strncpy(n2->name, name1, sizeof(n2->name) - 1);
+    n2->name[sizeof(n2->name) - 1] = '\0';
+    dir_insert_nolock(p2, n1);
+    dir_insert_nolock(p1, n2);
+    irq_restore(f);
+    inotify_notify_move(n1, p1, name1, p2, name2, cookie);
+    inotify_notify_move(n2, p2, name2, p1, name1, cookie);
+    node_unref(n1);
+    node_unref(n2);
     return 0;
 }
 
@@ -917,6 +984,7 @@ int fd_open_node(vfs_node_t *n, int flags) {
     vfs_node_abspath(n, f->path, sizeof(f->path));
     node_ref(n);
     vfs_fd_install(fd, f);
+    inotify_notify_node(n, IN_OPEN, 0);
     return fd;
 }
 
@@ -1025,6 +1093,7 @@ bool fd_pollin(int fd) {
     if (f->efd) return f->efd->counter > 0;
     if (f->tfd) return f->tfd->next_tick && g_ticks >= f->tfd->next_tick;
     if (f->sfd) return signalfd_pollin(f);
+    if (f->ifd) return inotify_pollin(f->ifd);
     if (f->inet) return inet_poll_in(f->inet);
     if (f->wpipe) /* socket - readable when read-pipe has data */
         return f->pipe->count > 0 || f->pipe->write_refs == 0;
@@ -1046,6 +1115,7 @@ bool fd_pollout(int fd) {
     if (f->efd) return f->efd->counter < UINT64_MAX - 1u;
     if (f->tfd) return false;
     if (f->sfd) return false;
+    if (f->ifd) return false;
     if (f->inet) return inet_poll_out(f->inet);
     if (f->wpipe) /* socket - writable when write-pipe has space */
         return f->wpipe->count < PIPE_BUFSZ && f->wpipe->read_refs > 0;
@@ -1082,6 +1152,8 @@ int fd_poll_objects(int fd, void **objects, int max_objects) {
         objects[0] = f->tfd;
     else if (f->sfd)
         objects[0] = f->sfd;
+    else if (f->ifd)
+        objects[0] = f->ifd;
     else if (f->inet)
         objects[0] = f->inet;
     else if (f->wpipe) {
@@ -1131,6 +1203,12 @@ static void file_destroy(vfs_file_t *f) {
         kfree(f);
         return;
     }
+    if (f->ifd) {
+        inotify_state_unref(f->ifd);
+        f->magic = 0;
+        kfree(f);
+        return;
+    }
     if (f->inet) {
         inet_conn_close(f->inet);
         f->magic = 0;
@@ -1155,7 +1233,9 @@ static void file_destroy(vfs_file_t *f) {
     }
     if (f->node) {
         vfs_node_t *n = f->node;
+        uint32_t mask = (f->flags & O_ACCMODE) == O_RDONLY ? IN_CLOSE_NOWRITE : IN_CLOSE_WRITE;
         void (*cc)(vfs_node_t *) = (n->type == VFS_TYPE_CHR) ? n->chr_close : NULL;
+        inotify_notify_node(n, mask, 0);
         if (cc && n->refcnt <= 1) cc(n);
         node_unref(n);
     }
@@ -1182,6 +1262,7 @@ static void file_addref(vfs_file_t *f) {
     if (f->efd) __sync_add_and_fetch(&f->efd->refcnt, 1);
     if (f->tfd) __sync_add_and_fetch(&f->tfd->refcnt, 1);
     if (f->sfd) __sync_add_and_fetch(&f->sfd->refcnt, 1);
+    if (f->ifd) inotify_state_addref(f->ifd);
     if (f->inet) inet_conn_addref(f->inet);
     if (f->node) node_ref(f->node);
     if (!f->pipe) return;
@@ -1600,6 +1681,7 @@ int64_t fd_read_ex(int fd, void *buf, uint64_t len, bool force_nonblock) {
     if (f->efd) return eventfd_read(f, (char *) buf, len);
     if (f->tfd) return timerfd_read(f, (char *) buf, len);
     if (f->sfd) return signalfd_read(f, (char *) buf, len);
+    if (f->ifd) return inotify_read(f->ifd, (char *) buf, len, f->flags);
     if (f->inet) return inet_fd_read(f->inet, buf, len, f->flags);
 
     if (!f->pipe && !f->wpipe && (f->flags & O_ACCMODE) == O_WRONLY) return -(int64_t) EBADF;
@@ -1633,12 +1715,18 @@ int64_t fd_read_ex(int fd, void *buf, uint64_t len, bool force_nonblock) {
     if (n->type == VFS_TYPE_REG) {
         if (n->shmem) {
             int64_t r = shmem_read(n->shmem, buf, f->pos, len);
-            if (r > 0) f->pos += (uint64_t) r;
+            if (r > 0) {
+                f->pos += (uint64_t) r;
+                inotify_notify_node(n, IN_ACCESS, 0);
+            }
             return r;
         }
         if (n->fs_ops && n->fs_ops->read) {
             int64_t r = n->fs_ops->read(n, (char *) buf, f->pos, len);
-            if (r > 0) f->pos += (uint64_t) r;
+            if (r > 0) {
+                f->pos += (uint64_t) r;
+                inotify_notify_node(n, IN_ACCESS, 0);
+            }
             return r;
         }
         if (f->pos >= n->size) return 0;
@@ -1646,6 +1734,7 @@ int64_t fd_read_ex(int fd, void *buf, uint64_t len, bool force_nonblock) {
         uint64_t r = (len < avail) ? len : avail;
         memcpy(buf, n->data + f->pos, r);
         f->pos += r;
+        inotify_notify_node(n, IN_ACCESS, 0);
         return (int64_t) r;
     }
     return -(int64_t) EINVAL;
@@ -1749,6 +1838,7 @@ int64_t fd_write_ex(int fd, const void *buf, uint64_t len, bool force_nonblock) 
     if (f->efd) return eventfd_write(f, (const char *) buf, len);
     if (f->tfd) return -(int64_t) EINVAL; /* timerfd not writable via write() */
     if (f->sfd) return -(int64_t) EINVAL; /* signalfd is read-only */
+    if (f->ifd) return -(int64_t) EINVAL;
     uint32_t nonblock = (uint32_t) (f->flags | (force_nonblock ? O_NONBLOCK : 0));
     if (f->wpipe && (nonblock & O_NONBLOCK) && f->wpipe->read_refs > 0) {
         uint64_t space = PIPE_BUFSZ - f->wpipe->count;
@@ -1761,7 +1851,11 @@ int64_t fd_write_ex(int fd, const void *buf, uint64_t len, bool force_nonblock) 
         if (space == 0) return -(int64_t) EAGAIN;
         if (len > space) len = space;
     }
-    return fd_write_dispatch(f, buf, len);
+    int64_t r = fd_write_dispatch(f, buf, len);
+    if (r > 0 && f->node && f->node->type == VFS_TYPE_REG) {
+        inotify_notify_node(f->node, IN_MODIFY, 0);
+    }
+    return r;
 }
 
 int64_t fd_write(int fd, const void *buf, uint64_t len) { return fd_write_ex(fd, buf, len, false); }
@@ -1776,7 +1870,7 @@ int64_t fd_write_kbuf(int fd, const void *buf, uint64_t len) {
 int64_t fd_lseek(int fd, int64_t off, int whence) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int64_t) EBADF;
-    if (f->pipe) return -(int64_t) ESPIPE;
+    if (f->pipe || f->ifd) return -(int64_t) ESPIPE;
     vfs_node_t *n = f->node;
     if (n->type == VFS_TYPE_CHR && n->size == 0) return -(int64_t) EINVAL;
     int64_t new_pos;
@@ -1803,6 +1897,12 @@ int fd_fstat(int fd, struct linux_stat *st) {
     if (!f) return -(int) EBADF;
     if (!st) return -(int) EINVAL;
     if (!uptr_ok_w(st, sizeof(*st))) return -(int) EFAULT;
+    if (f->ifd) {
+        memset(st, 0, sizeof(*st));
+        st->st_mode = S_IFREG | 0600;
+        st->st_blksize = 4096;
+        return 0;
+    }
     if (f->wpipe) { /* connected socket */
         memset(st, 0, sizeof(*st));
         st->st_mode = S_IFSOCK | 0666;
@@ -1870,7 +1970,7 @@ int fd_getdents64(int fd, void *buf, uint64_t count) {
     if (!uptr_ok_w(buf, count)) return -(int) EFAULT;
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int) EBADF;
-    if (f->pipe) return -(int) ENOTDIR;
+    if (f->pipe || f->ifd) return -(int) ENOTDIR;
     vfs_node_t *dir = f->node;
     if (dir->type != VFS_TYPE_DIR) return -(int) ENOTDIR;
 
@@ -2114,6 +2214,7 @@ int vfs_link(const char *oldpath, const char *newpath) {
     }
     dir_insert_nolock(parent, ln);
     irq_restore(_f);
+    inotify_notify_parent(parent, ln->name, false, IN_CREATE, 0);
     node_unref(src);
     node_unref(parent);
     return 0;
@@ -2128,6 +2229,7 @@ int vfs_chmod(const char *path, uint32_t mode) {
         return -(int) EPERM;
     }
     n->mode = (n->mode & ~07777U) | mode_without_priv_bits(mode);
+    inotify_notify_node(n, IN_ATTRIB, 0);
     node_unref(n);
     return 0;
 }
@@ -2137,6 +2239,7 @@ int vfs_fchmod(int fd, uint32_t mode) {
     if (!n) return -(int) EBADF;
     if (!may_change_mode(n)) return -(int) EPERM;
     n->mode = (n->mode & ~07777U) | mode_without_priv_bits(mode);
+    inotify_notify_node(n, IN_ATTRIB, 0);
     return 0;
 }
 
@@ -2151,6 +2254,7 @@ int vfs_chown(const char *path, uint32_t uid, uint32_t gid) {
     if (uid != (uint32_t) -1) n->uid = uid;
     if (gid != (uint32_t) -1) n->gid = gid;
     n->mode &= ~06000U;
+    inotify_notify_node(n, IN_ATTRIB, 0);
     node_unref(n);
     return 0;
 }
@@ -2166,6 +2270,7 @@ int vfs_lchown(const char *path, uint32_t uid, uint32_t gid) {
     if (uid != (uint32_t) -1) n->uid = uid;
     if (gid != (uint32_t) -1) n->gid = gid;
     n->mode &= ~06000U;
+    inotify_notify_node(n, IN_ATTRIB, 0);
     node_unref(n);
     return 0;
 }
@@ -2177,6 +2282,7 @@ int vfs_fchown(int fd, uint32_t uid, uint32_t gid) {
     if (uid != (uint32_t) -1) n->uid = uid;
     if (gid != (uint32_t) -1) n->gid = gid;
     n->mode &= ~06000U;
+    inotify_notify_node(n, IN_ATTRIB, 0);
     return 0;
 }
 
@@ -2186,9 +2292,14 @@ int vfs_node_truncate(vfs_node_t *n, uint64_t len) {
         int rc = shmem_resize(n->shmem, len);
         if (rc < 0) return rc;
         n->size = n->shmem->size;
+        inotify_notify_node(n, IN_MODIFY, 0);
         return 0;
     }
-    if (n->fs_ops && n->fs_ops->truncate) return n->fs_ops->truncate(n, len);
+    if (n->fs_ops && n->fs_ops->truncate) {
+        int rc = n->fs_ops->truncate(n, len);
+        if (rc == 0) inotify_notify_node(n, IN_MODIFY, 0);
+        return rc;
+    }
 
     if (len > n->capacity) {
         if (len > UINT64_MAX - 4095) return -(int) EFBIG;
@@ -2201,6 +2312,7 @@ int vfs_node_truncate(vfs_node_t *n, uint64_t len) {
     if (len > n->size) memset(n->data + n->size, 0, len - n->size);
     n->size = len;
     n->dirty = 1;
+    inotify_notify_node(n, IN_MODIFY, 0);
     return 0;
 }
 
