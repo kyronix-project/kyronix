@@ -63,6 +63,8 @@ struct linux_dirent64 {
 #define O_DIRECTORY 0200000
 #define O_NOFOLLOW 0400000
 #define O_CLOEXEC 02000000
+#define __O_TMPFILE 020000000
+#define O_TMPFILE (__O_TMPFILE | O_DIRECTORY)
 #define AT_FDCWD (-100)
 #define AT_SYMLINK_NOFOLLOW 0x100
 #define AT_EMPTY_PATH 0x1000

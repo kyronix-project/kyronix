@@ -24,6 +24,7 @@
 extern volatile uint64_t g_ticks;
 static vfs_node_t *g_root = NULL;
 static uint32_t g_next_ino = 1;
+static uint32_t g_tmpfile_seq;
 
 char g_cwd[512] = "/";
 
@@ -1497,6 +1498,56 @@ int fd_memfd_open(const char *name, int cloexec) {
     return fd;
 }
 
+static int fd_tmpfile_open(const char *dirpath, int flags, int mode) {
+    vfs_node_t *dir = (flags & O_NOFOLLOW) ? vfs_lookup_nofollow(dirpath) : vfs_lookup(dirpath);
+    if (!dir) return -(int) ENOENT;
+    if (dir->type != VFS_TYPE_DIR) {
+        node_unref(dir);
+        return -(int) ENOTDIR;
+    }
+    if (!may_create_in(dir)) {
+        node_unref(dir);
+        return -(int) EACCES;
+    }
+
+    char label[64];
+    snprintf(label, sizeof(label), "#%u (deleted)", ++g_tmpfile_seq);
+
+    vfs_node_t *n = node_alloc(label, VFS_TYPE_REG, apply_umask(mode & 07777) | S_IFREG);
+    if (!n) {
+        node_unref(dir);
+        return -(int) ENOMEM;
+    }
+    n->deleted = 1;
+
+    int fd = fd_alloc_from(3);
+    if (fd < 0) {
+        node_destroy(n);
+        node_unref(dir);
+        return -(int) EMFILE;
+    }
+
+    vfs_file_t *f = file_alloc();
+    if (!f) {
+        vfs_fd_clear(fd);
+        node_destroy(n);
+        node_unref(dir);
+        return -(int) ENOMEM;
+    }
+
+    f->node = n;
+    f->flags = flags;
+    f->pos = 0;
+    snprintf(f->path, sizeof(f->path), "%s/%s", dirpath, label);
+    f->cloexec = (flags & O_CLOEXEC) ? 1 : 0;
+    node_ref(n);
+    if (flags & O_APPEND) f->pos = n->size;
+
+    vfs_fd_install(fd, f);
+    node_unref(dir);
+    return fd;
+}
+
 const char *vfs_copy_kernel_path(const char *path, char *kbuf) {
     if (!path) return NULL;
     size_t i = 0;
@@ -1550,6 +1601,13 @@ static int fd_open_impl(const char *path, int flags, int mode, bool reroot, bool
     if (((flags & O_ACCMODE) != O_RDONLY || (flags & (O_CREAT | O_TRUNC))) &&
         ns_mnt_path_readonly(lpath))
         return -(int) EROFS;
+
+    if (flags & __O_TMPFILE) {
+        if ((flags & (__O_TMPFILE | O_DIRECTORY | O_CREAT)) != O_TMPFILE)
+            return -(int) EINVAL;
+        if ((flags & O_ACCMODE) == O_RDONLY) return -(int) EINVAL;
+        return fd_tmpfile_open(lpath, flags, mode);
+    }
 
     vfs_node_t *n = (flags & O_NOFOLLOW) ? vfs_lookup_nofollow(lpath) : vfs_lookup(lpath);
     bool from_lookup = (n != NULL);
