@@ -123,6 +123,7 @@ typedef struct proc {
     uint8_t child_subreaper;
     int pdeathsig;
     char comm[16];
+    uint8_t exit_signal; // terminating signal for wait4; zero for exit/exit_group
 } proc_t;
 
 extern proc_t g_proctable[PROC_MAX] __attribute__((aligned(16)));
@@ -218,4 +219,5 @@ void sched_yield(void);
 extern void proc_resume_frame(void);
 extern void proc_resume_interrupt_frame(void);
 __attribute__((noreturn)) void proc_do_exit(int code);
+__attribute__((noreturn)) void proc_do_exit_signal(int sig);
 __attribute__((noreturn)) void proc_do_exit_group(int code);

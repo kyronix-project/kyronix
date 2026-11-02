@@ -77,7 +77,7 @@ static void setup_sigframe(proc_t *p, int sig, syscall_frame_t *f) {
     uint64_t sp = base - sizeof(rt_sigframe_t);
     sp = ((sp - 8) & ~(uint64_t) 0xF) + 8;
 
-    if (!uptr_ok_w((void *) sp, sizeof(rt_sigframe_t))) proc_do_exit(-SIGSEGV);
+    if (!uptr_ok_w((void *) sp, sizeof(rt_sigframe_t))) proc_do_exit_signal(SIGSEGV);
 
     rt_sigframe_t *frame = (rt_sigframe_t *) sp;
     memset(frame, 0, sizeof(*frame));
@@ -131,7 +131,7 @@ static void deliver_signal(proc_t *p, int sig, syscall_frame_t *f) {
     uint64_t handler = p->sig_actions[sig - 1].sa_handler;
 
     if (sig == SIGKILL) {
-        proc_do_exit(-SIGKILL);
+        proc_do_exit_signal(SIGKILL);
         return;
     }
 
@@ -143,13 +143,13 @@ static void deliver_signal(proc_t *p, int sig, syscall_frame_t *f) {
     if (handler == SIG_IGN) return;
 
     if (handler == SIG_DFL) {
-        if (sig_default_fatal(sig)) proc_do_exit(-sig);
+        if (sig_default_fatal(sig)) proc_do_exit_signal(sig);
         return;
     }
 
     if (!p->sig_actions[sig - 1].sa_restorer) {
         log_warn("signal: sig %d has no restorer", sig);
-        proc_do_exit(-sig);
+        proc_do_exit_signal(sig);
         return;
     }
 

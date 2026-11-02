@@ -709,6 +709,11 @@ __attribute__((noreturn)) void proc_do_exit_group(int code) {
     proc_do_exit(code);
 }
 
+__attribute__((noreturn)) void proc_do_exit_signal(int sig) {
+    cur()->exit_signal = (uint8_t) sig;
+    proc_do_exit(-sig);
+}
+
 __attribute__((noreturn)) void proc_do_exit(int code) {
     proc_t *p = cur();
     vmm_syscall_access_end();
@@ -839,7 +844,9 @@ int64_t sys_wait4(int pid, int *wstatus, int options, void *rusage) {
             any_child = true;
 
             if (c->state == PROC_ZOMBIE) {
-                if (wstatus) *wstatus = (c->exit_code & 0xFF) << 8;
+                if (wstatus)
+                    *wstatus = c->exit_signal ? (c->exit_signal & 0x7f) :
+                                                 ((c->exit_code & 0xff) << 8);
                 uint32_t cpid = local_pid;
                 uint32_t child_jid = c->jail_id;
                 spin_lock(&g_proctable_lock);

@@ -277,7 +277,7 @@ bool phantom_handle_fault(const cpu_state_t *state, uint64_t address) {
                    "fault source queued");
 
     sched_block_current();
-    proc_do_exit(-11);
+    proc_do_exit_signal(SIGSEGV);
 }
 
 bool phantom_pending(void) { return g_current_proc && g_current_proc->phantom_pending != 0; }
@@ -318,9 +318,9 @@ void phantom_quarantine_current(uint32_t sandbox_pid) {
     uint8_t action = __atomic_load_n(&p->phantom_quarantine_action, __ATOMIC_ACQUIRE);
     p->phantom_quarantine_action = PHANTOM_CTL_STATUS;
     if (action == PHANTOM_CTL_TERMINATE) {
-        int status = p->phantom_fault_quarantine ? -11 : -9;
+        int sig = p->phantom_fault_quarantine ? SIGSEGV : SIGKILL;
         p->phantom_fault_quarantine = 0;
-        proc_do_exit(status);
+        proc_do_exit_signal(sig);
     }
     p->phantom_fault_quarantine = 0;
 }

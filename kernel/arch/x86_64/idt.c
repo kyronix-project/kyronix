@@ -264,7 +264,7 @@ void isr_dispatch(cpu_state_t *state) {
                     kdbg("  RIP in [%lx-%lx) len=%lx prot=%x off=%lx\n", vs, ve, ve - vs, vp,
                          state->rip - vs);
             }
-            proc_do_exit(-sig);
+            proc_do_exit_signal(sig);
         }
 
         kprintf("\n\n!!! KERNEL PANIC !!! pid=%u\n", g_current_proc ? g_current_proc->pid : 0);

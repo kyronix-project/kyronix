@@ -336,7 +336,7 @@ bool seccomp_check(struct proc *p, uint64_t nr, const uint64_t args[6], int64_t 
         if (nr == 0 || nr == 1 || nr == 15 || nr == 60 || nr == 231) {
             return false;
         }
-        proc_do_exit(-SIGSYS);
+        proc_do_exit_signal(SIGSYS);
     }
 
     uint8_t data[SECCOMP_DATA_SIZE];
@@ -371,7 +371,7 @@ bool seccomp_check(struct proc *p, uint64_t nr, const uint64_t args[6], int64_t 
     case SECCOMP_RET_KILL_THREAD:
     case SECCOMP_RET_KILL_PROCESS:
     default:
-        proc_do_exit(-SIGSYS);
+        proc_do_exit_signal(SIGSYS);
     }
 
     return true;

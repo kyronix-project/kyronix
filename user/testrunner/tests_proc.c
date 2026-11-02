@@ -6,31 +6,64 @@ static int exit_group_worker(void *arg) {
 }
 
 int test_exit_group_closes_thread_fds(void) {
-    int sv[2];
-    ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, sv));
-    pid_t child = fork();
-    ASSERT_TRUE(child >= 0);
-    if (child == 0) {
+    for (int iteration = 0; iteration < 32; iteration++) {
+        int sv[2];
+        ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, sv));
+        pid_t child = fork();
+        ASSERT_TRUE(child >= 0);
+        if (child == 0) {
+            close(sv[0]);
+            static uint32_t futex_word;
+            static char stack[16384] __attribute__((aligned(16)));
+            int tid = clone(exit_group_worker, stack + sizeof(stack),
+                            CLONE_VM | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD, &futex_word);
+            if (tid < 0) {
+                if (failure_pipe[1] >= 0)
+                    dprintf(failure_pipe[1], "iteration=%d clone errno=%d\n", iteration, errno);
+                _exit(3);
+            }
+            syscall(SYS_exit_group, 0);
+            _exit(4);
+        }
+        close(sv[1]);
+        int status;
+        ASSERT_EQ(child, waitpid(child, &status, 0));
+        if ((!WIFEXITED(status) || WEXITSTATUS(status) != 0) && failure_pipe[1] >= 0)
+            dprintf(failure_pipe[1], "iteration=%d child status=0x%x exit=%d\n", iteration,
+                    status, WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+        ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+        struct pollfd pfd = { .fd = sv[0], .events = POLLIN };
+        ASSERT_EQ(1, poll(&pfd, 1, 5000));
+        ASSERT_TRUE(pfd.revents & POLLHUP);
         close(sv[0]);
-        static uint32_t futex_word;
-        static char stack[16384] __attribute__((aligned(16)));
-        int tid = clone(exit_group_worker, stack + sizeof(stack),
-                        CLONE_VM | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD, &futex_word);
-        if (tid < 0) _exit(3);
-        syscall(SYS_exit_group, 0);
-        _exit(4);
     }
-    close(sv[1]);
-    int status;
-    ASSERT_EQ(child, waitpid(child, &status, 0));
-    ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
-    struct pollfd pfd = { .fd = sv[0], .events = POLLIN };
-    ASSERT_EQ(1, poll(&pfd, 1, 5000));
-    ASSERT_TRUE(pfd.revents & POLLHUP);
-    close(sv[0]);
     return 1;
 }
 REGISTER_TEST(exit_group_closes_thread_fds, "Phase 3: Process & Scheduling");
+
+int test_waitpid_signal_status(void) {
+    pid_t child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0) {
+        for (;;) pause();
+    }
+    ASSERT_EQ(0, kill(child, SIGKILL));
+    int status;
+    ASSERT_EQ(child, waitpid(child, &status, 0));
+    ASSERT_TRUE(WIFSIGNALED(status));
+    ASSERT_EQ(SIGKILL, WTERMSIG(status));
+    ASSERT_FALSE(WIFEXITED(status));
+
+    child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0) _exit(-SIGKILL);
+    ASSERT_EQ(child, waitpid(child, &status, 0));
+    ASSERT_TRUE(WIFEXITED(status));
+    ASSERT_EQ((uint8_t) -SIGKILL, WEXITSTATUS(status));
+    ASSERT_FALSE(WIFSIGNALED(status));
+    return 1;
+}
+REGISTER_TEST(waitpid_signal_status, "Phase 3: Process & Scheduling");
 
 #include <linux/capability.h>
 #include <linux/filter.h>
