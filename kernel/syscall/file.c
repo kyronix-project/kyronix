@@ -85,13 +85,13 @@ int64_t sys_sendfile(int outfd, int infd, uint64_t *offp, uint64_t count) {
     if (offp && !uptr_ok_w(offp, sizeof(*offp))) return -(int64_t) EFAULT;
     vfs_file_t *inf = fd_get_file(infd);
     if (!inf || !inf->node || inf->node->type != VFS_TYPE_REG) return -(int64_t) EINVAL;
-    uint64_t off = offp ? *offp : inf->pos;
+    uint64_t off = offp ? *offp : inf->description->pos;
     int64_t w = copy_fd_data(outfd, 0, false, infd, off, count);
     if (w > 0) {
         if (offp)
             *offp = off + (uint64_t) w;
         else
-            inf->pos = off + (uint64_t) w;
+            inf->description->pos = off + (uint64_t) w;
     }
     return w;
 }
@@ -145,18 +145,18 @@ int64_t sys_copy_file_range(int infd, uint64_t *off_in, int outfd, uint64_t *off
     if (off_out && !uptr_ok_w(off_out, sizeof(*off_out))) return -(int64_t) EFAULT;
     vfs_file_t *inf = fd_get_file(infd);
     if (!inf || !inf->node || inf->node->type != VFS_TYPE_REG) return -(int64_t) EINVAL;
-    uint64_t rin = off_in ? *off_in : inf->pos;
-    uint64_t rout = off_out ? *off_out : (fd_get_file(outfd) ? fd_get_file(outfd)->pos : 0);
+    uint64_t rin = off_in ? *off_in : inf->description->pos;
+    uint64_t rout = off_out ? *off_out : (fd_get_file(outfd) ? fd_get_file(outfd)->description->pos : 0);
     int64_t w = copy_fd_data(outfd, rout, true, infd, rin, len);
     if (w > 0) {
         if (off_in)
             *off_in = rin + (uint64_t) w;
         else
-            inf->pos = rin + (uint64_t) w;
+            inf->description->pos = rin + (uint64_t) w;
         if (off_out)
             *off_out = rout + (uint64_t) w;
         else if (fd_get_file(outfd))
-            fd_get_file(outfd)->pos = rout + (uint64_t) w;
+            fd_get_file(outfd)->description->pos = rout + (uint64_t) w;
     }
     return w;
 }

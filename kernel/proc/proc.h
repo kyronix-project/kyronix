@@ -48,6 +48,7 @@ typedef struct proc {
     char exe_path[512];
     uint32_t *cleartid_addr;
     uint8_t is_thread;
+    uint32_t tgid;
     uint32_t uid, gid;
     uint32_t euid, egid;
     uint32_t suid, sgid;
@@ -217,3 +218,4 @@ void sched_yield(void);
 extern void proc_resume_frame(void);
 extern void proc_resume_interrupt_frame(void);
 __attribute__((noreturn)) void proc_do_exit(int code);
+__attribute__((noreturn)) void proc_do_exit_group(int code);

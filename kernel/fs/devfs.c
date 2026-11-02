@@ -111,6 +111,8 @@ typedef struct {
     pipe_t *s2m;
     int num;
     int used;
+    int master_open;
+    int slave_open;
     int pgid;
     pty_termios_t termios;
     pty_winsize_t ws;
@@ -239,7 +241,12 @@ static int64_t ptym_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t
 
 static bool ptym_pollin(vfs_node_t *n) {
     pty_inst_t *p = pty_of(n);
-    return p && p->s2m->count > 0;
+    return p && (p->s2m->count > 0 || !p->slave_open);
+}
+
+static bool ptym_pollhup(vfs_node_t *n) {
+    pty_inst_t *p = pty_of(n);
+    return p && !p->slave_open;
 }
 
 static void *ptym_pollobj(vfs_node_t *n) {
@@ -283,6 +290,8 @@ static int64_t pty_common_ioctl(pty_inst_t *p, uint64_t req, uint64_t arg) {
         if (p) p->pgid = *(const int *) (uintptr_t) arg;
         return 0;
     case 0x540E: /* TIOCSCTTY */
+        if (p && g_current_proc) p->pgid = (int) g_current_proc->pgid;
+        return 0;
     case 0x5422: /* TIOCNOTTY */
     case 0x540C: /* TIOCEXCL */
     case 0x540D: /* TIOCNXCL */
@@ -333,22 +342,48 @@ static int64_t ptym_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
 static void ptym_close(vfs_node_t *n) {
     pty_inst_t *p = pty_of(n);
     if (!p) return;
-    if (p->s2m) {
-        p->s2m->write_refs = 0;
-        pipe_free(p->s2m);
-        p->s2m = NULL;
-    }
-    if (p->m2s) {
-        pipe_free(p->m2s);
-        p->m2s = NULL;
-    }
+    p->master_open = 0;
+    pty_send_sig(p->pgid, SIGHUP);
+    __atomic_store_n(&p->m2s->write_refs, 0, __ATOMIC_RELEASE);
+    __atomic_store_n(&p->s2m->read_refs, 0, __ATOMIC_RELEASE);
+    pipe_wake(p->m2s, 1);
+    pipe_wake(p->s2m, 0);
     if (p->slave) {
         char path[32];
         snprintf(path, sizeof(path), "/dev/pts/%d", p->num);
         vfs_unlink(path);
         p->slave = NULL;
     }
-    p->used = 0;
+    if (!p->slave_open) {
+        pipe_free(p->s2m);
+        pipe_free(p->m2s);
+        p->s2m = p->m2s = NULL;
+        p->used = 0;
+    }
+}
+
+static void ptys_close(vfs_node_t *n) {
+    pty_inst_t *p = pty_of(n);
+    if (!p || !p->slave_open) return;
+    p->slave_open = 0;
+    __atomic_store_n(&p->s2m->write_refs, 0, __ATOMIC_RELEASE);
+    __atomic_store_n(&p->m2s->read_refs, 0, __ATOMIC_RELEASE);
+    pipe_wake(p->s2m, 1);
+    pipe_wake(p->m2s, 0);
+    if (!p->master_open) {
+        pipe_free(p->s2m);
+        pipe_free(p->m2s);
+        p->s2m = p->m2s = NULL;
+        p->used = 0;
+    }
+}
+
+static int ptys_open(vfs_node_t *n, int flags) {
+    pty_inst_t *p = pty_of(n);
+    if (!p || !p->master_open) return -EINVAL;
+    int fd = fd_open_node(n, flags);
+    if (fd >= 0) p->slave_open = 1;
+    return fd;
 }
 
 // slave rw
@@ -375,7 +410,7 @@ static int64_t ptys_write(vfs_node_t *n, const char *buf, uint64_t len, uint64_t
 
 static bool ptys_pollin(vfs_node_t *n) {
     pty_inst_t *p = pty_of(n);
-    return p && p->m2s && p->m2s->count > 0;
+    return p && p->m2s && (p->m2s->count > 0 || !p->master_open);
 }
 
 static void *ptys_pollobj(vfs_node_t *n) {
@@ -409,7 +444,9 @@ static int ptmx_open(vfs_node_t *n, int flags) {
     pty->s2m->read_refs = pty->s2m->write_refs = 1;
     pty->num = idx;
     pty->used = 1;
-    pty->pgid = g_current_proc ? (int) g_current_proc->pgid : 0;
+    pty->master_open = 1;
+    pty->slave_open = 0;
+    pty->pgid = 0;
     pty->canon_len = 0;
     memset(&pty->termios, 0, sizeof(pty->termios));
     pty->termios.c_iflag = 0x2500; /* ICRNL | IXON | IUTF8 */
@@ -433,6 +470,8 @@ static int ptmx_open(vfs_node_t *n, int flags) {
         pty->slave->chr_pollin = ptys_pollin;
         pty->slave->chr_pollobj = ptys_pollobj;
         pty->slave->chr_ioctl = ptys_ioctl;
+        pty->slave->chr_open = ptys_open;
+        pty->slave->chr_close = ptys_close;
         pty->slave->rdev = VFS_MKDEV(136, (uint32_t) idx); /* UNIX98_PTY_SLAVE_MAJOR */
         pty->slave->size = (uint64_t) idx;
         pty->slave->mode = S_IFCHR | 0620;
@@ -448,6 +487,7 @@ static int ptmx_open(vfs_node_t *n, int flags) {
     mn->chr_write = ptym_write;
     mn->chr_ioctl = ptym_ioctl;
     mn->chr_pollin = ptym_pollin;
+    mn->chr_pollhup = ptym_pollhup;
     mn->chr_pollobj = ptym_pollobj;
     mn->chr_close = ptym_close;
 

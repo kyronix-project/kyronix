@@ -75,11 +75,21 @@ int64_t sys_futex(uint32_t *uaddr, int op, uint32_t val, void *timeout, uint32_t
         }
         p->wakeup_tick = deadline;
         if (deadline) proc_set_timer(p);
+        bool interrupted = false;
         while (g_futex_tab[slot].proc == p) {
             if (deadline && g_ticks >= deadline) break;
-            if (proc_next_ready(p))
-                sched_yield_blocking();
-            else {
+            if (proc_blocking_sig_mask(p)) {
+                interrupted = true;
+                break;
+            }
+            if (proc_next_ready(p)) {
+                p->state = PROC_WAITING;
+                /* The signal may arrive before the scheduler actually sleeps. */
+                if (proc_blocking_sig_mask(p) &&
+                    __sync_bool_compare_and_swap(&p->state, PROC_WAITING, PROC_READY))
+                    proc_set_ready(p);
+                sched_block_current();
+            } else {
                 sti();
                 hlt();
                 cli();
@@ -90,7 +100,7 @@ int64_t sys_futex(uint32_t *uaddr, int op, uint32_t val, void *timeout, uint32_t
         spin_lock(&g_futex_lock);
         if (g_futex_tab[slot].proc == p) g_futex_tab[slot].proc = NULL;
         spin_unlock(&g_futex_lock);
-        return timed_out ? -(int64_t) ETIMEDOUT : 0;
+        return interrupted ? -(int64_t) EINTR : timed_out ? -(int64_t) ETIMEDOUT : 0;
     }
     case FUTEX_WAKE: {
         proc_t *self = cur();

@@ -26,7 +26,7 @@ int fd_pipe(int pipefd[2]) {
     }
     rf->pipe = p;
     rf->pipe_end = PIPE_END_READ;
-    rf->flags = O_RDONLY;
+    rf->description->flags = O_RDONLY;
     vfs_fd_install(rfd, rf);
 
     int wfd = vfs_fd_alloc_from(0);
@@ -47,7 +47,7 @@ int fd_pipe(int pipefd[2]) {
     }
     wf->pipe = p;
     wf->pipe_end = PIPE_END_WRITE;
-    wf->flags = O_WRONLY;
+    wf->description->flags = O_WRONLY;
     vfs_fd_install(wfd, wf);
 
     pipefd[0] = rfd;
@@ -90,11 +90,11 @@ int fd_socketpair(int sv[2]) {
     f0->pipe = pa;
     f0->wpipe = pb;
     f0->pipe_end = PIPE_END_READ;
-    f0->flags = O_RDWR;
+    f0->description->flags = O_RDWR;
     f1->pipe = pb;
     f1->wpipe = pa;
     f1->pipe_end = PIPE_END_READ;
-    f1->flags = O_RDWR;
+    f1->description->flags = O_RDWR;
 
     vfs_fd_install(fd0, f0);
     int fd1 = vfs_fd_alloc_from(0);

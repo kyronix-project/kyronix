@@ -137,6 +137,17 @@ static void pipe_block_locked(pipe_t *p, proc_t *task, int want_read) {
         p->writer_waiters |= bit;
 }
 
+static void pipe_block_or_consume_signal(pipe_t *p, proc_t *task) {
+    if (!task) return;
+    /* A signal may already be pending, or arrive between setting WAITING and
+     * entering the scheduler. Publish a wake in either case. */
+    if (pipe_pending_signals(task) &&
+        __sync_bool_compare_and_swap(&task->state, PROC_WAITING, PROC_READY))
+        proc_set_ready(task);
+    sched_block_current();
+    pipe_cancel_wait(p, task);
+}
+
 int64_t pipe_read(pipe_t *p, void *buf, uint64_t len) {
     if (!pipe_valid(p)) return -(int64_t) EIO;
     uint8_t *out = (uint8_t *) buf;
@@ -158,8 +169,7 @@ int64_t pipe_read(pipe_t *p, void *buf, uint64_t len) {
                 proc_t *_rp = g_current_proc;
                 if (_rp) pipe_block_locked(p, _rp, 1);
                 spin_unlock(&p->lock);
-                if (_rp) sched_block_current();
-                pipe_cancel_wait(p, _rp);
+                pipe_block_or_consume_signal(p, _rp);
                 if (pipe_pending_signals(_rp)) return done ? (int64_t) done : -(int64_t) EINTR;
                 goto restart_read;
             }
@@ -203,8 +213,7 @@ int64_t pipe_peek(pipe_t *p, void *buf, uint64_t len, uint64_t skip) {
                 proc_t *_rp = g_current_proc;
                 if (_rp) pipe_block_locked(p, _rp, 1);
                 spin_unlock(&p->lock);
-                if (_rp) sched_block_current();
-                pipe_cancel_wait(p, _rp);
+                pipe_block_or_consume_signal(p, _rp);
                 if (pipe_pending_signals(_rp)) return done ? (int64_t) done : -(int64_t) EINTR;
                 goto restart_peek;
             }
@@ -252,8 +261,7 @@ int64_t pipe_write(pipe_t *p, const void *buf, uint64_t len) {
                 if (_wp) pipe_block_locked(p, _wp, 0);
                 spin_unlock(&p->lock);
                 pipe_wake(p, 1); /* let readers drain so space frees up */
-                if (_wp) sched_block_current();
-                pipe_cancel_wait(p, _wp);
+                pipe_block_or_consume_signal(p, _wp);
                 if (pipe_pending_signals(_wp)) return done ? (int64_t) done : -(int64_t) EINTR;
                 goto restart_write;
             }

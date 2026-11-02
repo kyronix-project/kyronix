@@ -53,9 +53,9 @@ int64_t sys_getcwd(char *buf, uint64_t size) {
     tmp[sizeof(tmp) - 1] = '\0';
     jail_strip_root(tmp, sizeof(tmp)); // report jail-relative cwd to the process
     size_t len = strlen(tmp) + 1;
-    if (len > size) return -(int64_t) EINVAL;
+    if (len > size) return -(int64_t) ERANGE;
     memcpy(buf, tmp, len);
-    return (int64_t) (uintptr_t) buf;
+    return (int64_t) len;
 }
 
 int64_t sys_chdir(const char *path) {
@@ -114,7 +114,7 @@ int64_t sys_umask(uint64_t mask) {
 int64_t sys_ftruncate(int fd, uint64_t len) {
     vfs_file_t *file = fd_get_file(fd);
     if (!file) return -(int64_t) EBADF;
-    if ((file->flags & O_ACCMODE) == O_RDONLY) return -(int64_t) EBADF;
+    if ((file->description->flags & O_ACCMODE) == O_RDONLY) return -(int64_t) EBADF;
     vfs_node_t *n = file->node;
     if (!n) return -(int64_t) EBADF;
     if (n->type != VFS_TYPE_REG) return -(int64_t) EINVAL;
@@ -127,7 +127,7 @@ int64_t sys_fallocate(int fd, int mode, uint64_t off, uint64_t len) {
     (void) mode;
     vfs_file_t *file = fd_get_file(fd);
     if (!file) return -(int64_t) EBADF;
-    if ((file->flags & O_ACCMODE) == O_RDONLY) return -(int64_t) EBADF;
+    if ((file->description->flags & O_ACCMODE) == O_RDONLY) return -(int64_t) EBADF;
     vfs_node_t *n = file->node;
     if (!n || n->type != VFS_TYPE_REG) return -(int64_t) EINVAL;
     if (off > UINT64_MAX - len) return -(int64_t) EINVAL;

@@ -40,8 +40,8 @@ int fd_eventfd(uint32_t initval, int eflags) {
         return -(int) ENOMEM;
     }
     f->efd = e;
-    f->flags = O_RDWR;
-    if (eflags & FD_FLAG_NONBLOCK) f->flags |= O_NONBLOCK;
+    f->description->flags = O_RDWR;
+    if (eflags & FD_FLAG_NONBLOCK) f->description->flags |= O_NONBLOCK;
     if (eflags & FD_FLAG_CLOEXEC) f->cloexec = 1;
     vfs_fd_install(fd, f);
     return fd;
@@ -67,7 +67,7 @@ int64_t eventfd_read(vfs_file_t *f, char *buf, uint64_t len) {
             __builtin_memcpy(buf, &val, 8);
             return 8;
         }
-        if (f->flags & O_NONBLOCK) {
+        if (f->description->flags & O_NONBLOCK) {
             spin_unlock(&e->lock);
             return -(int) EAGAIN;
         }
@@ -121,8 +121,8 @@ int fd_timerfd_create(int clockid, int tflags) {
         return -(int) ENOMEM;
     }
     f->tfd = t;
-    f->flags = O_RDWR;
-    if (tflags & FD_FLAG_NONBLOCK) f->flags |= O_NONBLOCK;
+    f->description->flags = O_RDWR;
+    if (tflags & FD_FLAG_NONBLOCK) f->description->flags |= O_NONBLOCK;
     if (tflags & FD_FLAG_CLOEXEC) f->cloexec = 1;
     vfs_fd_install(fd, f);
     return fd;
@@ -192,7 +192,7 @@ int64_t timerfd_read(vfs_file_t *f, char *buf, uint64_t len) {
             __builtin_memcpy(buf, &exp, 8);
             return 8;
         }
-        if (f->flags & O_NONBLOCK) {
+        if (f->description->flags & O_NONBLOCK) {
             spin_unlock(&t->lock);
             return -(int) EAGAIN;
         }

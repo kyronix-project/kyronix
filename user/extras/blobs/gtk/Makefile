@@ -13,6 +13,8 @@ BUILD   := ../../../../build/gtk-cache
 
 ROOTFS_ABS := $(abspath $(ROOTFS))
 BUILD_ABS  := $(abspath $(BUILD))
+MUSL_LOADER := $(ROOTFS_ABS)/lib/ld-musl-x86_64.so.1
+GTK_LIB_PATH := $(ROOTFS_ABS)/usr/lib/wayland:$(ROOTFS_ABS)/usr/lib:$(ROOTFS_ABS)/lib
 
 .PHONY: all install cache clean
 
@@ -43,13 +45,14 @@ cache: install
 	    ln -sf "$$(readlink -f "$$f")" $(BUILD_ABS)/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders/$$(basename "$$f"); done
 	@for f in $(ROOTFS_ABS)/usr/lib/wayland/gtk-3.0/3.0.0/immodules/*.so; do \
 	    ln -sf "$$(readlink -f "$$f")" $(BUILD_ABS)/usr/lib/gtk-3.0/3.0.0/immodules/$$(basename "$$f"); done
-	@export LD_LIBRARY_PATH=$(ROOTFS_ABS)/usr/lib/wayland:$(ROOTFS_ABS)/usr/lib; \
-	 $(GTK)/usr/bin/gdk-pixbuf-query-loaders \
+	@export LD_LIBRARY_PATH=$(GTK_LIB_PATH); \
+	 $(MUSL_LOADER) $(GTK)/usr/bin/gdk-pixbuf-query-loaders \
 	    $(BUILD_ABS)/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.so > $(BUILD_ABS)/loaders.cache
-	@export LD_LIBRARY_PATH=$(ROOTFS_ABS)/usr/lib/wayland:$(ROOTFS_ABS)/usr/lib; \
-	 $(GTK)/usr/bin/gtk-query-immodules-3.0 \
+	@export LD_LIBRARY_PATH=$(GTK_LIB_PATH); \
+	 $(MUSL_LOADER) $(GTK)/usr/bin/gtk-query-immodules-3.0 \
 	    $(BUILD_ABS)/usr/lib/gtk-3.0/3.0.0/immodules/*.so > $(BUILD_ABS)/immodules.cache
-	@$(GTK)/usr/bin/glib-compile-schemas --targetdir=$(BUILD_ABS)/schemas \
+	@LD_LIBRARY_PATH=$(GTK_LIB_PATH) $(MUSL_LOADER) \
+	    $(GTK)/usr/bin/glib-compile-schemas --targetdir=$(BUILD_ABS)/schemas \
 	    $(GTK)/usr/share/glib-2.0/schemas
 	@sed -i 's|$(BUILD_ABS)/usr/lib|/usr/lib/wayland|' $(BUILD_ABS)/loaders.cache $(BUILD_ABS)/immodules.cache
 	@mkdir -p $(ROOTFS)/usr/lib/gdk-pixbuf-2.0/2.10.0 \

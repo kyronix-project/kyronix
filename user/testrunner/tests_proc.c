@@ -1,5 +1,37 @@
 #include "test_harness.h"
 
+static int exit_group_worker(void *arg) {
+    syscall(SYS_futex, arg, FUTEX_WAIT, 0, NULL, NULL, 0);
+    return 0;
+}
+
+int test_exit_group_closes_thread_fds(void) {
+    int sv[2];
+    ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, sv));
+    pid_t child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0) {
+        close(sv[0]);
+        static uint32_t futex_word;
+        static char stack[16384] __attribute__((aligned(16)));
+        int tid = clone(exit_group_worker, stack + sizeof(stack),
+                        CLONE_VM | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD, &futex_word);
+        if (tid < 0) _exit(3);
+        syscall(SYS_exit_group, 0);
+        _exit(4);
+    }
+    close(sv[1]);
+    int status;
+    ASSERT_EQ(child, waitpid(child, &status, 0));
+    ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    struct pollfd pfd = { .fd = sv[0], .events = POLLIN };
+    ASSERT_EQ(1, poll(&pfd, 1, 5000));
+    ASSERT_TRUE(pfd.revents & POLLHUP);
+    close(sv[0]);
+    return 1;
+}
+REGISTER_TEST(exit_group_closes_thread_fds, "Phase 3: Process & Scheduling");
+
 #include <linux/capability.h>
 #include <linux/filter.h>
 #include <linux/seccomp.h>

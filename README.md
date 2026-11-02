@@ -123,7 +123,37 @@ this file.
 | `make run` | Build and boot the ISO with the persistent disk |
 | `make boot` | Boot the installed disk without the ISO |
 | `make test` | Build and run all tests in QEMU |
+| `make fuzz-posix` | Run deterministic POSIX syscall property tests in QEMU and write metrics |
 | `make clean` | Remove build output, preserving the installed disk |
+
+### POSIX syscall property tests
+
+`make fuzz-posix` boots a separate, small initrd and tests user-visible behavior
+of `open`, `read`, `write`, `lseek`, `pread`, `pwrite`, `dup`, `ftruncate`, and
+`pipe`. The current scenarios cover exclusive creation, byte round trips,
+positional I/O, shared file offsets, truncation and zero extension, pipe EOF,
+and `EBADF`. Inputs are generated from a deterministic seed; every case starts
+with a fresh file in `/tmp`. This is an initial property-based conformance
+suite, not syscall coverage-guided fuzzing or a full POSIX certification run.
+
+The command writes `build/posix-fuzz-report.json` and
+`build/posix-fuzz-report.md`, including pass/fail counts by scenario, unique
+deviations, and replay commands. It exits with an error when a property fails
+or the VM run is incomplete. For example:
+
+```sh
+make fuzz-posix FUZZ_SEED=42 FUZZ_CASES=700
+make fuzz-posix FUZZ_SEED=42 FUZZ_ONLY=3
+```
+
+The same test can be run against the host POSIX implementation for an oracle
+sanity check:
+
+```sh
+gcc -std=c11 -O2 user/posix_fuzz/posix_fuzz.c -o /tmp/posix-fuzz
+/tmp/posix-fuzz --seed 42 --cases 700
+/tmp/posix-fuzz --seed 42 --cases 700 --case 3
+```
 
 To build in a container, append `CRUNTIME=podman` or `CRUNTIME=docker`.
 

@@ -482,7 +482,7 @@ void syscall_dispatch(syscall_frame_t *f) {
                 ret = -(int64_t) EFAULT;
                 break;
             }
-            int rflags = sf->flags | ((a4 & 0x40) ? O_NONBLOCK : 0); /* MSG_DONTWAIT */
+            int rflags = sf->description->flags | ((a4 & 0x40) ? O_NONBLOCK : 0); /* MSG_DONTWAIT */
             ret = inet_recvfrom(sf->inet, (void *) a2, a3, sa, rflags);
             if (ret >= 0 && sa && a6 && uptr_ok_w((void *) a6, sizeof(int)))
                 *(int *) (uintptr_t) a6 = (int) sizeof(*sa);
@@ -1081,7 +1081,7 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = sys_clock_nanosleep((int) a1, (int) a2, (const void *) a3, (void *) a4);
         break;
     case 231:
-        proc_do_exit((int) a1);
+        proc_do_exit_group((int) a1);
         return;
     case 234:
         ret = sys_tgkill((int) a1, (int) a2, (int) a3);
@@ -1329,7 +1329,7 @@ void syscall_dispatch(syscall_frame_t *f) {
                 vfs_file_t *pe = fd_get_file(pf[_e]);
                 if (!pe) continue;
                 if (a2 & O_CLOEXEC) pe->cloexec = 1;
-                if (a2 & O_NONBLOCK) pe->flags |= O_NONBLOCK;
+                if (a2 & O_NONBLOCK) pe->description->flags |= O_NONBLOCK;
             }
         }
         break;

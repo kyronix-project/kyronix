@@ -6,6 +6,46 @@ TEST_LOG := $(BUILD)/test.log
 TEST_TIMEOUT ?= 120
 TEST_MODULE := $(BUILD)/hello.ko
 TEST_DEP_MODULE := $(BUILD)/hello_user.ko
+FUZZ_ISO := $(DIST)/kyronix-posix-fuzz.iso
+FUZZ_INITRD := $(BUILD)/posix-fuzz-initrd.cpio
+FUZZ_ROOTFS := $(BUILD)/posix-fuzz-rootfs
+FUZZ_ISO_ROOT := $(BUILD)/posix-fuzz-iso-root
+FUZZ_LOG := $(BUILD)/posix-fuzz.log
+FUZZ_SEED ?= 1
+FUZZ_CASES ?= 140
+FUZZ_ONLY ?= -1
+FUZZ_TIMEOUT ?= 120
+
+.PHONY: fuzz-binary fuzz-posix
+fuzz-binary:
+	@mkdir -p $(BUILD)/bin
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -static -fno-pie \
+	    -DKYRONIX_GUEST -DFUZZ_SEED=$(FUZZ_SEED) -DFUZZ_CASES=$(FUZZ_CASES) \
+	    -DFUZZ_ONLY=$(FUZZ_ONLY) \
+	    user/posix_fuzz/posix_fuzz.c -o $(BUILD)/bin/posix-fuzz
+
+$(FUZZ_INITRD): fuzz-binary
+	@mkdir -p $(FUZZ_ROOTFS)/tmp
+	@cp $(BUILD)/bin/posix-fuzz $(FUZZ_ROOTFS)/init
+	@cd $(FUZZ_ROOTFS) && find . | sort | \
+	    cpio -o --format=newc --owner=0:0 --reproducible \
+	    > "$(abspath $(FUZZ_INITRD))" 2>/dev/null
+
+$(FUZZ_ISO): $(KERNEL) $(FUZZ_INITRD) boot/limine-test.conf $(LIMINE_FILES) $(LIMINE)/limine
+	@mkdir -p $(@D)
+	$(call build_iso,$(FUZZ_ISO_ROOT),boot/limine-test.conf,$(FUZZ_INITRD),$(FUZZ_INITRD),,$(FUZZ_ISO))
+
+fuzz-posix: $(FUZZ_ISO)
+	@mkdir -p $(BUILD)
+	@set +e; timeout $(FUZZ_TIMEOUT) $(QEMU) \
+	    -M q35 -cpu max -m 512M -smp 2 -cdrom $(FUZZ_ISO) \
+	    -device isa-debug-exit,iobase=0x501 -display none \
+	    -serial file:$(FUZZ_LOG) -no-reboot 2>/dev/null; \
+	qemu_status=$$?; set -e; \
+	python3 scripts/posix_fuzz_report.py $(FUZZ_LOG) \
+	    --json $(BUILD)/posix-fuzz-report.json \
+	    --markdown $(BUILD)/posix-fuzz-report.md \
+	    --qemu-status $$qemu_status
 
 TESTRUNNER_SOURCES := $(wildcard user/testrunner/*.c user/testrunner/*.h) user/testrunner/Makefile
 

@@ -1,5 +1,49 @@
 #include "test_harness.h"
 
+/* Wayland servers must observe an exiting client's UNIX socket hangup. */
+int test_unix_client_exit_hup(void) {
+    int listener = socket(AF_UNIX, SOCK_STREAM, 0);
+    ASSERT_TRUE(listener >= 0);
+    struct sockaddr_un addr = { .sun_family = AF_UNIX };
+    snprintf(addr.sun_path, sizeof(addr.sun_path), "/tmp/kyro-hup-%ld", (long) getpid());
+    unlink(addr.sun_path);
+    ASSERT_EQ(0, bind(listener, (struct sockaddr *) &addr, sizeof(addr)));
+    ASSERT_EQ(0, listen(listener, 2));
+
+    pid_t child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0) {
+        close(listener);
+        int client = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (client < 0 || connect(client, (struct sockaddr *) &addr, sizeof(addr)) < 0)
+            _exit(1);
+        _exit(0);
+    }
+
+    int accepted = accept(listener, NULL, NULL);
+    ASSERT_TRUE(accepted >= 0);
+    int status;
+    ASSERT_EQ(child, waitpid(child, &status, 0));
+    ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+    int ep = epoll_create1(0);
+    ASSERT_TRUE(ep >= 0);
+    struct epoll_event ev = { .events = EPOLLIN | EPOLLHUP, .data.fd = accepted };
+    ASSERT_EQ(0, epoll_ctl(ep, EPOLL_CTL_ADD, accepted, &ev));
+    struct epoll_event out;
+    ASSERT_EQ(1, epoll_wait(ep, &out, 1, 1000));
+    ASSERT_TRUE(out.events & EPOLLHUP);
+    char byte;
+    ASSERT_EQ(0, read(accepted, &byte, 1));
+
+    close(ep);
+    close(accepted);
+    close(listener);
+    unlink(addr.sun_path);
+    return 1;
+}
+REGISTER_TEST(unix_client_exit_hup, "Phase 5: Pipes & IPC");
+
 static volatile sig_atomic_t sigpipe_caught = 0;
 
 static void handler_sigpipe(int sig) {
@@ -359,9 +403,14 @@ int test_shm_basic(void) {
     ASSERT_EQ(0, WEXITSTATUS(status));
 
     /* check attach count while the parent is still attached */
-    struct shmid_ds ds;
-    ASSERT_EQ(0, shmctl(shmid, IPC_STAT, &ds));
-    ASSERT_EQ(1, ds.shm_nattch);
+    struct {
+        struct shmid_ds ds;
+        volatile uint64_t guard[4];
+    } stat_buf = { .guard = { 0x51a7e123ULL, 0x51a7e123ULL,
+                              0x51a7e123ULL, 0x51a7e123ULL } };
+    ASSERT_EQ(0, shmctl(shmid, IPC_STAT, &stat_buf.ds));
+    ASSERT_EQ(1, stat_buf.ds.shm_nattch);
+    for (int i = 0; i < 4; i++) ASSERT_EQ(0x51a7e123ULL, stat_buf.guard[i]);
 
     ASSERT_EQ(0, shmdt(p));
     ASSERT_EQ(0, shmctl(shmid, IPC_RMID, NULL));

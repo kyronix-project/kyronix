@@ -1,4 +1,59 @@
 #include "test_harness.h"
+#include <pty.h>
+
+/* A terminal must see EOF/HUP after the last slave handle closes. */
+int test_pty_slave_hup(void) {
+    int master = posix_openpt(O_RDWR | O_NOCTTY);
+    ASSERT_TRUE(master >= 0);
+    ASSERT_EQ(0, grantpt(master));
+    ASSERT_EQ(0, unlockpt(master));
+    char *name = ptsname(master);
+    ASSERT_TRUE(name != NULL);
+    int slave = open(name, O_RDWR | O_NOCTTY);
+    ASSERT_TRUE(slave >= 0);
+
+    int ep = epoll_create1(0);
+    ASSERT_TRUE(ep >= 0);
+    struct epoll_event ev = { .events = EPOLLIN | EPOLLHUP, .data.fd = master };
+    ASSERT_EQ(0, epoll_ctl(ep, EPOLL_CTL_ADD, master, &ev));
+    ASSERT_EQ(0, close(slave));
+
+    struct epoll_event out;
+    ASSERT_EQ(1, epoll_wait(ep, &out, 1, 1000));
+    ASSERT_TRUE(out.events & EPOLLHUP);
+    ASSERT_EQ(0, fcntl(master, F_SETFL, O_NONBLOCK));
+    char byte;
+    ASSERT_EQ(0, read(master, &byte, 1));
+
+    close(ep);
+    close(master);
+    return 1;
+}
+REGISTER_TEST(pty_slave_hup, "Phase 7: I/O Multiplexing");
+
+int test_forkpty_child_hup(void) {
+    int master = -1;
+    pid_t child = forkpty(&master, NULL, NULL, NULL);
+    ASSERT_TRUE(child >= 0);
+    if (child == 0) _exit(0);
+    int status;
+    ASSERT_EQ(child, waitpid(child, &status, 0));
+    ASSERT_TRUE(WIFEXITED(status));
+
+    int ep = epoll_create1(0);
+    ASSERT_TRUE(ep >= 0);
+    struct epoll_event ev = { .events = EPOLLIN | EPOLLHUP, .data.fd = master };
+    ASSERT_EQ(0, epoll_ctl(ep, EPOLL_CTL_ADD, master, &ev));
+    struct epoll_event out;
+    ASSERT_EQ(1, epoll_wait(ep, &out, 1, 1000));
+    ASSERT_TRUE(out.events & EPOLLHUP);
+    ASSERT_EQ(0, epoll_ctl(ep, EPOLL_CTL_DEL, master, NULL));
+    ASSERT_EQ(0, epoll_wait(ep, &out, 1, 0));
+    close(ep);
+    close(master);
+    return 1;
+}
+REGISTER_TEST(forkpty_child_hup, "Phase 7: I/O Multiplexing");
 
 int test_poll_basic(void) {
     int p[2];

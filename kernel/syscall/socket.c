@@ -99,7 +99,7 @@ int64_t sys_socket_connect(int fd, struct sockaddr_un *addr, uint64_t addrlen) {
         if (addrlen < sizeof(struct sockaddr_in)) return -(int64_t) EINVAL;
         if (!uptr_ok(addr, sizeof(struct sockaddr_in))) return -(int64_t) EFAULT;
         if (addr->sun_family != AF_INET) return -(int64_t) EINVAL;
-        return inet_connect(f->inet, (const struct sockaddr_in *) addr, f->flags);
+        return inet_connect(f->inet, (const struct sockaddr_in *) addr, f->description->flags);
     }
     if (addrlen < offsetof(struct sockaddr_un, sun_path) ||
         !uptr_ok(addr, addrlen < sizeof(*addr) ? addrlen : sizeof(*addr)))
@@ -130,7 +130,7 @@ int64_t sys_socket_accept(int fd, struct sockaddr_un *addr, int *addrlen, int fl
     if (f->inet) {
         struct sockaddr_in sin;
         memset(&sin, 0, sizeof(sin));
-        int r = (int) inet_accept(f->inet, addr ? &sin : NULL, flags | f->flags);
+        int r = (int) inet_accept(f->inet, addr ? &sin : NULL, flags | f->description->flags);
         if (r >= 0 && addr) {
             size_t n = (uint64_t) capacity < sizeof(sin) ? (size_t) capacity : sizeof(sin);
             if (n) memcpy(addr, &sin, n);
@@ -367,7 +367,7 @@ int64_t sys_socket_recvmsg(int fd, void *mhdr, int flags) {
             struct sockaddr_in src;
             memset(&src, 0, sizeof(src));
             int64_t r = inet_recvfrom(isf->inet, (void *) iov[0].iov_base, iov[0].iov_len, &src,
-                                      isf->flags | (dontwait ? O_NONBLOCK : 0));
+                                      isf->description->flags | (dontwait ? O_NONBLOCK : 0));
             if (r < 0) return r;
             void *name = (void *) m[0];
             uint32_t namelen = ((uint32_t *) mhdr)[2]; // msg_namelen at offset 8

@@ -298,6 +298,7 @@ int64_t sys_clone(uint64_t flags, uint64_t child_stack, uint32_t *ptid, uint32_t
     child->space = parent->space; // shared address space
     vmm_space_retain(child->space);
     child->is_thread = 1;
+    child->tgid = parent->tgid;
 
     if (flags & CLONE_FILES) {
         kfree(child->fds);
@@ -691,6 +692,21 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
     vmm_syscall_access_end();
     vfs_syscall_borrow_end();
     enter_userspace_exec(res.entry, rsp, 0x202ULL);
+}
+
+__attribute__((noreturn)) void proc_do_exit_group(int code) {
+    proc_t *self = g_current_proc;
+    if (self) {
+        uint32_t group = self->tgid;
+        for (int i = 0; i < PROC_MAX; i++) {
+            proc_t *peer = &g_proctable[i];
+            if (peer == self || peer->state == PROC_UNUSED || peer->state == PROC_ZOMBIE ||
+                peer->state == PROC_DYING || peer->tgid != group)
+                continue;
+            proc_send_signal(peer, SIGKILL);
+        }
+    }
+    proc_do_exit(code);
 }
 
 __attribute__((noreturn)) void proc_do_exit(int code) {

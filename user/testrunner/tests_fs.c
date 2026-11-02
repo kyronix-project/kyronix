@@ -334,6 +334,10 @@ int test_chdir_getcwd(void) {
     ASSERT_EQ(0, chdir(tmpdir));
     ASSERT_NOTNULL(getcwd(cwd, sizeof(cwd)));
     ASSERT_STREQ(tmpdir, cwd);
+    ASSERT_EQ((long) strlen(tmpdir) + 1, syscall(SYS_getcwd, cwd, sizeof(cwd)));
+    errno = 0;
+    ASSERT_EQ(-1, syscall(SYS_getcwd, cwd, 1));
+    ASSERT_ERRNO(ERANGE);
 
     /* chdir to / */
     ASSERT_EQ(0, chdir("/"));
@@ -516,6 +520,38 @@ int test_fcntl(void) {
     return 1;
 }
 REGISTER_TEST(fcntl, "Phase 2: File System");
+
+int test_dup_shared_file_description(void) {
+    char path[PATH_MAX];
+    tmpfile_path(path, sizeof(path), "dup_shared_description");
+    int fd = open(path, O_CREAT | O_TRUNC | O_RDWR, 0600);
+    ASSERT_GE(fd, 0);
+    ASSERT_EQ(3, write(fd, "abc", 3));
+    ASSERT_EQ(0, lseek(fd, 0, SEEK_SET));
+
+    int copy = dup(fd);
+    ASSERT_GE(copy, 0);
+    char c;
+    ASSERT_EQ(1, read(copy, &c, 1));
+    ASSERT_EQ('a', c);
+    ASSERT_EQ(1, lseek(fd, 0, SEEK_CUR));
+
+    ASSERT_EQ(0, fcntl(copy, F_SETFL, O_APPEND));
+    ASSERT_TRUE(fcntl(fd, F_GETFL) & O_APPEND);
+    ASSERT_EQ(0, fcntl(copy, F_SETFD, FD_CLOEXEC));
+    ASSERT_FALSE(fcntl(fd, F_GETFD) & FD_CLOEXEC);
+    ASSERT_TRUE(fcntl(copy, F_GETFD) & FD_CLOEXEC);
+    errno = 0;
+    ASSERT_EQ(-1, fcntl(fd, F_DUPFD, -1));
+    ASSERT_ERRNO(EINVAL);
+
+    ASSERT_EQ(0, close(fd));
+    ASSERT_EQ(1, lseek(copy, 0, SEEK_CUR));
+    ASSERT_EQ(0, close(copy));
+    ASSERT_EQ(0, unlink(path));
+    return 1;
+}
+REGISTER_TEST(dup_shared_file_description, "Phase 2: File System");
 
 int test_mknod(void) {
     char path[PATH_MAX];

@@ -319,7 +319,7 @@ int fd_inet_socket(int type, int flags) {
         kfree(c);
         return -(int) ENOMEM;
     }
-    f->flags = O_RDWR | (type & O_NONBLOCK);
+    f->description->flags = O_RDWR | (type & O_NONBLOCK);
     f->cloexec = (type & O_CLOEXEC) ? 1 : 0;
     f->inet = c;
     vfs_fd_install(fd, f);
@@ -549,7 +549,7 @@ int64_t inet_accept(net_conn_t *c, struct sockaddr_in *addr_out, int flags) {
         inet_conn_close(child);
         return -(int64_t) ENOMEM;
     }
-    f->flags = O_RDWR | (flags & O_NONBLOCK);
+    f->description->flags = O_RDWR | (flags & O_NONBLOCK);
     f->cloexec = (flags & O_CLOEXEC) ? 1 : 0;
     f->inet = child;
     vfs_fd_install(fd, f);

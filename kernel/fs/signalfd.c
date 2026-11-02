@@ -52,8 +52,8 @@ int fd_signalfd(int fd, uint64_t mask, int flags) {
         return -(int) ENOMEM;
     }
     f->sfd = s;
-    f->flags = O_RDONLY;
-    if (flags & SFD_NONBLOCK) f->flags |= O_NONBLOCK;
+    f->description->flags = O_RDONLY;
+    if (flags & SFD_NONBLOCK) f->description->flags |= O_NONBLOCK;
     if (flags & SFD_CLOEXEC) f->cloexec = 1;
     vfs_fd_install(newfd, f);
     return newfd;
@@ -87,7 +87,7 @@ int64_t signalfd_read(vfs_file_t *f, char *buf, uint64_t len) {
             fill_siginfo(buf, sig);
             return SIGINFO_SIZE;
         }
-        if (f->flags & O_NONBLOCK) return -(int64_t) EAGAIN;
+        if (f->description->flags & O_NONBLOCK) return -(int64_t) EAGAIN;
         // an actionable unblocked signal must interrupt the read instead
         if (proc_blocking_sig_mask(p)) return -(int64_t) EINTR;
         if (proc_next_ready(p))

@@ -183,7 +183,7 @@ static int64_t sys_mmap_impl(uint64_t addr, uint64_t length, uint64_t prot, uint
         if (!fn) return -(int64_t) EBADF;
         if (fn->type != VFS_TYPE_REG && !(fn->type == VFS_TYPE_CHR && fn->chr_mmap))
             return -(int64_t) EBADF;
-        if ((flags & MAP_SHARED) && (prot & PROT_WRITE) && (file->flags & O_ACCMODE) == O_RDONLY)
+        if ((flags & MAP_SHARED) && (prot & PROT_WRITE) && (file->description->flags & O_ACCMODE) == O_RDONLY)
             return -(int64_t) EACCES;
     }
 
@@ -310,12 +310,7 @@ int64_t sys_mmap(uint64_t addr, uint64_t length, uint64_t prot, uint64_t flags, 
     if (!vmm_space_mutation_begin(p->space)) return -(int64_t) EAGAIN;
     int64_t rc = sys_mmap_impl(addr, length, prot, flags, fd, off);
     vmm_space_mutation_end(p->space);
-    if (rc < 0)
-        // log_warn("DBG mmap fail pid=%u rc=%ld len=%lx prot=%lx flags=%lx vmas=%d bump=%lx",
-        // p->pid,
-        //          (long) rc, (unsigned long) length, (unsigned long) prot, (unsigned long) flags,
-        //          vma_used_count(p->space), (unsigned long) p->mmap_bump);
-        return rc;
+    return rc;
 }
 
 static int64_t sys_munmap_impl(uint64_t addr, uint64_t len) {

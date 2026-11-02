@@ -87,7 +87,7 @@ int fd_socket(int domain, int type, int proto) {
     }
     f->node = n;
     vfs_node_ref_internal(n);
-    f->flags = O_RDWR | (type & O_NONBLOCK);
+    f->description->flags = O_RDWR | (type & O_NONBLOCK);
     f->cloexec = (type & O_CLOEXEC) ? 1 : 0;
     vfs_fd_install(fd, f);
     return fd;
@@ -169,7 +169,7 @@ int fd_accept_unix(int fd, char *path_out, int path_max, int flags) {
     if (!f || !f->node || f->node->type != VFS_TYPE_SOCK) return -(int) EBADF;
     unix_sock_t *s = (unix_sock_t *) f->node->data;
     if (s->state != SOCK_LISTENING) return -(int) EINVAL;
-    if (!s->backlog && (f->flags & O_NONBLOCK)) return -(int) EAGAIN;
+    if (!s->backlog && (f->description->flags & O_NONBLOCK)) return -(int) EAGAIN;
     s->accept_waiter = g_current_proc;
     while (!s->backlog) sched_yield_blocking();
     s->accept_waiter = NULL;
@@ -203,7 +203,7 @@ int fd_accept_unix(int fd, char *path_out, int path_max, int flags) {
     nf->pipe_end = PIPE_END_READ;
     /* Linux: plain accept() inherits O_NONBLOCK/O_CLOEXEC from the listener;
      * accept4() supplies them via flags. */
-    nf->flags = O_RDWR | (flags & O_NONBLOCK) | (f->flags & O_NONBLOCK);
+    nf->description->flags = O_RDWR | (flags & O_NONBLOCK) | (f->description->flags & O_NONBLOCK);
     nf->cloexec = ((flags & O_CLOEXEC) || f->cloexec) ? 1 : 0;
     nf->peer_pid = peer_pid;
     nf->peer_uid = peer_uid;

@@ -25,6 +25,7 @@
 #define EMFILE 24
 #define EFBIG 27
 #define ENOSPC 28
+#define ERANGE 34
 #define ENAMETOOLONG 36
 #define ENOSYS 38
 #define ENOTEMPTY 39

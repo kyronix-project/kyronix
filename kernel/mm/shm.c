@@ -26,6 +26,7 @@
 #define SHM_MAX_SEGS 64
 #define SHM_MAX_PAGES 4096 /* up to 16 mb per segment */
 #define SHM_MAX_ATTACH (SHM_MAX_SEGS * 4)
+#define SHMID_DS_X86_64_SIZE 112 /* userspace struct shmid_ds ABI */
 
 typedef struct {
     int shmid;
@@ -235,9 +236,9 @@ int sys_shmctl(int shmid, int cmd, void *buf) {
         return 0;
     case IPC_STAT:
         if (!buf) return -EINVAL;
-        if (!uptr_ok_w(buf, 144)) return -EFAULT;
+        if (!uptr_ok_w(buf, SHMID_DS_X86_64_SIZE)) return -EFAULT;
         if (!seg_access_ok(s, false)) return -EACCES;
-        memset(buf, 0, 144);                              /* zero out shmid_ds */
+        memset(buf, 0, SHMID_DS_X86_64_SIZE);             /* zero out shmid_ds */
         ((uint64_t *) buf)[6] = s->size;                  /* shm_segsz at offset 48 */
         ((uint64_t *) buf)[11] = (uint64_t) s->ref_count; /* shm_nattch at offset 88 */
         return 0;

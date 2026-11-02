@@ -130,16 +130,17 @@ int fd_fcntl(int fd, int cmd, uint64_t arg) {
         f->cloexec = (arg & FD_CLOEXEC) ? 1 : 0;
         return 0;
     case F_GETFL:
-        return f->flags;
+        return f->description->flags;
     case F_SETFL: {
         /* F_SETFL may only change status flags; access mode (O_ACCMODE) and
                                 creation flags stay fixed, else a RO fd could be promoted to RW. */
         int changeable = O_APPEND | O_NONBLOCK;
-        f->flags = (f->flags & ~changeable) | ((int) arg & changeable);
+        f->description->flags = (f->description->flags & ~changeable) | ((int) arg & changeable);
         return 0;
     }
     case F_DUPFD:
     case F_DUPFD_CLOEXEC: {
+        if (arg >= VFS_FD_MAX) return -(int) EINVAL;
         int newfd = vfs_fd_alloc_from((int) arg);
         if (newfd < 0) return -(int) EMFILE;
         vfs_file_t *nf = vfs_file_clone(f);
@@ -188,6 +189,7 @@ int fd_dup2(int oldfd, int newfd) {
 
 int fd_dup3(int oldfd, int newfd, int flags) {
     if (oldfd == newfd) return -(int) EINVAL;
+    if (flags & ~O_CLOEXEC) return -(int) EINVAL;
     int r = fd_dup2(oldfd, newfd);
     if (r >= 0) {
         vfs_file_t *nf = vfs_fd_get(r);

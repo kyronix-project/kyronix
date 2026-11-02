@@ -855,12 +855,24 @@ static int fd_alloc_from(int start) {
     return -1;
 }
 
-static vfs_file_t *file_alloc(void) {
+static vfs_file_t *file_alloc_raw(void) {
     vfs_file_t *f = (vfs_file_t *) kcalloc(1, sizeof(vfs_file_t));
     if (f) {
         f->magic = VFS_FILE_MAGIC;
         f->refs = 1;
     }
+    return f;
+}
+
+static vfs_file_t *file_alloc(void) {
+    vfs_file_t *f = file_alloc_raw();
+    if (!f) return NULL;
+    f->description = (vfs_open_description_t *) kcalloc(1, sizeof(*f->description));
+    if (!f->description) {
+        kfree(f);
+        return NULL;
+    }
+    f->description->refs = 1;
     return f;
 }
 
@@ -980,7 +992,7 @@ int fd_open_node(vfs_node_t *n, int flags) {
         return -(int) ENOMEM;
     }
     f->node = n;
-    f->flags = flags;
+    f->description->flags = flags;
     vfs_node_abspath(n, f->path, sizeof(f->path));
     node_ref(n);
     vfs_fd_install(fd, f);
@@ -992,7 +1004,7 @@ int64_t fd_pread(int fd, void *buf, uint64_t len, uint64_t off) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int64_t) EBADF;
     if (f->pipe) return -(int64_t) ESPIPE;
-    if ((f->flags & O_ACCMODE) == O_WRONLY) return -(int64_t) EBADF;
+    if ((f->description->flags & O_ACCMODE) == O_WRONLY) return -(int64_t) EBADF;
     if (len == 0) return 0;
     if (!uptr_ok_w(buf, len)) return -(int64_t) EFAULT; /* kernel writes into buf */
     return fd_pread_kbuf(fd, buf, len, off);
@@ -1002,7 +1014,7 @@ int64_t fd_pread_kbuf(int fd, void *buf, uint64_t len, uint64_t off) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int64_t) EBADF;
     if (f->pipe) return -(int64_t) ESPIPE;
-    if ((f->flags & O_ACCMODE) == O_WRONLY) return -(int64_t) EBADF;
+    if ((f->description->flags & O_ACCMODE) == O_WRONLY) return -(int64_t) EBADF;
     if (len == 0) return 0;
     vfs_node_t *n = f->node;
     if (!n || n->type != VFS_TYPE_REG) return -(int64_t) EINVAL;
@@ -1019,7 +1031,7 @@ int64_t fd_pwrite(int fd, const void *buf, uint64_t len, uint64_t off) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int64_t) EBADF;
     if (f->pipe) return -(int64_t) ESPIPE;
-    if ((f->flags & O_ACCMODE) == O_RDONLY) return -(int64_t) EBADF;
+    if ((f->description->flags & O_ACCMODE) == O_RDONLY) return -(int64_t) EBADF;
     if (len == 0) return 0;
     if (!uptr_ok(buf, len)) return -(int64_t) EFAULT;
     vfs_node_t *n = f->node;
@@ -1055,7 +1067,7 @@ int64_t fd_pwrite_kbuf(int fd, const void *buf, uint64_t len, uint64_t off) {
     vfs_file_t *f = fd_get(fd);
     if (!f) return -(int64_t) EBADF;
     if (f->pipe) return -(int64_t) ESPIPE;
-    if ((f->flags & O_ACCMODE) == O_RDONLY) return -(int64_t) EBADF;
+    if ((f->description->flags & O_ACCMODE) == O_RDONLY) return -(int64_t) EBADF;
     if (len == 0) return 0;
     vfs_node_t *n = f->node;
     if (!n || n->type != VFS_TYPE_REG) return -(int64_t) EINVAL;
@@ -1132,6 +1144,8 @@ bool fd_pollhup(int fd) {
     if (!f) return false;
     if (f->wpipe) return f->pipe->write_refs == 0;
     if (f->pipe) return f->pipe_end == PIPE_END_READ && f->pipe->write_refs == 0;
+    if (f->node && f->node->type == VFS_TYPE_CHR && f->node->chr_pollhup)
+        return f->node->chr_pollhup(f->node);
     return false;
 }
 
@@ -1185,6 +1199,9 @@ void vfs_pipe_drop_write(pipe_t *p) { pipe_drop_write(p); }
 
 static void file_destroy(vfs_file_t *f) {
     if (!file_valid(f)) return;
+    int flags = f->description ? f->description->flags : 0;
+    if (f->description && __sync_sub_and_fetch(&f->description->refs, 1) == 0)
+        kfree(f->description);
     if (f->efd) {
         if (__sync_sub_and_fetch(&f->efd->refcnt, 1) == 0) kfree(f->efd);
         f->magic = 0;
@@ -1233,7 +1250,7 @@ static void file_destroy(vfs_file_t *f) {
     }
     if (f->node) {
         vfs_node_t *n = f->node;
-        uint32_t mask = (f->flags & O_ACCMODE) == O_RDONLY ? IN_CLOSE_NOWRITE : IN_CLOSE_WRITE;
+        uint32_t mask = (flags & O_ACCMODE) == O_RDONLY ? IN_CLOSE_NOWRITE : IN_CLOSE_WRITE;
         void (*cc)(vfs_node_t *) = (n->type == VFS_TYPE_CHR) ? n->chr_close : NULL;
         inotify_notify_node(n, mask, 0);
         if (cc && n->refcnt <= 1) cc(n);
@@ -1259,6 +1276,7 @@ void vfs_file_close(vfs_file_t *f) { file_close(f); }
 
 static void file_addref(vfs_file_t *f) {
     if (!f) return;
+    if (f->description) __sync_add_and_fetch(&f->description->refs, 1);
     if (f->efd) __sync_add_and_fetch(&f->efd->refcnt, 1);
     if (f->tfd) __sync_add_and_fetch(&f->tfd->refcnt, 1);
     if (f->sfd) __sync_add_and_fetch(&f->sfd->refcnt, 1);
@@ -1281,7 +1299,7 @@ void vfs_file_addref(vfs_file_t *f) { file_addref(f); }
 
 vfs_file_t *vfs_file_clone(vfs_file_t *f) {
     if (!file_valid(f)) return NULL;
-    vfs_file_t *copy = file_alloc();
+    vfs_file_t *copy = file_alloc_raw();
     if (!copy) return NULL;
     *copy = *f;
     copy->magic = VFS_FILE_MAGIC;
@@ -1316,7 +1334,7 @@ static void wire_stdio(vfs_file_t **fds) {
             continue;
         }
         f->node = n;
-        f->flags = flags[i];
+        f->description->flags = flags[i];
         /* n is already reffed by vfs_lookup; that ref is now owned by the fd */
         fds[i] = f;
     }
@@ -1334,7 +1352,7 @@ void vfs_copy_fdtable(vfs_file_t **dst, vfs_file_t **src) {
         __atomic_add_fetch(&source->refs, 1, __ATOMIC_ACQ_REL);
         spin_unlock(&g_fdtable_lock);
 
-        vfs_file_t *f = file_alloc();
+        vfs_file_t *f = file_alloc_raw();
         if (f) {
             *f = *source;
             f->magic = VFS_FILE_MAGIC;
@@ -1617,8 +1635,8 @@ static int fd_open_impl(const char *path, int flags, int mode, bool reroot, bool
     }
 
     f->node = n;
-    f->flags = flags;
-    f->pos = 0;
+    f->description->flags = flags;
+    f->description->pos = 0;
     if (lpath[0] == '/') path_canon(lpath, f->path, sizeof(f->path));
     f->cloexec = (flags & O_CLOEXEC) ? 1 : 0;
     /* n is already reffed: from_lookup -> lookup_ref bumped it; !from_lookup -> node_ref above */
@@ -1632,7 +1650,7 @@ static int fd_open_impl(const char *path, int flags, int mode, bool reroot, bool
             return tr;
         }
     }
-    if (flags & O_APPEND) f->pos = n->size;
+    if (flags & O_APPEND) f->description->pos = n->size;
 
     vfs_fd_install(fd, f);
     return fd;
@@ -1681,12 +1699,12 @@ int64_t fd_read_ex(int fd, void *buf, uint64_t len, bool force_nonblock) {
     if (f->efd) return eventfd_read(f, (char *) buf, len);
     if (f->tfd) return timerfd_read(f, (char *) buf, len);
     if (f->sfd) return signalfd_read(f, (char *) buf, len);
-    if (f->ifd) return inotify_read(f->ifd, (char *) buf, len, f->flags);
-    if (f->inet) return inet_fd_read(f->inet, buf, len, f->flags);
+    if (f->ifd) return inotify_read(f->ifd, (char *) buf, len, f->description->flags);
+    if (f->inet) return inet_fd_read(f->inet, buf, len, f->description->flags);
 
-    if (!f->pipe && !f->wpipe && (f->flags & O_ACCMODE) == O_WRONLY) return -(int64_t) EBADF;
+    if (!f->pipe && !f->wpipe && (f->description->flags & O_ACCMODE) == O_WRONLY) return -(int64_t) EBADF;
 
-    uint32_t nonblock = (uint32_t) (f->flags | (force_nonblock ? O_NONBLOCK : 0));
+    uint32_t nonblock = (uint32_t) (f->description->flags | (force_nonblock ? O_NONBLOCK : 0));
 
     if (f->wpipe) { /* socket */
         if ((nonblock & O_NONBLOCK) && f->pipe->count == 0 && f->pipe->write_refs > 0)
@@ -1706,34 +1724,34 @@ int64_t fd_read_ex(int fd, void *buf, uint64_t len, bool force_nonblock) {
     anti_toctou_observe_vfs((uint64_t) (uintptr_t) n, ANTI_TOCTOU_VFS_USE);
     if (n->type == VFS_TYPE_CHR) {
         if (!n->chr_read) return 0;
-        if ((f->flags & O_NONBLOCK) && n->chr_pollin && !n->chr_pollin(n)) return -(int64_t) EAGAIN;
-        int64_t r = n->chr_read(n, (char *) buf, len, f->pos);
-        if (r > 0) f->pos += (uint64_t) r;
+        if ((f->description->flags & O_NONBLOCK) && n->chr_pollin && !n->chr_pollin(n)) return -(int64_t) EAGAIN;
+        int64_t r = n->chr_read(n, (char *) buf, len, f->description->pos);
+        if (r > 0) f->description->pos += (uint64_t) r;
         return r;
     }
     if (n->type == VFS_TYPE_DIR) return -(int64_t) EISDIR;
     if (n->type == VFS_TYPE_REG) {
         if (n->shmem) {
-            int64_t r = shmem_read(n->shmem, buf, f->pos, len);
+            int64_t r = shmem_read(n->shmem, buf, f->description->pos, len);
             if (r > 0) {
-                f->pos += (uint64_t) r;
+                f->description->pos += (uint64_t) r;
                 inotify_notify_node(n, IN_ACCESS, 0);
             }
             return r;
         }
         if (n->fs_ops && n->fs_ops->read) {
-            int64_t r = n->fs_ops->read(n, (char *) buf, f->pos, len);
+            int64_t r = n->fs_ops->read(n, (char *) buf, f->description->pos, len);
             if (r > 0) {
-                f->pos += (uint64_t) r;
+                f->description->pos += (uint64_t) r;
                 inotify_notify_node(n, IN_ACCESS, 0);
             }
             return r;
         }
-        if (f->pos >= n->size) return 0;
-        uint64_t avail = n->size - f->pos;
+        if (f->description->pos >= n->size) return 0;
+        uint64_t avail = n->size - f->description->pos;
         uint64_t r = (len < avail) ? len : avail;
-        memcpy(buf, n->data + f->pos, r);
-        f->pos += r;
+        memcpy(buf, n->data + f->description->pos, r);
+        f->description->pos += r;
         inotify_notify_node(n, IN_ACCESS, 0);
         return (int64_t) r;
     }
@@ -1748,7 +1766,7 @@ int64_t fd_peek_ex(int fd, void *buf, uint64_t len, uint64_t skip, bool force_no
     if (len == 0) return 0;
     if (!uptr_ok_w(buf, len)) return -(int64_t) EFAULT;
 
-    uint32_t nonblock = (uint32_t) (f->flags | (force_nonblock ? O_NONBLOCK : 0));
+    uint32_t nonblock = (uint32_t) (f->description->flags | (force_nonblock ? O_NONBLOCK : 0));
 
     if (f->wpipe) {
         if ((nonblock & O_NONBLOCK) && f->pipe->count <= skip && f->pipe->write_refs > 0)
@@ -1773,7 +1791,7 @@ int64_t fd_peek(int fd, void *buf, uint64_t len, uint64_t skip) {
 static int64_t fd_write_dispatch(vfs_file_t *f, const void *buf, uint64_t len) {
     if (f->inet) return inet_fd_write(f->inet, buf, len);
 
-    if (!f->pipe && !f->wpipe && (f->flags & O_ACCMODE) == O_RDONLY) return -(int64_t) EBADF;
+    if (!f->pipe && !f->wpipe && (f->description->flags & O_ACCMODE) == O_RDONLY) return -(int64_t) EBADF;
 
     if (f->wpipe) /* socket */
         return pipe_write(f->wpipe, buf, len);
@@ -1788,27 +1806,27 @@ static int64_t fd_write_dispatch(vfs_file_t *f, const void *buf, uint64_t len) {
     anti_toctou_observe_vfs((uint64_t) (uintptr_t) n, ANTI_TOCTOU_VFS_USE | ANTI_TOCTOU_VFS_WRITE);
     if (n->type == VFS_TYPE_CHR) {
         if (!n->chr_write) return (int64_t) len;
-        int64_t r = n->chr_write(n, (const char *) buf, len, f->pos);
-        if (r > 0) f->pos += (uint64_t) r;
+        int64_t r = n->chr_write(n, (const char *) buf, len, f->description->pos);
+        if (r > 0) f->description->pos += (uint64_t) r;
         return r;
     }
     if (n->type == VFS_TYPE_DIR) return -(int64_t) EISDIR;
     if (n->type == VFS_TYPE_REG) {
         if (n->shmem) {
-            int64_t r = shmem_write(n->shmem, buf, f->pos, len);
+            int64_t r = shmem_write(n->shmem, buf, f->description->pos, len);
             if (r > 0) {
-                f->pos += (uint64_t) r;
+                f->description->pos += (uint64_t) r;
                 n->size = n->shmem->size;
             }
             return r;
         }
         if (n->fs_ops && n->fs_ops->write) {
-            int64_t r = n->fs_ops->write(n, (const char *) buf, f->pos, len);
-            if (r > 0) f->pos += (uint64_t) r;
+            int64_t r = n->fs_ops->write(n, (const char *) buf, f->description->pos, len);
+            if (r > 0) f->description->pos += (uint64_t) r;
             return r;
         }
-        if (f->pos > INT64_MAX || len > (uint64_t) INT64_MAX - f->pos) return -(int64_t) EFBIG;
-        uint64_t end = f->pos + len;
+        if (f->description->pos > INT64_MAX || len > (uint64_t) INT64_MAX - f->description->pos) return -(int64_t) EFBIG;
+        uint64_t end = f->description->pos + len;
         if (end > n->capacity) {
             if (end > UINT64_MAX - 4095) return -(int64_t) EFBIG;
             uint64_t newcap = (end + 4095) & ~4095ULL;
@@ -1821,9 +1839,9 @@ static int64_t fd_write_dispatch(vfs_file_t *f, const void *buf, uint64_t len) {
             n->data = newdata;
             n->capacity = newcap;
         }
-        memcpy(n->data + f->pos, buf, len);
-        f->pos += len;
-        if (f->pos > n->size) n->size = f->pos;
+        memcpy(n->data + f->description->pos, buf, len);
+        f->description->pos += len;
+        if (f->description->pos > n->size) n->size = f->description->pos;
         n->dirty = 1;
         return (int64_t) len;
     }
@@ -1839,7 +1857,7 @@ int64_t fd_write_ex(int fd, const void *buf, uint64_t len, bool force_nonblock) 
     if (f->tfd) return -(int64_t) EINVAL; /* timerfd not writable via write() */
     if (f->sfd) return -(int64_t) EINVAL; /* signalfd is read-only */
     if (f->ifd) return -(int64_t) EINVAL;
-    uint32_t nonblock = (uint32_t) (f->flags | (force_nonblock ? O_NONBLOCK : 0));
+    uint32_t nonblock = (uint32_t) (f->description->flags | (force_nonblock ? O_NONBLOCK : 0));
     if (f->wpipe && (nonblock & O_NONBLOCK) && f->wpipe->read_refs > 0) {
         uint64_t space = PIPE_BUFSZ - f->wpipe->count;
         if (space == 0) return -(int64_t) EAGAIN;
@@ -1879,7 +1897,7 @@ int64_t fd_lseek(int fd, int64_t off, int whence) {
         new_pos = off;
         break;
     case SEEK_CUR:
-        new_pos = (int64_t) f->pos + off;
+        new_pos = (int64_t) f->description->pos + off;
         break;
     case SEEK_END:
         new_pos = (int64_t) n->size + off;
@@ -1888,7 +1906,7 @@ int64_t fd_lseek(int fd, int64_t off, int whence) {
         return -(int64_t) EINVAL;
     }
     if (new_pos < 0) return -(int64_t) EINVAL;
-    f->pos = (uint64_t) new_pos;
+    f->description->pos = (uint64_t) new_pos;
     return new_pos;
 }
 
@@ -1975,12 +1993,12 @@ int fd_getdents64(int fd, void *buf, uint64_t count) {
     if (dir->type != VFS_TYPE_DIR) return -(int) ENOTDIR;
 
     int proc_ret = 0;
-    if (procfs_getdents64(dir, &f->pos, buf, count, &proc_ret)) return proc_ret;
+    if (procfs_getdents64(dir, &f->description->pos, buf, count, &proc_ret)) return proc_ret;
 
     uint8_t *out = (uint8_t *) buf;
     uint64_t done = 0;
     uint64_t idx = 0;
-    uint64_t skip = f->pos;
+    uint64_t skip = f->description->pos;
     uint64_t emitted = 0;
 
     if (skip == 0) {
@@ -2035,7 +2053,7 @@ int fd_getdents64(int fd, void *buf, uint64_t count) {
     }
 
     if (emitted == 0 && done == 0) return 0;
-    f->pos += emitted;
+    f->description->pos += emitted;
     return (int) done;
 }
 

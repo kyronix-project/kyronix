@@ -1,4 +1,6 @@
 QEMU       ?= qemu-system-x86_64
+QEMU_ENV   ?= env -u LD_LIBRARY_PATH -u GTK_PATH -u GTK_EXE_PREFIX \
+    -u GTK_IM_MODULE_FILE -u GIO_MODULE_DIR
 QEMU_ACCEL ?= $(if $(wildcard /dev/kvm),kvm,tcg)
 QEMU_CPU   ?= $(if $(filter kvm,$(QEMU_ACCEL)),host,max)
 
@@ -19,7 +21,7 @@ QEMU_NET_ARGS = -netdev user,id=n0 -device virtio-net-pci,netdev=n0
 
 run: $(ISO) $(DISK)
 	@$(call phase,Launching QEMU (live ISO))
-	$(QEMU) \
+	$(QEMU_ENV) $(QEMU) \
 	    -M q35 $(QEMU_ACCEL_ARGS) -smp 4 -m 4G \
 	    -device qemu-xhci,id=xhci \
 	    -device usb-kbd,bus=xhci.0 \
@@ -32,7 +34,7 @@ run: $(ISO) $(DISK)
 
 boot: $(DISK)
 	@$(call phase,Launching QEMU (installed disk))
-	$(QEMU) \
+	$(QEMU_ENV) $(QEMU) \
 	    -M q35 $(QEMU_ACCEL_ARGS) -smp 4 -m 4G \
 	    -device qemu-xhci,id=xhci \
 	    -device usb-kbd,bus=xhci.0 \

@@ -20,6 +20,9 @@ ifeq ($(strip $(INSIDE_CONTAINER)),)
 include mk/output.mk
 
 REQUESTED_GOALS := $(if $(MAKECMDGOALS),$(MAKECMDGOALS),iso)
+CONTAINER_GOALS := $(filter-out run boot,$(REQUESTED_GOALS)) \
+    $(if $(filter run,$(REQUESTED_GOALS)),iso) \
+    $(if $(filter run boot,$(REQUESTED_GOALS)),dist/kyronix-disk.img)
 
 .PHONY: container-build container-run $(REQUESTED_GOALS)
 
@@ -36,10 +39,10 @@ container-run: container-build
 	    -v $(CURDIR)/./pkg-registry-src:/src/./pkg-registry-src:Z \
 	    -w /src \
 	    $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
-	    make -j$$(nproc) INSIDE_CONTAINER=1 $(REQUESTED_GOALS)
+	    make -j$$(nproc) INSIDE_CONTAINER=1 $(CONTAINER_GOALS)
 
 $(REQUESTED_GOALS): container-run
-	@:
+	@$(if $(filter run boot,$@),$(MAKE) INSIDE_CONTAINER=1 $@,:)
 
 else
 include mk/main.mk

@@ -409,10 +409,10 @@ int fd_inotify_init(int flags)
     }
 
     f->ifd = st;
-    f->flags = O_RDONLY;
+    f->description->flags = O_RDONLY;
 
     if (flags & O_NONBLOCK) {
-        f->flags |= O_NONBLOCK;
+        f->description->flags |= O_NONBLOCK;
     }
 
     if (flags & O_CLOEXEC) {

@@ -49,6 +49,7 @@ proc_t *proc_alloc(uint32_t ppid) {
         p->state = PROC_EMBRYO;
         proc_set_used(p);
         p->pid = (uint32_t) (i + 1);
+        p->tgid = p->pid;
         p->ppid = ppid;
         p->pgid = (uint32_t) (i + 1);
         p->wait_for = 0;

@@ -124,6 +124,7 @@ typedef struct vfs_node {
     int64_t (*chr_write)(struct vfs_node *, const char *, uint64_t, uint64_t);
     int64_t (*chr_ioctl)(struct vfs_node *, uint64_t req, uint64_t arg);
     bool (*chr_pollin)(struct vfs_node *);
+    bool (*chr_pollhup)(struct vfs_node *);
     void *(*chr_pollobj)(struct vfs_node *);
     int (*chr_open)(struct vfs_node *, int flags);
     void (*chr_close)(struct vfs_node *);
@@ -164,10 +165,15 @@ typedef struct {
 } sigfd_state_t;
 
 typedef struct {
-    uint64_t magic;
-    vfs_node_t *node;
     uint64_t pos;
     int flags;
+    volatile uint32_t refs;
+} vfs_open_description_t;
+
+typedef struct {
+    uint64_t magic;
+    vfs_node_t *node;
+    vfs_open_description_t *description;
     char path[512];
     pipe_t *pipe;
     int pipe_end;
