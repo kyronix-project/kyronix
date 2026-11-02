@@ -42,9 +42,9 @@ LIMINE_FILES := \
 	$(LIMINE)/BOOTX64.EFI \
 	$(LIMINE)/BOOTIA32.EFI
 
-$(LIMINE)/limine: $(LIMINE)/limine.c
+$(LIMINE)/limine: $(LIMINE)/limine.c mk/image.mk
 	@$(call step,CC $<)
-	@$(HOSTCC) $< -o $@
+	@$(HOSTCC) -static $< -o $@
 
 $(BOOT_FAT): $(KERNEL) boot/limine-disk.conf boot/wallpaper.jpg $(LIMINE)/limine-bios.sys
 	@$(call phase,Boot FAT)

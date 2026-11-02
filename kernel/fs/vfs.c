@@ -1554,12 +1554,12 @@ static int fd_tmpfile_open(const char *dirpath, int flags, int mode) {
     }
 
     f->node = n;
-    f->flags = flags;
-    f->pos = 0;
+    f->description->flags = flags;
+    f->description->pos = 0;
     snprintf(f->path, sizeof(f->path), "%s/%s", dirpath, label);
     f->cloexec = (flags & O_CLOEXEC) ? 1 : 0;
     node_ref(n);
-    if (flags & O_APPEND) f->pos = n->size;
+    if (flags & O_APPEND) f->description->pos = n->size;
 
     vfs_fd_install(fd, f);
     node_unref(dir);
