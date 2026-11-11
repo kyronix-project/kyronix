@@ -136,7 +136,12 @@ $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/test
 	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt $(TEST_ROOTFS)/sqfs \
 	    $(TEST_ROOTFS)/etc $(TEST_ROOTFS)/lib/modules
 	printf 'sdb /sqfs squashfs ro 0 0\n' > $(TEST_ROOTFS)/etc/fstab
-	python3 scripts/wrap_appimages.py '$(TEST_ROOTFS)' '$(TEST_SQSH)' '$(TEST_SQSH_XZ)' '$(REAL_APPIMG)'
+	python3 scripts/wrap_appimages.py '$(TEST_ROOTFS)' '$(TEST_SQSH)' '$(TEST_SQSH_XZ)'
+	@if [ -f $(REAL_APPIMG) ]; then \
+	    cp $(REAL_APPIMG) $(TEST_ROOTFS)/real_app.img; \
+	else \
+	    echo "  [WARN] no real AppImage fixture; real-appimage tests will skip"; \
+	fi
 	mkdir -p $(TEST_ROOTFS)/glibc $(TEST_ROOTFS)/lib64
 	cp $(GLIBC_FIXTURES)/hello-glibc $(GLIBC_FIXTURES)/libc.so.6 $(GLIBC_FIXTURES)/libm.so.6 $(TEST_ROOTFS)/glibc/
 	cp $(GLIBC_FIXTURES)/ld-linux-x86-64.so.2 $(TEST_ROOTFS)/lib64/

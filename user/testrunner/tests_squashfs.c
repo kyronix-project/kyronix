@@ -266,7 +266,13 @@ typedef struct {
 } xz_loop_config_t;
 
 #define XZ_IMG "/app_xz.img"
-#define XZ_OFF 4096
+#define XZ_OFF xz_off()
+
+static off_t xz_off(void) {
+    off_t off = appimg_payload_offset(XZ_IMG);
+    return off < 0 ? 0 : off;
+}
+
 #define XZ_MNT "/sqfs_xz"
 
 static int xz_img_ok(void) {

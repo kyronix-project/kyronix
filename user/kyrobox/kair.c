@@ -108,8 +108,42 @@ static int open_image(const char *path, char *abs) {
     return fd;
 }
 
+static uint16_t rd16(const unsigned char *p) {
+    return (uint16_t) (p[0] | (p[1] << 8));
+}
+
+static uint64_t rd64(const unsigned char *p) {
+    uint64_t v = 0;
+    for (int i = 7; i >= 0; i--) v = (v << 8) | p[i];
+    return v;
+}
+
+static int64_t elf_payload_offset(const unsigned char *h, size_t n, off_t size) {
+    if (n < 0x40) return -1;
+    if (h[4] != 2 || h[5] != 1) return -1;
+
+    uint64_t shoff = rd64(h + 0x28);
+    uint16_t shentsize = rd16(h + 0x3a);
+    uint16_t shnum = rd16(h + 0x3c);
+
+    if (shoff == 0 || shentsize == 0 || shnum == 0) return -1;
+
+    uint64_t end = shoff + (uint64_t) shentsize * shnum;
+    if (end < shoff) return -1;
+    if (end >= (uint64_t) size) return -1;
+    return (int64_t) end;
+}
+
 static int64_t find_sqfs_offset(int fd, off_t size) {
+    unsigned char hdr[0x40];
     unsigned char buf[4];
+
+    if (pread(fd, hdr, sizeof(hdr), 0) == (ssize_t) sizeof(hdr)) {
+        int64_t off = elf_payload_offset(hdr, sizeof(hdr), size);
+        if (off > 0 && pread(fd, buf, 4, off) == 4 &&
+            buf[0] == 'h' && buf[1] == 's' && buf[2] == 'q' && buf[3] == 's')
+            return off;
+    }
 
     for (int phase = 0; phase < 2; phase++) {
         int step = phase == 0 ? 4096 : SCAN_STEP;
@@ -119,6 +153,26 @@ static int64_t find_sqfs_offset(int fd, off_t size) {
         }
     }
     return -1;
+}
+
+static void report_unsupported_compression(int fd, int64_t sqfs_off) {
+    unsigned char sb[32];
+    if (pread(fd, sb, sizeof(sb), sqfs_off + 20) != (ssize_t) sizeof(sb)) return;
+
+    static const struct {
+        unsigned char id;
+        const char *name;
+    } names[] = {{1, "gzip"}, {2, "lzma"}, {3, "lzo"}, {4, "xz"}, {5, "lz4"}, {6, "zstd"}};
+    const char *name = "unknown";
+    for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+        if (names[i].id == sb[0]) name = names[i].name;
+
+    if (sb[0] == 1 || sb[0] == 4) return;
+
+    fprintf(stderr,
+            "%s: squashfs uses %s compression, which this kernel does not support "
+            "(only gzip and xz)\n",
+            kx_prog, name);
 }
 
 static int loop_acquire(int img_fd, int64_t sqfs_off, char *dev, size_t devsz) {
@@ -252,6 +306,7 @@ int main(int argc, char **argv) {
     }
 
     if (mount(dev, mp, "squashfs", MS_RDONLY, NULL) < 0) {
+        report_unsupported_compression(img_fd, sqfs_off);
         fprintf(stderr, "%s: %s on %s: %s\n", kx_prog, dev, mp, strerror(errno));
         rmdir(mp);
         close(lfd);

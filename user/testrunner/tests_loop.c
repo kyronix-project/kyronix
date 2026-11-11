@@ -35,7 +35,12 @@ typedef struct {
 
 #define AIMNT "/aimnt"
 #define APPIMG "/app.img"
-#define APPIMG_OFFSET 4096
+#define APPIMG_OFFSET appimg_off()
+
+static off_t appimg_off(void) {
+    off_t off = appimg_payload_offset(APPIMG);
+    return off < 0 ? 0 : off;
+}
 
 static int mnt_dir_ok(const char *dir) {
     struct stat st;

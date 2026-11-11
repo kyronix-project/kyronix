@@ -89,8 +89,6 @@ else
 	        mksquashfs /src/$(REAL_APP_STAGE) /src/$(REAL_APP_SQSH) -comp xz -b 131072 -noappend -no-progress" >/dev/null
 endif
 
-$(REAL_APPIMG): $(REAL_APP_SQSH)
-	@python3 -c "d=bytearray(4096); d[0:4]=b'\x7fELF'; d[8:12]=b'AI\x02\x00'; \
-	    open('$(REAL_APPIMG)','wb').write(d); \
-	    open('$(REAL_APPIMG)','ab').write(open('$(REAL_APP_SQSH)','rb').read())"
+$(REAL_APPIMG): $(REAL_APP_SQSH) scripts/wrap_appimages.py
+	@python3 $(CURDIR)/scripts/wrap_appimages.py --single $(REAL_APP_SQSH) $(REAL_APPIMG)
 	@$(call ok,$(REAL_APPIMG))

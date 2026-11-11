@@ -151,6 +151,26 @@ static inline ssize_t read_file(const char *path, char *buf, size_t bufsz) {
     return n;
 }
 
+static inline off_t appimg_payload_offset(const char *path) {
+    unsigned char h[0x40];
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return -1;
+    ssize_t n = read(fd, h, sizeof(h));
+    close(fd);
+    if (n != (ssize_t) sizeof(h)) return -1;
+    if (h[4] != 2 || h[5] != 1) return -1;
+
+    uint64_t shoff = 0;
+    for (int i = 7; i >= 0; i--) shoff = (shoff << 8) | h[0x28 + i];
+    uint16_t shentsize = (uint16_t) (h[0x3a] | (h[0x3b] << 8));
+    uint16_t shnum = (uint16_t) (h[0x3c] | (h[0x3d] << 8));
+    if (!shoff || !shentsize || !shnum) return -1;
+
+    uint64_t end = shoff + (uint64_t) shentsize * shnum;
+    if (end < shoff) return -1;
+    return (off_t) end;
+}
+
 static inline int run_cmd(char *const argv[]) {
     pid_t pid = fork();
     if (pid < 0) return -1;
