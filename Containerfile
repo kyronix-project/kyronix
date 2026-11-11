@@ -8,7 +8,7 @@ RUN apk add --no-cache \
     ncurses-dev \
     cpio \
     e2fsprogs dosfstools mtools \
-    xorriso \
+    xorriso squashfs-tools \
     qemu-system-x86_64 \
     pkgconfig \
     gtk+3.0-dev glib-dev pango-dev cairo-dev gdk-pixbuf-dev \

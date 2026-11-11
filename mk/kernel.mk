@@ -69,6 +69,7 @@ KERNEL_C_SRCS := \
 	kernel/proc/smp.c \
 	kernel/proc/loadavg.c \
 	kernel/fs/ext2.c \
+	kernel/fs/squashfs.c \
 	kernel/fs/vfs.c \
 	kernel/fs/devfs.c \
 	kernel/fs/eventfd.c \
@@ -149,6 +150,7 @@ KERNEL_C_SRCS := \
 	kernel/drivers/tty/vt.c \
 	kernel/lib/string.c \
 	kernel/lib/printf.c \
+	kernel/lib/inflate.c \
 	kernel/lib/log.c \
 	kernel/lib/kallsyms.c \
 	kernel/mm/kmemleak.c \
