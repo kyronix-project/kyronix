@@ -3,6 +3,7 @@ TEST_ROOTFS := $(BUILD)/test-rootfs
 TEST_ISO_ROOT := $(BUILD)/test-iso-root
 TEST_DISK := $(BUILD)/test-disk.img
 TEST_SQSH := $(BUILD)/test.sqsh
+TEST_SQSH_XZ := $(BUILD)/test-xz.sqsh
 TEST_SQFS_SRC := $(BUILD)/sqfs-src
 TEST_LOG := $(BUILD)/test.log
 TEST_TIMEOUT ?= 120
@@ -64,7 +65,8 @@ $(TEST_DEP_MODULE): user/testrunner/fixtures/modules/dependent.c kernel/module.h
 	@$(call step,CC $<)
 	@$(CC) $(CFLAGS) -fno-asynchronous-unwind-tables -c $< -o $@
 
-SQFS_OPTS := -noappend -no-progress -comp gzip -b 131072 -no-exports
+SQFS_COMP ?= gzip
+SQFS_OPTS := -noappend -no-progress -comp $(SQFS_COMP) -b 131072 -no-exports
 
 GLIBC_FIXTURES := $(BUILD)/fixtures-glibc
 GLIBC_STAMP := $(GLIBC_FIXTURES)/.stamp
@@ -93,14 +95,20 @@ $(GLIBC_STAMP): $(GLIBC_SRC)
 ifeq ($(strip $(INSIDE_CONTAINER)),1)
 MKSQ := sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
     mksquashfs $(TEST_SQFS_SRC) $(TEST_SQSH) $(SQFS_OPTS)" >/dev/null
+MKSQ_XZ := sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
+    mksquashfs $(TEST_SQFS_SRC) $(TEST_SQSH_XZ) -noappend -no-progress -comp xz -b 131072 -no-exports" >/dev/null
 else
 MKSQ := $(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
     $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
     sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
         mksquashfs /src/$(TEST_SQFS_SRC) /src/$(TEST_SQSH) $(SQFS_OPTS)" >/dev/null
+MKSQ_XZ := $(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
+    $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
+    sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
+        mksquashfs /src/$(TEST_SQFS_SRC) /src/$(TEST_SQSH_XZ) -noappend -no-progress -comp xz -b 131072 -no-exports" >/dev/null
 endif
 
-$(TEST_SQSH):
+$(TEST_SQFS_SRC):
 	@$(call phase,Squashfs fixture)
 	rm -rf $(TEST_SQFS_SRC)
 	mkdir -p $(TEST_SQFS_SRC)/bin $(TEST_SQFS_SRC)/usr/share/doc
@@ -113,10 +121,16 @@ $(TEST_SQSH):
 	python3 -c "d=bytearray(1024*1024); [d.__setitem__(i,(i*13+1)&0xFF) for i in range(1024)]; open('$(TEST_SQFS_SRC)/sparse.bin','wb').write(d)"
 	ln -sf hello.txt $(TEST_SQFS_SRC)/link.txt
 	ln -sf ../hello.txt $(TEST_SQFS_SRC)/bin/up.txt
+
+$(TEST_SQSH): $(TEST_SQFS_SRC)
 	$(MKSQ)
 	@$(call ok,$(TEST_SQSH))
 
-$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH) $(GLIBC_STAMP)
+$(TEST_SQSH_XZ): $(TEST_SQFS_SRC)
+	$(MKSQ_XZ)
+	@$(call ok,$(TEST_SQSH_XZ))
+
+$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH) $(TEST_SQSH_XZ) $(GLIBC_STAMP)
 	@$(call phase,Test initrd)
 	rm -rf $(TEST_ROOTFS)
 	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt $(TEST_ROOTFS)/sqfs \
@@ -124,7 +138,9 @@ $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/test
 	printf 'sdb /sqfs squashfs ro 0 0\n' > $(TEST_ROOTFS)/etc/fstab
 	python3 -c "import sys; d = bytearray(4096); d[0:4] = b'\x7fELF'; d[8:12] = b'AI\x02\x00'; \
 	    open('$(TEST_ROOTFS)/app.img','wb').write(d); \
-	    open('$(TEST_ROOTFS)/app.img','ab').write(open('$(TEST_SQSH)','rb').read())"
+	    open('$(TEST_ROOTFS)/app.img','ab').write(open('$(TEST_SQSH)','rb').read()); \
+	    open('$(TEST_ROOTFS)/app_xz.img','wb').write(d); \
+	    open('$(TEST_ROOTFS)/app_xz.img','ab').write(open('$(TEST_SQSH_XZ)','rb').read())"
 	mkdir -p $(TEST_ROOTFS)/glibc $(TEST_ROOTFS)/lib64
 	cp $(GLIBC_FIXTURES)/hello-glibc $(GLIBC_FIXTURES)/libc.so.6 $(GLIBC_FIXTURES)/libm.so.6 $(TEST_ROOTFS)/glibc/
 	cp $(GLIBC_FIXTURES)/ld-linux-x86-64.so.2 $(TEST_ROOTFS)/lib64/

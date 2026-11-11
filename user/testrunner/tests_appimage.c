@@ -160,3 +160,59 @@ int test_appimage_unknown_option(void) {
     return 1;
 }
 REGISTER_TEST(appimage_unknown_option, "Phase 7: AppImage");
+
+#define APPIMG_XZ "/app_xz.img"
+
+static int appimg_xz_ok(void) {
+    struct stat st;
+    return stat(APPIMG_XZ, &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 4096;
+}
+
+int test_appimage_xz_basic(void) {
+    if (!appimg_xz_ok()) return 1;
+    char buf[512];
+    char *argv[] = { "/bin/appimage-run", APPIMG_XZ, NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    ASSERT_EQ(0, rc);
+    ASSERT_NOTNULL(strstr(buf, "AppRun executed\n"));
+    ASSERT_NOTNULL(strstr(buf, "APPDIR=/tmp/aimnt-"));
+    ASSERT_NOTNULL(strstr(buf, "APPIMAGE=" APPIMG_XZ "\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_xz_basic, "Phase 7: AppImage");
+
+int test_appimage_xz_args(void) {
+    if (!appimg_xz_ok()) return 1;
+    char buf[512];
+    char *argv[] = { "/bin/appimage-run", APPIMG_XZ, "hello-arg", NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    ASSERT_EQ(0, rc);
+    ASSERT_NOTNULL(strstr(buf, "ARG1=hello-arg\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_xz_args, "Phase 7: AppImage");
+
+int test_appimage_xz_exit_code(void) {
+    if (!appimg_xz_ok()) return 1;
+    char buf[512];
+    setenv("AI_EXIT", "7", 1);
+    char *argv[] = { "/bin/appimage-run", APPIMG_XZ, NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    unsetenv("AI_EXIT");
+    ASSERT_EQ(7, rc);
+    ASSERT_NOTNULL(strstr(buf, "AppRun executed\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_xz_exit_code, "Phase 7: AppImage");
+
+int test_appimage_xz_cleanup(void) {
+    if (!appimg_xz_ok()) return 1;
+    int free_before = loop_free(0);
+    char buf[512];
+    char *argv[] = { "/bin/appimage-run", APPIMG_XZ, NULL };
+    ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));
+    if (free_before) ASSERT_TRUE(loop_free(0));
+    ASSERT_FALSE(tmp_has_aimnt());
+    return 1;
+}
+REGISTER_TEST(appimage_xz_cleanup, "Phase 7: AppImage");

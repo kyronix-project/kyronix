@@ -21,7 +21,7 @@ CFLAGS := \
 	-mno-red-zone -mcmodel=kernel -U_FORTIFY_SOURCE \
 	-include $(KERNEL_CONFIG) \
 	-I$(BUILD)/gen -Ikernel -Ikernel/boot -Ikernel/net -Ikernel/mm \
-	-I$(LWIP)/include -DNO_LOG
+	-I$(LWIP)/include -DNO_LOG -D__KERNEL__
 
 LDFLAGS := -T linker.ld -nostdlib -static -z max-page-size=0x1000
 
@@ -152,6 +152,11 @@ KERNEL_C_SRCS := \
 	kernel/lib/string.c \
 	kernel/lib/printf.c \
 	kernel/lib/inflate.c \
+	kernel/lib/xz/xz_crc32.c \
+	kernel/lib/xz/xz_dec_stream.c \
+	kernel/lib/xz/xz_dec_lzma2.c \
+	kernel/lib/xz/xz_dec_bcj.c \
+	kernel/lib/xz/xz_kernel.c \
 	kernel/lib/log.c \
 	kernel/lib/kallsyms.c \
 	kernel/mm/kmemleak.c \
@@ -201,11 +206,18 @@ $(KERNEL_PRE): $(KERNEL_OBJS) $(KALLSYMS_SEED_OBJ) linker.ld $(KERNEL_CONFIG)
 	@$(call step,LD $@)
 	@$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS) $(KALLSYMS_SEED_OBJ)
 
+# Vendored xz-embedded decoder (upstream Linux coding style): relax warnings
+# for these files only instead of patching them.
+XZ_VENDOR_SRCS := kernel/lib/xz/xz_crc32.c kernel/lib/xz/xz_dec_stream.c \
+                  kernel/lib/xz/xz_dec_lzma2.c kernel/lib/xz/xz_dec_bcj.c
+XZ_VENDOR_FLAGS := -Wno-unused-macros
+
 $(BUILD)/%.o: %.c $(KERNEL_CONFIG)
 	$(KERNEL_PHASE_GUARD)
 	@mkdir -p $(@D)
 	@$(call step,CC $<)
-	@$(CC) $(CFLAGS) $(KERNEL_INSTRUMENT_CFLAGS) -MMD -MP -c $< -o $@
+	@$(CC) $(CFLAGS) $(if $(filter $<,$(XZ_VENDOR_SRCS)),$(XZ_VENDOR_FLAGS)) \
+	    $(KERNEL_INSTRUMENT_CFLAGS) -MMD -MP -c $< -o $@
 
 $(BUILD)/%.o: %.S
 	$(KERNEL_PHASE_GUARD)
