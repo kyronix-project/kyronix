@@ -216,3 +216,103 @@ int test_appimage_xz_cleanup(void) {
     return 1;
 }
 REGISTER_TEST(appimage_xz_cleanup, "Phase 7: AppImage");
+
+// real glibc AppImage + sandboxing
+#define REAL_APPIMG "/real_app.img"
+#define SYSROOT_PRESENT "/usr/lib/sysroots/debian.sqsh"
+
+static int real_appimg_ok(void) {
+    struct stat st;
+    // Both the image and the sysroot must exist for the sandbox path to run.
+    return stat(REAL_APPIMG, &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 4096 &&
+           access(SYSROOT_PRESENT, F_OK) == 0;
+}
+
+int test_appimage_real_basic(void) {
+    if (!real_appimg_ok()) return 1;
+    char buf[1024];
+    char *argv[] = { "/bin/appimage-run", REAL_APPIMG, NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    ASSERT_EQ(0, rc);
+    ASSERT_NOTNULL(strstr(buf, "REAL_APPRUN ok\n"));
+    ASSERT_NOTNULL(strstr(buf, "APPDIR=/tmp/aisb-"));
+    ASSERT_NOTNULL(strstr(buf, "APPIMAGE=" REAL_APPIMG "\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_real_basic, "Phase 7: AppImage");
+
+int test_appimage_real_bundled_libs(void) {
+    if (!real_appimg_ok()) return 1;
+    char buf[1024];
+    char *argv[] = { "/bin/appimage-run", REAL_APPIMG, NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    ASSERT_EQ(0, rc);
+    // Dynamic glibc binary executed via bundled loader/libs inside the image 
+    ASSERT_NOTNULL(strstr(buf, "bundled_libc=1\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_real_bundled_libs, "Phase 7: AppImage");
+
+int test_appimage_real_maps(void) {
+    if (!real_appimg_ok()) return 1;
+    char buf[1024];
+    char *argv[] = { "/bin/appimage-run", REAL_APPIMG, NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    ASSERT_EQ(0, rc);
+    ASSERT_NOTNULL(strstr(buf, "maps-ok\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_real_maps, "Phase 7: AppImage");
+
+int test_appimage_real_isolation(void) {
+    if (!real_appimg_ok()) return 1;
+    // Plant a host-only sentinel that must NOT be visible in the sandbox. 
+    FILE *s = fopen("/etc/kyronix-host-sentinel", "w");
+    ASSERT_NOTNULL(s);
+    fputs("secret\n", s);
+    fclose(s);
+    char buf[1024];
+    char *argv[] = { "/bin/appimage-run", REAL_APPIMG, NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    unlink("/etc/kyronix-host-sentinel");
+    ASSERT_EQ(0, rc);
+    ASSERT_NOTNULL(strstr(buf, "host_sentinel=0\n"));
+    // sysroot libc bound at the standard absolute path must be reachable 
+    ASSERT_NOTNULL(strstr(buf, "sysroot_libc=1\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_real_isolation, "Phase 7: AppImage");
+
+int test_appimage_real_args_exit(void) {
+    if (!real_appimg_ok()) return 1;
+    char buf[1024];
+    setenv("AI_EXIT", "9", 1);
+    char *argv[] = { "/bin/appimage-run", REAL_APPIMG, "g3arg", NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    unsetenv("AI_EXIT");
+    ASSERT_EQ(9, rc);
+    ASSERT_NOTNULL(strstr(buf, "ARG1=g3arg\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_real_args_exit, "Phase 7: AppImage");
+
+int test_appimage_real_cleanup(void) {
+    if (!real_appimg_ok()) return 1;
+    char buf[1024];
+    char *argv[] = { "/bin/appimage-run", REAL_APPIMG, NULL };
+    ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));
+    // No sandbox residue left behind in /tmp 
+    DIR *d = opendir("/tmp");
+    ASSERT_NOTNULL(d);
+    struct dirent *e;
+    int resid = 0;
+    while ((e = readdir(d)) != NULL) {
+        if (strncmp(e->d_name, "aisb-", 5) == 0 || strncmp(e->d_name, "aisr-", 5) == 0 ||
+            strncmp(e->d_name, "aimnt-", 6) == 0)
+            resid = 1;
+    }
+    closedir(d);
+    ASSERT_FALSE(resid);
+    return 1;
+}
+REGISTER_TEST(appimage_real_cleanup, "Phase 7: AppImage");

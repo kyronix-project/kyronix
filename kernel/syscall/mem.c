@@ -272,8 +272,8 @@ static int64_t sys_mmap_impl(uint64_t addr, uint64_t length, uint64_t prot, uint
         if (rc < 0) return rc;
         if (reserve_only) return (int64_t) va;
 
-        // lazily load file data if filesystem hasnt populated fn->data yet (ext2)
-        if (!fn->data && fn->fs_ops && fn->fs_ops->read) fn->fs_ops->read(fn, NULL, 0, 0);
+        if (!fn->data && fn->fs_ops && fn->fs_ops->read)
+            fn->fs_ops->read(fn, NULL, 0, fn->size);
 
         // file-backed: MAP_PRIVATE - allocate pages and copy file content
         uint64_t file_size = fn->size;

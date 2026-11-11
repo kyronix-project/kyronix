@@ -130,31 +130,33 @@ $(TEST_SQSH_XZ): $(TEST_SQFS_SRC)
 	$(MKSQ_XZ)
 	@$(call ok,$(TEST_SQSH_XZ))
 
-$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH) $(TEST_SQSH_XZ) $(GLIBC_STAMP)
+$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH) $(TEST_SQSH_XZ) $(GLIBC_STAMP) $(SYSROOT_SQSH) $(REAL_APPIMG)
 	@$(call phase,Test initrd)
 	rm -rf $(TEST_ROOTFS)
 	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt $(TEST_ROOTFS)/sqfs \
 	    $(TEST_ROOTFS)/etc $(TEST_ROOTFS)/lib/modules
 	printf 'sdb /sqfs squashfs ro 0 0\n' > $(TEST_ROOTFS)/etc/fstab
-	python3 -c "import sys; d = bytearray(4096); d[0:4] = b'\x7fELF'; d[8:12] = b'AI\x02\x00'; \
-	    open('$(TEST_ROOTFS)/app.img','wb').write(d); \
-	    open('$(TEST_ROOTFS)/app.img','ab').write(open('$(TEST_SQSH)','rb').read()); \
-	    open('$(TEST_ROOTFS)/app_xz.img','wb').write(d); \
-	    open('$(TEST_ROOTFS)/app_xz.img','ab').write(open('$(TEST_SQSH_XZ)','rb').read())"
+	python3 scripts/wrap_appimages.py '$(TEST_ROOTFS)' '$(TEST_SQSH)' '$(TEST_SQSH_XZ)' '$(REAL_APPIMG)'
 	mkdir -p $(TEST_ROOTFS)/glibc $(TEST_ROOTFS)/lib64
 	cp $(GLIBC_FIXTURES)/hello-glibc $(GLIBC_FIXTURES)/libc.so.6 $(GLIBC_FIXTURES)/libm.so.6 $(TEST_ROOTFS)/glibc/
 	cp $(GLIBC_FIXTURES)/ld-linux-x86-64.so.2 $(TEST_ROOTFS)/lib64/
+	@mkdir -p $(TEST_ROOTFS)/usr/lib/sysroots
+	@if [ -f $(SYSROOT_SQSH) ]; then \
+	    cp $(SYSROOT_SQSH) $(TEST_ROOTFS)/usr/lib/sysroots/debian.sqsh; \
+	else \
+	    echo "  [WARN] no sysroot image; real-appimage tests will skip"; \
+	fi
 	cp $(BUILD)/bin/testrunner $(TEST_ROOTFS)/init
 	cp $(KERNEL_MODULES) $(TEST_ROOTFS)/lib/modules/
 	cp $(TEST_MODULE) $(TEST_ROOTFS)/lib/modules/hello.ko
 	cp $(TEST_DEP_MODULE) $(TEST_ROOTFS)/lib/modules/hello_user.ko
 	cp $(BUILD)/bin/ksh $(TEST_ROOTFS)/bin/
 	ln -sf ksh $(TEST_ROOTFS)/bin/sh
-	for app in appimage-run basename cat chgrp chmod chown cksum clear cmp cp cut date dd \
+	for app in appimage-run basename cat chgrp chmod chown chroot cksum clear cmp cp cut date dd \
 	    dirname du echo env false find grep head hostname kill killall less \
-	    link ln ls mkdir mktemp mv nc nslookup ping printenv printf ps pwd \
+	    link ln ls mkdir mktemp mount mv nc nslookup ping printenv printf ps pwd \
 	    readlink reboot rm rmdir sed seq sleep sort sync tail tee test touch \
-	    tr true tty uname uniq unlink wc wget which whoami yes; do \
+	    tr true tty umount unshare uname uniq unlink wc wget which whoami yes; do \
 	    cp $(BUILD)/bin/$$app $(TEST_ROOTFS)/bin/; \
 	done
 	for bin in tar gzip gunzip bzip2 bunzip2 xz unxz; do \
