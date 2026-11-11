@@ -64,6 +64,18 @@ $(TEST_DEP_MODULE): user/testrunner/fixtures/modules/dependent.c kernel/module.h
 	@$(call step,CC $<)
 	@$(CC) $(CFLAGS) -fno-asynchronous-unwind-tables -c $< -o $@
 
+SQFS_OPTS := -noappend -no-progress -comp gzip -b 131072 -no-exports
+
+ifeq ($(strip $(INSIDE_CONTAINER)),1)
+MKSQ := sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
+    mksquashfs $(TEST_SQFS_SRC) $(TEST_SQSH) $(SQFS_OPTS)" >/dev/null
+else
+MKSQ := $(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
+    $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
+    sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
+        mksquashfs /src/$(TEST_SQFS_SRC) /src/$(TEST_SQSH) $(SQFS_OPTS)" >/dev/null
+endif
+
 $(TEST_SQSH):
 	@$(call phase,Squashfs fixture)
 	rm -rf $(TEST_SQFS_SRC)
@@ -77,11 +89,7 @@ $(TEST_SQSH):
 	python3 -c "d=bytearray(1024*1024); [d.__setitem__(i,(i*13+1)&0xFF) for i in range(1024)]; open('$(TEST_SQFS_SRC)/sparse.bin','wb').write(d)"
 	ln -sf hello.txt $(TEST_SQFS_SRC)/link.txt
 	ln -sf ../hello.txt $(TEST_SQFS_SRC)/bin/up.txt
-	$(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
-	    $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
-	    sh -c "apk add --no-cache squashfs-tools >/dev/null 2>&1 && \
-	        mksquashfs /src/$(TEST_SQFS_SRC) /src/$(TEST_SQSH) \
-	        -noappend -no-progress -comp gzip -b 131072 -no-exports" >/dev/null
+	$(MKSQ)
 	@$(call ok,$(TEST_SQSH))
 
 $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE)

@@ -5,6 +5,33 @@ static int exit_group_worker(void *arg) {
     return 0;
 }
 
+static long raw_clone(int (*fn)(void *), void *arg, void *stack_top, int flags) {
+	uint64_t newsp = ((uint64_t)(uintptr_t)stack_top) & ~15ULL;
+	newsp -= 8;
+	*(uint64_t *)newsp = (uint64_t)(uintptr_t)arg;
+	register uint64_t r9 __asm__("r9") = (uint64_t)(uintptr_t)fn;
+	register uint64_t r10 __asm__("r10") = 0;
+	register uint64_t r8 __asm__("r8") = 0;
+	long ret;
+	__asm__ __volatile__("syscall\n"
+	                     "test %%eax, %%eax\n"
+	                     "jnz 1f\n"
+	                     "xor %%ebp, %%ebp\n"
+	                     "pop %%rdi\n"
+	                     "call *%%r9\n"
+	                     "mov %%eax, %%edi\n"
+	                     "xor %%eax, %%eax\n"
+	                     "mov $60, %%al\n"
+	                     "syscall\n"
+	                     "hlt\n"
+	                     "1:\n"
+	                     : "=a"(ret)
+	                     : "a"(56L), "D"((uint64_t)flags), "S"(newsp), "d"(0L), "r"(r9), "r"(r10),
+	                       "r"(r8)
+	                     : "rcx", "r11", "memory");
+	return ret;
+}
+
 int test_exit_group_closes_thread_fds(void) {
     for (int iteration = 0; iteration < 32; iteration++) {
         int sv[2];
@@ -15,11 +42,11 @@ int test_exit_group_closes_thread_fds(void) {
             close(sv[0]);
             static uint32_t futex_word;
             static char stack[16384] __attribute__((aligned(16)));
-            int tid = clone(exit_group_worker, stack + sizeof(stack),
-                            CLONE_VM | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD, &futex_word);
+            long tid = raw_clone(exit_group_worker, &futex_word, stack + sizeof(stack),
+                                 CLONE_VM | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD);
             if (tid < 0) {
                 if (failure_pipe[1] >= 0)
-                    dprintf(failure_pipe[1], "iteration=%d clone errno=%d\n", iteration, errno);
+                    dprintf(failure_pipe[1], "iteration=%d clone errno=%ld\n", iteration, -tid);
                 _exit(3);
             }
             syscall(SYS_exit_group, 0);
