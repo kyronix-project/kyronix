@@ -2,6 +2,8 @@ TEST_INITRD := $(BUILD)/test-initrd.cpio
 TEST_ROOTFS := $(BUILD)/test-rootfs
 TEST_ISO_ROOT := $(BUILD)/test-iso-root
 TEST_DISK := $(BUILD)/test-disk.img
+TEST_SQSH := $(BUILD)/test.sqsh
+TEST_SQFS_SRC := $(BUILD)/sqfs-src
 TEST_LOG := $(BUILD)/test.log
 TEST_TIMEOUT ?= 120
 TEST_MODULE := $(BUILD)/hello.ko
@@ -62,10 +64,32 @@ $(TEST_DEP_MODULE): user/testrunner/fixtures/modules/dependent.c kernel/module.h
 	@$(call step,CC $<)
 	@$(CC) $(CFLAGS) -fno-asynchronous-unwind-tables -c $< -o $@
 
+$(TEST_SQSH):
+	@$(call phase,Squashfs fixture)
+	rm -rf $(TEST_SQFS_SRC)
+	mkdir -p $(TEST_SQFS_SRC)/bin $(TEST_SQFS_SRC)/usr/share/doc
+	printf 'hello from squashfs\n' > $(TEST_SQFS_SRC)/hello.txt
+	printf '#!/bin/sh\necho AppRun executed\n' > $(TEST_SQFS_SRC)/AppRun
+	chmod 755 $(TEST_SQFS_SRC)/AppRun
+	printf 'docs\n' > $(TEST_SQFS_SRC)/usr/share/doc/readme.md
+	python3 -c "open('$(TEST_SQFS_SRC)/big.bin','wb').write(bytes((i*31+7)&0xFF for i in range(300000)))"
+	python3 -c "open('$(TEST_SQFS_SRC)/bin/tool.dat','wb').write(bytes((i*7+3)&0xFF for i in range(3000)))"
+	python3 -c "d=bytearray(1024*1024); [d.__setitem__(i,(i*13+1)&0xFF) for i in range(1024)]; open('$(TEST_SQFS_SRC)/sparse.bin','wb').write(d)"
+	ln -sf hello.txt $(TEST_SQFS_SRC)/link.txt
+	ln -sf ../hello.txt $(TEST_SQFS_SRC)/bin/up.txt
+	$(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
+	    $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
+	    sh -c "apk add --no-cache squashfs-tools >/dev/null 2>&1 && \
+	        mksquashfs /src/$(TEST_SQFS_SRC) /src/$(TEST_SQSH) \
+	        -noappend -no-progress -comp gzip -b 131072 -no-exports" >/dev/null
+	@$(call ok,$(TEST_SQSH))
+
 $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE)
 	@$(call phase,Test initrd)
 	rm -rf $(TEST_ROOTFS)
-	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt $(TEST_ROOTFS)/lib/modules
+	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt $(TEST_ROOTFS)/sqfs \
+	    $(TEST_ROOTFS)/etc $(TEST_ROOTFS)/lib/modules
+	printf 'sdb /sqfs squashfs ro 0 0\n' > $(TEST_ROOTFS)/etc/fstab
 	cp $(BUILD)/bin/testrunner $(TEST_ROOTFS)/init
 	cp $(KERNEL_MODULES) $(TEST_ROOTFS)/lib/modules/
 	cp $(TEST_MODULE) $(TEST_ROOTFS)/lib/modules/hello.ko
@@ -94,7 +118,7 @@ $(TEST_ISO): $(KERNEL) $(TEST_INITRD) boot/limine-test.conf \
 
 .PHONY: test
 test: INSTRUMENT=1
-test: $(TEST_ISO)
+test: $(TEST_ISO) $(TEST_SQSH)
 	@$(call phase,Test suite)
 	@mkdir -p $(BUILD)
 	@truncate -s 16M $(TEST_DISK)
@@ -109,6 +133,8 @@ test: $(TEST_ISO)
 	    -drive file=$(TEST_DISK),format=raw,if=none,id=hd0,cache=writethrough \
 	    -device ahci,id=ahci \
 	    -device ide-hd,drive=hd0,bus=ahci.0 \
+	    -drive file=$(TEST_SQSH),format=raw,if=none,id=hd1,cache=writethrough \
+	    -device ide-hd,drive=hd1,bus=ahci.1 \
 	    -serial file:$(TEST_LOG) -no-reboot 2>/dev/null; \
 	qemu_status=$$?; \
 	set -e; \
