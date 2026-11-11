@@ -66,6 +66,30 @@ $(TEST_DEP_MODULE): user/testrunner/fixtures/modules/dependent.c kernel/module.h
 
 SQFS_OPTS := -noappend -no-progress -comp gzip -b 131072 -no-exports
 
+GLIBC_FIXTURES := $(BUILD)/fixtures-glibc
+GLIBC_STAMP := $(GLIBC_FIXTURES)/.stamp
+GLIBC_SRC := user/testrunner/fixtures/glibc/hello.c
+GLIBC_SCRIPT := apt-get update >/dev/null 2>&1; \
+    apt-get install -y --no-install-recommends gcc libc6-dev >/dev/null 2>&1; \
+    gcc -O2 -o /src/$(GLIBC_FIXTURES)/hello-glibc /src/$(GLIBC_SRC) && \
+    cp /lib64/ld-linux-x86-64.so.2 /usr/lib/x86_64-linux-gnu/libc.so.6 \
+       /usr/lib/x86_64-linux-gnu/libm.so.6 /src/$(GLIBC_FIXTURES)/
+
+ifeq ($(strip $(INSIDE_CONTAINER)),1)
+GLIBC_BUILD := sh -c "$(GLIBC_SCRIPT)" >/dev/null
+else
+GLIBC_BUILD := $(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
+    docker.io/library/debian:bookworm-slim sh -c "$(GLIBC_SCRIPT)" >/dev/null
+endif
+
+$(GLIBC_STAMP): $(GLIBC_SRC)
+	@$(call phase,Glibc fixtures)
+	rm -rf $(GLIBC_FIXTURES)
+	mkdir -p $(GLIBC_FIXTURES)
+	$(GLIBC_BUILD)
+	@touch $(GLIBC_STAMP)
+	@$(call ok,$(GLIBC_FIXTURES))
+
 ifeq ($(strip $(INSIDE_CONTAINER)),1)
 MKSQ := sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
     mksquashfs $(TEST_SQFS_SRC) $(TEST_SQSH) $(SQFS_OPTS)" >/dev/null
@@ -81,7 +105,7 @@ $(TEST_SQSH):
 	rm -rf $(TEST_SQFS_SRC)
 	mkdir -p $(TEST_SQFS_SRC)/bin $(TEST_SQFS_SRC)/usr/share/doc
 	printf 'hello from squashfs\n' > $(TEST_SQFS_SRC)/hello.txt
-	printf '#!/bin/sh\necho AppRun executed\n' > $(TEST_SQFS_SRC)/AppRun
+	printf '#!/bin/sh\necho AppRun executed\necho "APPDIR=$$APPDIR"\necho "APPIMAGE=$$APPIMAGE"\necho "ARG1=$$1"\nexit $$AI_EXIT\n' > $(TEST_SQFS_SRC)/AppRun
 	chmod 755 $(TEST_SQFS_SRC)/AppRun
 	printf 'docs\n' > $(TEST_SQFS_SRC)/usr/share/doc/readme.md
 	python3 -c "open('$(TEST_SQFS_SRC)/big.bin','wb').write(bytes((i*31+7)&0xFF for i in range(300000)))"
@@ -92,7 +116,7 @@ $(TEST_SQSH):
 	$(MKSQ)
 	@$(call ok,$(TEST_SQSH))
 
-$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH)
+$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH) $(GLIBC_STAMP)
 	@$(call phase,Test initrd)
 	rm -rf $(TEST_ROOTFS)
 	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt $(TEST_ROOTFS)/sqfs \
@@ -101,13 +125,16 @@ $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/test
 	python3 -c "import sys; d = bytearray(4096); d[0:4] = b'\x7fELF'; d[8:12] = b'AI\x02\x00'; \
 	    open('$(TEST_ROOTFS)/app.img','wb').write(d); \
 	    open('$(TEST_ROOTFS)/app.img','ab').write(open('$(TEST_SQSH)','rb').read())"
+	mkdir -p $(TEST_ROOTFS)/glibc $(TEST_ROOTFS)/lib64
+	cp $(GLIBC_FIXTURES)/hello-glibc $(GLIBC_FIXTURES)/libc.so.6 $(GLIBC_FIXTURES)/libm.so.6 $(TEST_ROOTFS)/glibc/
+	cp $(GLIBC_FIXTURES)/ld-linux-x86-64.so.2 $(TEST_ROOTFS)/lib64/
 	cp $(BUILD)/bin/testrunner $(TEST_ROOTFS)/init
 	cp $(KERNEL_MODULES) $(TEST_ROOTFS)/lib/modules/
 	cp $(TEST_MODULE) $(TEST_ROOTFS)/lib/modules/hello.ko
 	cp $(TEST_DEP_MODULE) $(TEST_ROOTFS)/lib/modules/hello_user.ko
 	cp $(BUILD)/bin/ksh $(TEST_ROOTFS)/bin/
 	ln -sf ksh $(TEST_ROOTFS)/bin/sh
-	for app in basename cat chgrp chmod chown cksum clear cmp cp cut date dd \
+	for app in appimage-run basename cat chgrp chmod chown cksum clear cmp cp cut date dd \
 	    dirname du echo env false find grep head hostname kill killall less \
 	    link ln ls mkdir mktemp mv nc nslookup ping printenv printf ps pwd \
 	    readlink reboot rm rmdir sed seq sleep sort sync tail tee test touch \

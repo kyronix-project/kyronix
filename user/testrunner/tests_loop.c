@@ -223,7 +223,7 @@ int test_loop_mount_appimage_again(void) {
     char buf[128];
     char *argv[] = { "/bin/sh", AIMNT "/AppRun", NULL };
     ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));
-    ASSERT_STREQ("AppRun executed\n", buf);
+    ASSERT_NOTNULL(strstr(buf, "AppRun executed\n"));
 
     ASSERT_EQ(0, umount2(AIMNT, 0));
     ASSERT_EQ(0, loop_clear("/dev/loop0"));

@@ -18,6 +18,15 @@
 #define MAP_FIXED 0x10
 #define MAP_PRIVATE 0x02
 #define MAP_SHARED 0x01
+#define MAP_GROWSDOWN 0x0100
+#define MAP_DENYWRITE 0x0800
+#define MAP_EXECUTABLE 0x1000
+#define MAP_LOCKED 0x2000
+#define MAP_NORESERVE 0x4000
+#define MAP_POPULATE 0x8000
+#define MAP_NONBLOCK 0x10000
+#define MAP_STACK 0x20000
+#define MAP_FIXED_NOREPLACE 0x100000
 
 #define MREMAP_MAYMOVE 1
 #define MREMAP_FIXED 2
@@ -104,7 +113,10 @@ static bool prot_valid(uint64_t prot) {
 }
 
 static bool mmap_flags_valid(uint64_t flags) {
-    if (flags & ~(uint64_t) (MAP_ANON | MAP_FIXED | MAP_PRIVATE | MAP_SHARED)) return false;
+    if (flags & ~(uint64_t) (MAP_ANON | MAP_FIXED | MAP_PRIVATE | MAP_SHARED | MAP_GROWSDOWN |
+                             MAP_DENYWRITE | MAP_EXECUTABLE | MAP_LOCKED | MAP_NORESERVE |
+                             MAP_POPULATE | MAP_NONBLOCK | MAP_STACK | MAP_FIXED_NOREPLACE))
+        return false;
     uint64_t kind = flags & (MAP_PRIVATE | MAP_SHARED);
     return kind == MAP_PRIVATE || kind == MAP_SHARED;
 }
@@ -185,6 +197,14 @@ static int64_t sys_mmap_impl(uint64_t addr, uint64_t length, uint64_t prot, uint
             return -(int64_t) EBADF;
         if ((flags & MAP_SHARED) && (prot & PROT_WRITE) && (file->description->flags & O_ACCMODE) == O_RDONLY)
             return -(int64_t) EACCES;
+    }
+
+    if (flags & MAP_FIXED_NOREPLACE) {
+        if (!addr) return -(int64_t) EINVAL;
+        uint64_t nva = PAGE_ALIGN_DOWN(addr);
+        if (!user_map_range_ok(nva, length)) return -(int64_t) EINVAL;
+        if (vma_conflicts(p->space, nva, length)) return -(int64_t) EEXIST;
+        flags |= MAP_FIXED;
     }
 
     uint64_t va = 0;

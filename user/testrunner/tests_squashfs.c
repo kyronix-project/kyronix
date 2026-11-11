@@ -222,7 +222,7 @@ int test_squashfs_exec_script(void) {
     char *argv[] = { "/bin/sh", SQFS "/AppRun", NULL };
     int rc = capture_cmd(argv, buf, sizeof(buf));
     ASSERT_EQ(0, rc);
-    ASSERT_STREQ("AppRun executed\n", buf);
+    ASSERT_NOTNULL(strstr(buf, "AppRun executed\n"));
     return 1;
 }
 REGISTER_TEST(squashfs_exec_script, "Phase 6: SquashFS");

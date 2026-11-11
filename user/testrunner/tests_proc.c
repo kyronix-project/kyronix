@@ -720,6 +720,33 @@ int test_memory_argument_validation(void) {
 }
 REGISTER_TEST(memory_argument_validation, "Phase 3: Process & Scheduling");
 
+int test_mmap_linux_hint_flags(void) {
+    errno = 0;
+    void *p = mmap(NULL, 8192, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK | MAP_NORESERVE | MAP_POPULATE, -1, 0);
+    ASSERT_NE(MAP_FAILED, p);
+    munmap(p, 8192);
+
+    errno = 0;
+    void *q = mmap(NULL, 4096, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    ASSERT_NE(MAP_FAILED, q);
+
+    errno = 0;
+    long rc = syscall(SYS_mmap, (long) q, 4096, PROT_READ,
+                      MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+    ASSERT_EQ(-1L, rc);
+    ASSERT_ERRNO(EEXIST);
+    munmap(q, 4096);
+
+    errno = 0;
+    long ok = syscall(SYS_mmap, 0x600000000000, 4096, PROT_READ,
+                     MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+    ASSERT_NE(-1L, ok);
+    munmap((void *) ok, 4096);
+    return 1;
+}
+REGISTER_TEST(mmap_linux_hint_flags, "Phase 3: Process & Scheduling");
+
 int test_mmap_munmap(void) {
     size_t sz = 4096;
     void *p = mmap(NULL, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
