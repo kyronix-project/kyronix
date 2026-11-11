@@ -58,6 +58,51 @@ static int g_job_seq = 0;
 static char *g_positional[MAX_POSITIONAL];
 static int g_npositional = 0;
 
+static void capture_command(const char *command, char *out, size_t out_size) {
+    if (!out || out_size == 0) return;
+    out[0] = '\0';
+
+    int fds[2];
+    if (pipe(fds) < 0) return;
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(fds[0]);
+        close(fds[1]);
+        return;
+    }
+    if (pid == 0) {
+        close(fds[0]);
+        if (dup2(fds[1], STDOUT_FILENO) < 0) _exit(127);
+        close(fds[1]);
+        execl("/bin/sh", "sh", "-c", command, (char *) NULL);
+        _exit(127);
+    }
+
+    close(fds[1]);
+    size_t used = 0;
+    char chunk[512];
+    for (;;) {
+        ssize_t n = read(fds[0], chunk, sizeof(chunk));
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) break;
+
+        size_t available = out_size - used - 1;
+        size_t copy = (size_t) n < available ? (size_t) n : available;
+        if (copy) {
+            memcpy(out + used, chunk, copy);
+            used += copy;
+        }
+    }
+    close(fds[0]);
+
+    int status;
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+
+    while (used > 0 && (out[used - 1] == '\n' || out[used - 1] == '\r')) used--;
+    out[used] = '\0';
+}
+
 static void expand_env(char *buf, size_t size) {
     char tmp[MAX_LINE];
     size_t pos = 0;
@@ -92,21 +137,8 @@ static void expand_env(char *buf, size_t size) {
                     size_t cp_len = cmd_len < sizeof(cmd) - 1 ? cmd_len : sizeof(cmd) - 1;
                     memcpy(cmd, start, cp_len);
                     cmd[cp_len] = '\0';
-                    FILE *fp = popen(cmd, "r");
-                    if (fp) {
-                        char line[1024];
-                        while (fgets(line, sizeof(line), fp)) {
-                            size_t llen = strlen(line);
-                            while (llen > 0 && (line[llen - 1] == '\n' || line[llen - 1] == '\r')) {
-                                line[--llen] = '\0';
-                            }
-                            size_t rem = size - pos - 1;
-                            size_t cc = llen < rem ? llen : rem;
-                            memcpy(tmp + pos, line, cc);
-                            pos += cc;
-                        }
-                        pclose(fp);
-                    }
+                    capture_command(cmd, tmp + pos, size - pos);
+                    pos += strlen(tmp + pos);
                     p++;
                     continue;
                 }

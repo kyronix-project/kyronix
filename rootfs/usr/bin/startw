@@ -4,7 +4,8 @@
 # Weston takes over /dev/fb0 and the VT, so it needs root: launcher-direct is
 # the only launcher available here (there is no logind).
 
-if [ ! -w /root ]; then
+user=$(whoami)
+if [ "$user" != "root" ]; then
     echo "startw: must be run as root"
     exit 1
 fi
