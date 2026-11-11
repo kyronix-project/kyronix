@@ -1,12 +1,3 @@
-# Stage G3: minimal glibc sysroot for real AppImages.
-#
-# scripts/build_sysroot.py downloads Debian bookworm runtime debs (libc6,
-# libgcc-s1, libstdc++6, zlib1g) straight from the Pool via urllib, unpacks
-# them with ar+tar (no apt/dpkg needed), normalizes SONAME symlinks and a
-# pkg-repo style layout, then we pack it into an xz squashfs consumed by
-# appimage-run's sandbox. Cached via a stamp; network failures degrade to a
-# warning so the suite still builds (real-appimage tests then self-skip).
-
 SYSROOT_SQSH := $(BUILD)/debian-sysroot.sqsh
 SYSROOT_STAGE := $(BUILD)/sysroot-stage
 SYSROOT_STAMP := $(SYSROOT_STAGE)/.stamp
@@ -47,10 +38,6 @@ else
 endif
 	@$(call ok,$(SYSROOT_SQSH))
 
-# --- Realistic glibc AppImage fixture -------------------------------------
-# A dynamically-linked AppRun (RUNPATH $ORIGIN/libs) plus its runtime libc
-# bundled inside the image, packed as an xz squashfs and prefixed with the
-# ELF + 0x414902 type-2 header so appimage-run treats it as a real AppImage.
 REAL_APPIMG := $(BUILD)/real-app.img
 REAL_APP_SQSH := $(BUILD)/real-app.sqsh
 REAL_APP_STAGE := $(BUILD)/real-app-stage
