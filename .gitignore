@@ -4,6 +4,8 @@
 include/config/
 include/generated/
 scripts/kconfig/
+*.png~
+
 # logs
 *.log
 *.d
