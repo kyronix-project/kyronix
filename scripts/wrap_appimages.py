@@ -5,7 +5,7 @@ Usage: wrap_appimages.py <rootfs_dir> <gzip_sqsh> <xz_sqsh> <real_app_img>
 
 Writes app.img, app_xz.img (and real_app.img when the source exists) into the
 rootfs directory. The 4096-byte header carries ELF magic at [0..4) and the
-AppImage type-2 marker AI\\x02 at [8..12), matching what appimage-run scans for.
+AppImage type-2 marker AI\\x02 at [8..12), matching what kair scans for.
 """
 import os
 import sys

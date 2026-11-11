@@ -193,7 +193,7 @@ int main(int argc, char **argv) {
     int ai = 1;
     while (ai < argc && strncmp(argv[ai], "--appimage-", 11) == 0) {
         if (strcmp(argv[ai], "--appimage-version") == 0) {
-            printf("appimage-run 1.0 (kyronix)\n");
+            printf("kair 1.0 (kyronix)\n");
             return 0;
         }
         else if (strcmp(argv[ai], "--appimage-help") == 0) {

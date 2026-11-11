@@ -30,8 +30,9 @@ all:
 	@mkdir -p $(ROOTFS)/usr/libexec
 	@cp ../build/bin/limine-install $(ROOTFS)/usr/libexec/
 	@ln -sf ksh $(ROOTFS)/bin/sh
-	@for app in appimage-run awk basename cat chgrp chmod chown cksum clear cmp cp cut date dd diff dirname du echo env false \
-	    fdisk find file grep head hostname id insmod jailctl kill killall less link ln ls lsblk lspci lsmod mkdir mktemp mount mv nc nslookup ntpd patch ping printenv printf ps pwd readlink realpath \
+	@rm -f $(ROOTFS)/bin/appimage-run
+	@for app in awk basename cat chgrp chmod chown cksum clear cmp cp cut date dd diff dirname du echo env false \
+	    fdisk find file grep head hostname id insmod jailctl kair kill killall less link ln ls lsblk lspci lsmod mkdir mktemp mount mv nc nslookup ntpd patch ping printenv printf ps pwd readlink realpath \
 	    passwd reboot rm rmdir rmmod sed seq sleep sort stat stress sync tail tee test top touch tr true tty tree umount uname uniq unlink useradd userdel wc wget which whoami xargs yes; do \
 	    cp ../build/bin/$$app $(ROOTFS)/bin/; \
 	done

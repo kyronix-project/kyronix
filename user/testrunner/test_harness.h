@@ -235,10 +235,11 @@ typedef struct {
     int (*func)(void);
 } test_entry_t;
 
-#define MAX_TESTS 320
+#define MAX_TESTS 512
 
 extern test_entry_t test_registry[MAX_TESTS];
 extern int test_count;
+extern int test_registry_overflow;
 
 #define REGISTER_TEST(tname, phase_name)                                                           \
     static void __attribute__((constructor)) __reg_##tname(void) {                                 \
@@ -247,6 +248,8 @@ extern int test_count;
             test_registry[test_count].phase = phase_name;                                          \
             test_registry[test_count].func = test_##tname;                                         \
             test_count++;                                                                          \
+        } else {                                                                                   \
+            test_registry_overflow++;                                                              \
         }                                                                                          \
     }
 

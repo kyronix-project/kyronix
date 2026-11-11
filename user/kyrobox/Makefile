@@ -2,8 +2,8 @@ CC := gcc
 CFLAGS ?= -std=c11 -Wall -Wextra -Werror -O2 -march=x86-64 -mtune=generic -fno-pie -L../../build
 LDFLAGS ?= -static -lm -lcrypt 
 OUT := ../../build/bin
-UTILS := appimage-run awk basename cat chgrp chmod chown chroot cksum clear cmp cp cut date dd diff dirname du echo env false \
-	fdisk file find grep head hostname id insmod kill killall less link ln ls lsblk lspci lsmod mkdir mktemp mount mv nc nslookup ntpd patch ping printenv printf ps pwd readlink realpath \
+UTILS := awk basename cat chgrp chmod chown chroot cksum clear cmp cp cut date dd diff dirname du echo env false \
+	fdisk file find grep head hostname id insmod kair kill killall less link ln ls lsblk lspci lsmod mkdir mktemp mount mv nc nslookup ntpd patch ping printenv printf ps pwd readlink realpath \
 	passwd reboot rm rmdir rmmod sed seq sleep sort stat stress sync tail tee test top touch tr true tty umount unshare uname uniq unlink useradd userdel wc wget which whoami xargs yes tree
 
 FNO_LINK_LIBATOMIC := $(shell echo 'int main(void){return 0;}' | $(CC) -x c - -fno-link-libatomic -o /dev/null 2>/dev/null && echo '-fno-link-libatomic')

@@ -152,8 +152,8 @@ $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/test
 	cp $(TEST_DEP_MODULE) $(TEST_ROOTFS)/lib/modules/hello_user.ko
 	cp $(BUILD)/bin/ksh $(TEST_ROOTFS)/bin/
 	ln -sf ksh $(TEST_ROOTFS)/bin/sh
-	for app in appimage-run basename cat chgrp chmod chown chroot cksum clear cmp cp cut date dd \
-	    dirname du echo env false find grep head hostname kill killall less \
+	for app in basename cat chgrp chmod chown chroot cksum clear cmp cp cut date dd \
+	    dirname du echo env false find grep head hostname kair kill killall less \
 	    link ln ls mkdir mktemp mount mv nc nslookup ping printenv printf ps pwd \
 	    readlink reboot rm rmdir sed seq sleep sort sync tail tee test touch \
 	    tr true tty umount unshare uname uniq unlink wc wget which whoami yes; do \

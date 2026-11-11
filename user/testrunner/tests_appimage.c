@@ -53,7 +53,7 @@ static int tmp_has_aimnt(void) {
 int test_appimage_basic(void) {
     if (!appimg_ok()) return 1;
     char buf[512];
-    char *argv[] = { "/bin/appimage-run", APPIMG, NULL };
+    char *argv[] = { "/bin/kair", APPIMG, NULL };
     int rc = capture_cmd(argv, buf, sizeof(buf));
     ASSERT_EQ(0, rc);
     ASSERT_NOTNULL(strstr(buf, "AppRun executed\n"));
@@ -66,7 +66,7 @@ REGISTER_TEST(appimage_basic, "Phase 7: AppImage");
 int test_appimage_args(void) {
     if (!appimg_ok()) return 1;
     char buf[512];
-    char *argv[] = { "/bin/appimage-run", APPIMG, "hello-arg", NULL };
+    char *argv[] = { "/bin/kair", APPIMG, "hello-arg", NULL };
     int rc = capture_cmd(argv, buf, sizeof(buf));
     ASSERT_EQ(0, rc);
     ASSERT_NOTNULL(strstr(buf, "ARG1=hello-arg\n"));
@@ -78,7 +78,7 @@ int test_appimage_exit_code(void) {
     if (!appimg_ok()) return 1;
     char buf[512];
     setenv("AI_EXIT", "7", 1);
-    char *argv[] = { "/bin/appimage-run", APPIMG, NULL };
+    char *argv[] = { "/bin/kair", APPIMG, NULL };
     int rc = capture_cmd(argv, buf, sizeof(buf));
     unsetenv("AI_EXIT");
     ASSERT_EQ(7, rc);
@@ -95,7 +95,7 @@ int test_appimage_from_ext2(void) {
     char *cp[] = { "/bin/cp", APPIMG, "/mnt/app-e2e.img", NULL };
     ASSERT_EQ(0, run_cmd(cp));
     char buf[512];
-    char *argv[] = { "/bin/appimage-run", "/mnt/app-e2e.img", NULL };
+    char *argv[] = { "/bin/kair", "/mnt/app-e2e.img", NULL };
     int rc = capture_cmd(argv, buf, sizeof(buf));
     int ok = (rc == 0) && strstr(buf, "AppRun executed\n") && strstr(buf, "APPIMAGE=/mnt/app-e2e.img\n");
     unlink("/mnt/app-e2e.img");
@@ -110,7 +110,7 @@ int test_appimage_relative_path(void) {
     if (!getcwd(cwd, sizeof(cwd))) return 1;
     chdir("/");
     char buf[512];
-    char *argv[] = { "/bin/appimage-run", "app.img", NULL };
+    char *argv[] = { "/bin/kair", "app.img", NULL };
     int rc = capture_cmd(argv, buf, sizeof(buf));
     chdir(cwd);
     ASSERT_EQ(0, rc);
@@ -124,7 +124,7 @@ int test_appimage_cleanup(void) {
     if (!appimg_ok()) return 1;
     int free_before = loop_free(0);
     char buf[512];
-    char *argv[] = { "/bin/appimage-run", APPIMG, NULL };
+    char *argv[] = { "/bin/kair", APPIMG, NULL };
     ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));
     if (free_before) ASSERT_TRUE(loop_free(0));
     ASSERT_FALSE(tmp_has_aimnt());
@@ -134,11 +134,11 @@ REGISTER_TEST(appimage_cleanup, "Phase 7: AppImage");
 
 int test_appimage_invalid(void) {
     char buf[128];
-    char *argv1[] = { "/bin/appimage-run", "/no/such.img", NULL };
+    char *argv1[] = { "/bin/kair", "/no/such.img", NULL };
     ASSERT_EQ(1, capture_cmd(argv1, buf, sizeof(buf)));
-    char *argv2[] = { "/bin/appimage-run", "/etc/fstab", NULL };
+    char *argv2[] = { "/bin/kair", "/etc/fstab", NULL };
     ASSERT_EQ(1, capture_cmd(argv2, buf, sizeof(buf)));
-    char *argv3[] = { "/bin/appimage-run", NULL };
+    char *argv3[] = { "/bin/kair", NULL };
     ASSERT_EQ(1, capture_cmd(argv3, buf, sizeof(buf)));
     return 1;
 }
@@ -146,16 +146,16 @@ REGISTER_TEST(appimage_invalid, "Phase 7: AppImage");
 
 int test_appimage_version(void) {
     char buf[128];
-    char *argv[] = { "/bin/appimage-run", "--appimage-version", NULL };
+    char *argv[] = { "/bin/kair", "--appimage-version", NULL };
     ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));
-    ASSERT_NOTNULL(strstr(buf, "appimage-run 1.0"));
+    ASSERT_NOTNULL(strstr(buf, "kair 1.0"));
     return 1;
 }
 REGISTER_TEST(appimage_version, "Phase 7: AppImage");
 
 int test_appimage_unknown_option(void) {
     char buf[128];
-    char *argv[] = { "/bin/appimage-run", "--appimage-bogus", APPIMG, NULL };
+    char *argv[] = { "/bin/kair", "--appimage-bogus", APPIMG, NULL };
     ASSERT_EQ(1, capture_cmd(argv, buf, sizeof(buf)));
     return 1;
 }
@@ -171,7 +171,7 @@ static int appimg_xz_ok(void) {
 int test_appimage_xz_basic(void) {
     if (!appimg_xz_ok()) return 1;
     char buf[512];
-    char *argv[] = { "/bin/appimage-run", APPIMG_XZ, NULL };
+    char *argv[] = { "/bin/kair", APPIMG_XZ, NULL };
     int rc = capture_cmd(argv, buf, sizeof(buf));
     ASSERT_EQ(0, rc);
     ASSERT_NOTNULL(strstr(buf, "AppRun executed\n"));
@@ -184,7 +184,7 @@ REGISTER_TEST(appimage_xz_basic, "Phase 7: AppImage");
 int test_appimage_xz_args(void) {
     if (!appimg_xz_ok()) return 1;
     char buf[512];
-    char *argv[] = { "/bin/appimage-run", APPIMG_XZ, "hello-arg", NULL };
+    char *argv[] = { "/bin/kair", APPIMG_XZ, "hello-arg", NULL };
     int rc = capture_cmd(argv, buf, sizeof(buf));
     ASSERT_EQ(0, rc);
     ASSERT_NOTNULL(strstr(buf, "ARG1=hello-arg\n"));
@@ -196,7 +196,7 @@ int test_appimage_xz_exit_code(void) {
     if (!appimg_xz_ok()) return 1;
     char buf[512];
     setenv("AI_EXIT", "7", 1);
-    char *argv[] = { "/bin/appimage-run", APPIMG_XZ, NULL };
+    char *argv[] = { "/bin/kair", APPIMG_XZ, NULL };
     int rc = capture_cmd(argv, buf, sizeof(buf));
     unsetenv("AI_EXIT");
     ASSERT_EQ(7, rc);
@@ -209,7 +209,7 @@ int test_appimage_xz_cleanup(void) {
     if (!appimg_xz_ok()) return 1;
     int free_before = loop_free(0);
     char buf[512];
-    char *argv[] = { "/bin/appimage-run", APPIMG_XZ, NULL };
+    char *argv[] = { "/bin/kair", APPIMG_XZ, NULL };
     ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));
     if (free_before) ASSERT_TRUE(loop_free(0));
     ASSERT_FALSE(tmp_has_aimnt());
@@ -231,7 +231,7 @@ static int real_appimg_ok(void) {
 int test_appimage_real_basic(void) {
     if (!real_appimg_ok()) return 1;
     char buf[1024];
-    char *argv[] = { "/bin/appimage-run", REAL_APPIMG, NULL };
+    char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
     int rc = capture_cmd(argv, buf, sizeof(buf));
     ASSERT_EQ(0, rc);
     ASSERT_NOTNULL(strstr(buf, "REAL_APPRUN ok\n"));
@@ -244,7 +244,7 @@ REGISTER_TEST(appimage_real_basic, "Phase 7: AppImage");
 int test_appimage_real_bundled_libs(void) {
     if (!real_appimg_ok()) return 1;
     char buf[1024];
-    char *argv[] = { "/bin/appimage-run", REAL_APPIMG, NULL };
+    char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
     int rc = capture_cmd(argv, buf, sizeof(buf));
     ASSERT_EQ(0, rc);
     // Dynamic glibc binary executed via bundled loader/libs inside the image 
@@ -256,7 +256,7 @@ REGISTER_TEST(appimage_real_bundled_libs, "Phase 7: AppImage");
 int test_appimage_real_maps(void) {
     if (!real_appimg_ok()) return 1;
     char buf[1024];
-    char *argv[] = { "/bin/appimage-run", REAL_APPIMG, NULL };
+    char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
     int rc = capture_cmd(argv, buf, sizeof(buf));
     ASSERT_EQ(0, rc);
     ASSERT_NOTNULL(strstr(buf, "maps-ok\n"));
@@ -272,7 +272,7 @@ int test_appimage_real_isolation(void) {
     fputs("secret\n", s);
     fclose(s);
     char buf[1024];
-    char *argv[] = { "/bin/appimage-run", REAL_APPIMG, NULL };
+    char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
     int rc = capture_cmd(argv, buf, sizeof(buf));
     unlink("/etc/kyronix-host-sentinel");
     ASSERT_EQ(0, rc);
@@ -287,7 +287,7 @@ int test_appimage_real_args_exit(void) {
     if (!real_appimg_ok()) return 1;
     char buf[1024];
     setenv("AI_EXIT", "9", 1);
-    char *argv[] = { "/bin/appimage-run", REAL_APPIMG, "g3arg", NULL };
+    char *argv[] = { "/bin/kair", REAL_APPIMG, "g3arg", NULL };
     int rc = capture_cmd(argv, buf, sizeof(buf));
     unsetenv("AI_EXIT");
     ASSERT_EQ(9, rc);
@@ -299,7 +299,7 @@ REGISTER_TEST(appimage_real_args_exit, "Phase 7: AppImage");
 int test_appimage_real_cleanup(void) {
     if (!real_appimg_ok()) return 1;
     char buf[1024];
-    char *argv[] = { "/bin/appimage-run", REAL_APPIMG, NULL };
+    char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
     ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));
     // No sandbox residue left behind in /tmp 
     DIR *d = opendir("/tmp");
