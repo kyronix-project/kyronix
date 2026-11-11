@@ -20,6 +20,7 @@
 #include "drivers/ata/ahci.h"
 #include "drivers/block/block.h"
 #include "drivers/block/blockdev.h"
+#include "drivers/block/loop.h"
 #include "drivers/bus/pci/pci.h"
 #include "drivers/bus/spi/spi.h"
 #include "drivers/char/serial.h"
@@ -361,6 +362,7 @@ void kmain(void) {
     ahci_init();
     kstatus("Initialising AHCI", ahci_ready());
     blockdev_init();
+    loop_init();
     partition_scan_all();
     blockdev_create_all();
     kstatus("Initialising block devices", true);

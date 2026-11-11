@@ -87,6 +87,7 @@ KERNEL_C_SRCS := \
 	kernel/fs/partition.c \
 	kernel/drivers/block/block.c \
 	kernel/drivers/block/blockdev.c \
+	kernel/drivers/block/loop.c \
 	kernel/drivers/ata/ahci.c \
 	kernel/drivers/usb/usb.c \
 	kernel/drivers/usb/usb_glue.c \

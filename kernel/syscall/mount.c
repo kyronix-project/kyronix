@@ -1,5 +1,6 @@
 #include "mount.h"
 
+#include "drivers/block/block.h"
 #include "fs/vfs.h"
 #include "fs/vfs_internal.h"
 #include "internal.h"
@@ -168,7 +169,11 @@ static int mount_attach(mnt_namespace_t *ns, const char *target, const char *sou
     mnt_mount_t *m = ns_mnt_find(ns, target);
     if (!m) m = mount_slot(ns);
     if (!m) return -ENOSPC;
-    if (m->used && m->root) vfs_node_unref_internal(m->root);
+    if (m->used && m->root) {
+        struct filesystem *old_fs = vfs_find_fs(m->fstype);
+        if (old_fs && old_fs->destroy_root) old_fs->destroy_root(m->root);
+        vfs_node_unref_internal(m->root);
+    }
     memset(m, 0, sizeof(*m));
     strncpy(m->target, target, sizeof(m->target) - 1);
     strncpy(m->source, source, sizeof(m->source) - 1);
@@ -368,7 +373,30 @@ int64_t sys_mount(const char *source, const char *target, const char *fstype, ui
         root = vfs_create_mount_root(parse_mode(udata, def));
         if (!root) return -(int64_t) ENOMEM;
     } else {
-        return -(int64_t) ENODEV;
+        struct filesystem *fs = vfs_find_fs(ufstype);
+        if (!fs || !fs->build_root) return -(int64_t) ENODEV;
+        if (!ksrc[0]) return -(int64_t) EINVAL;
+
+        const char *devname = ksrc;
+        if (strncmp(devname, "/dev/", 5) == 0) devname += 5;
+        struct block_device *bd = block_by_name(devname);
+        if (!bd) return -(int64_t) ENODEV;
+
+        vfs_node_t *root = fs->build_root(bd);
+        if (!root) return -(int64_t) ENODEV;
+
+        int trc = ensure_target(ktarget, true);
+        if (trc < 0) {
+            vfs_node_unref_internal(root);
+            return trc;
+        }
+        uint32_t mflags = (uint32_t) flags;
+        if (fs->readonly) mflags |= MS_RDONLY;
+        int rc = mount_attach(ns, ktarget, ksrc, ufstype, root, mflags);
+        vfs_node_unref_internal(root);
+        if (rc < 0) return rc;
+        log_info("mount: %s on %s type %s", shown, ktarget, ufstype);
+        return 0;
     }
 
     int trc = ensure_target(ktarget, true);
@@ -395,7 +423,11 @@ int64_t sys_umount2(const char *target, int flags) {
 
     mnt_mount_t *m = ns_mnt_find(ns, ktarget);
     if (!m) return (flags & MNT_DETACH) ? 0 : -(int64_t) EINVAL;
-    if (m->root) vfs_node_unref_internal(m->root);
+    if (m->used && m->root) {
+        struct filesystem *fs = vfs_find_fs(m->fstype);
+        if (fs && fs->destroy_root) fs->destroy_root(m->root);
+        vfs_node_unref_internal(m->root);
+    }
     memset(m, 0, sizeof(*m));
     log_info("umount: %s", ktarget);
     return 0;

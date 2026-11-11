@@ -103,6 +103,9 @@ struct filesystem {
     bool (*unmount)(const char *);
     int (*sync)(void);
     int (*create)(struct vfs_node *node, const char *path, uint32_t mode);
+    struct vfs_node *(*build_root)(struct block_device *);
+    void (*destroy_root)(struct vfs_node *root);
+    bool readonly;
 };
 
 typedef struct vfs_node {

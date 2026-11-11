@@ -92,12 +92,15 @@ $(TEST_SQSH):
 	$(MKSQ)
 	@$(call ok,$(TEST_SQSH))
 
-$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE)
+$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH)
 	@$(call phase,Test initrd)
 	rm -rf $(TEST_ROOTFS)
 	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt $(TEST_ROOTFS)/sqfs \
 	    $(TEST_ROOTFS)/etc $(TEST_ROOTFS)/lib/modules
 	printf 'sdb /sqfs squashfs ro 0 0\n' > $(TEST_ROOTFS)/etc/fstab
+	python3 -c "import sys; d = bytearray(4096); d[0:4] = b'\x7fELF'; d[8:12] = b'AI\x02\x00'; \
+	    open('$(TEST_ROOTFS)/app.img','wb').write(d); \
+	    open('$(TEST_ROOTFS)/app.img','ab').write(open('$(TEST_SQSH)','rb').read())"
 	cp $(BUILD)/bin/testrunner $(TEST_ROOTFS)/init
 	cp $(KERNEL_MODULES) $(TEST_ROOTFS)/lib/modules/
 	cp $(TEST_MODULE) $(TEST_ROOTFS)/lib/modules/hello.ko

@@ -17,6 +17,7 @@ struct block_device {
     uint64_t sectors;
     uint32_t sector_size;
     struct block_device_ops *ops;
+    int (*ioctl)(struct block_device *dev, uint64_t req, uint64_t arg);
     void *priv;
     uint64_t offset_lba;
     struct block_device *parent;

@@ -1114,6 +1114,9 @@ static struct filesystem sqfs_fs = {
 	.name = "squashfs",
 	.check_root = NULL,
 	.mount = squashfs_mount,
+	.build_root = squashfs_build_root,
+	.destroy_root = squashfs_destroy,
+	.readonly = true,
 };
 
 void squashfs_init(void) { vfs_register_fs(&sqfs_fs); }
