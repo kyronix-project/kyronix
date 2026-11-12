@@ -567,7 +567,7 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
 #undef NEXT_EXEC_SLOT
 
     elf_load_result_t res;
-    if (elf_load(node->data, node->size, &res) < 0) {
+    if (elf_load(node->data, node->size, &res, exec_path) < 0) {
         vfs_node_unref_internal(node);
         FREE_EXEC_STRS();
         return -(int64_t) ENOEXEC;
@@ -597,7 +597,8 @@ int64_t sys_execve(const char *path, const char **uargv, const char **uenvp) {
         }
         elf_load_result_t ires;
         memset(&ires, 0, sizeof(ires));
-        if (elf_load_into(res.space, inode->data, inode->size, 0x7f0000000000ULL, &ires) < 0) {
+        if (elf_load_into(res.space, inode->data, inode->size, 0x7f0000000000ULL, &ires,
+                          res.interp) < 0) {
             vfs_node_unref_internal(inode);
             vmm_space_free(res.space);
             FREE_EXEC_STRS();

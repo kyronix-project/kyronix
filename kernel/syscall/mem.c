@@ -39,6 +39,7 @@ void syscall_set_brk(uint64_t brk_base) {
 static int64_t sys_brk_impl(uint64_t addr) {
     proc_t *p = cur();
     if (!p || !p->space) return -(int64_t) ENOMEM;
+    static const vma_ident_t heap_id = { .kind = VMA_KIND_HEAP, .name = "[heap]" };
     if (addr == 0) return (int64_t) p->brk;
     if (addr < p->brk_base) return (int64_t) p->brk;
     if (addr >= USER_LIMIT || addr > USER_LIMIT - (PAGE_SIZE - 1)) return (int64_t) p->brk;
@@ -56,7 +57,8 @@ static int64_t sys_brk_impl(uint64_t addr) {
         if (old_end > p->brk_base)
             vma_remove_overlaps(p->space, p->brk_base, old_end - p->brk_base);
         if (new_end > p->brk_base)
-            vma_add(p->space, p->brk_base, new_end - p->brk_base, PROT_READ | PROT_WRITE, 0, true);
+            vma_add(p->space, p->brk_base, new_end - p->brk_base, PROT_READ | PROT_WRITE, 0,
+                    true, &heap_id);
         p->brk = addr;
         return (int64_t) p->brk;
     }
@@ -87,7 +89,7 @@ static int64_t sys_brk_impl(uint64_t addr) {
     }
     p->pages_alloc += nallocd;
     if (old > p->brk_base) vma_remove_overlaps(p->space, p->brk_base, old - p->brk_base);
-    vma_add(p->space, p->brk_base, new - p->brk_base, PROT_READ | PROT_WRITE, 0, true);
+    vma_add(p->space, p->brk_base, new - p->brk_base, PROT_READ | PROT_WRITE, 0, true, &heap_id);
     p->brk = addr;
     return (int64_t) addr;
 }
@@ -218,10 +220,22 @@ static int64_t sys_mmap_impl(uint64_t addr, uint64_t length, uint64_t prot, uint
     if (prot & PROT_EXEC) vf &= ~(uint64_t) VMM_NX;
     bool reserve_only = (prot & (PROT_READ | PROT_WRITE | PROT_EXEC)) == 0;
 
+    vma_ident_t id = { .kind = VMA_KIND_ANON, .name = NULL };
+    if (!(flags & MAP_ANON) && file) {
+        id.kind = VMA_KIND_FILE;
+        id.name = file->path[0] ? file->path : fn->name;
+        id.file_off = off;
+        id.inode = fn->ino;
+    } else if (flags & (MAP_GROWSDOWN | MAP_STACK)) {
+        id.kind = VMA_KIND_STACK;
+        id.name = "[stack]";
+    }
+
     if (!(flags & MAP_ANON)) {
         // chr-dev with custom mmap (e.g. uio physical bar mapping)
         if (fn->type == VFS_TYPE_CHR && fn->chr_mmap) {
-            int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, false);
+            int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, false,
+                             &id);
             if (rc < 0) return rc;
             if (reserve_only) return (int64_t) va;
             int64_t mr = fn->chr_mmap(fn, off, length, va, vf);
@@ -235,7 +249,7 @@ static int64_t sys_mmap_impl(uint64_t addr, uint64_t length, uint64_t prot, uint
         if (fn->type != VFS_TYPE_REG) return -(int64_t) EBADF;
         if (fn->shmem) {
             if (off > UINT64_MAX - length) return -(int64_t) EINVAL;
-            int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, true);
+            int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, true, &id);
             if (rc < 0) return rc;
             if (reserve_only) return (int64_t) va;
             for (uint64_t o = 0; o < length; o += PAGE_SIZE) {
@@ -268,7 +282,7 @@ static int64_t sys_mmap_impl(uint64_t addr, uint64_t length, uint64_t prot, uint
             return (int64_t) va;
         }
 
-        int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, true);
+        int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, true, &id);
         if (rc < 0) return rc;
         if (reserve_only) return (int64_t) va;
 
@@ -301,7 +315,7 @@ static int64_t sys_mmap_impl(uint64_t addr, uint64_t length, uint64_t prot, uint
         return (int64_t) va;
     }
 
-    int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, true);
+    int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, true, &id);
     if (rc < 0) return rc;
     if (reserve_only) return (int64_t) va;
 
@@ -441,7 +455,22 @@ static int64_t sys_mremap_impl(uint64_t old_addr, uint64_t old_sz, uint64_t new_
         if (pick < 0) return pick;
     }
 
-    int rc = vma_add(p->space, new_va, new_sz, old_prot, old_map_flags, true);
+    vma_ident_t mid;
+    char mid_name[256];
+    const vma_meta_t *sm = vma_get_meta(p->space, old_addr);
+    memset(&mid, 0, sizeof(mid));
+    if (sm) {
+        mid.kind = sm->kind;
+        mid.file_off = sm->file_off;
+        mid.dev_major = sm->dev_major;
+        mid.dev_minor = sm->dev_minor;
+        mid.inode = sm->inode;
+        strncpy(mid_name, sm->name, sizeof(mid_name) - 1);
+        mid_name[sizeof(mid_name) - 1] = '\0';
+        mid.name = mid_name;
+    }
+
+    int rc = vma_add(p->space, new_va, new_sz, old_prot, old_map_flags, true, &mid);
     if (rc < 0) return rc;
 
     uint64_t page_flags = VMM_USER | VMM_NX;

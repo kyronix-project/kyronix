@@ -80,8 +80,9 @@ uint64_t setup_user_stack(vmm_space_t *space, const elf_load_result_t *elf, int 
         }
     }
 
+    vma_ident_t stack_id = { .kind = VMA_KIND_STACK, .name = "[stack]" };
     if (vma_add(space, USER_STACK_GROW_BASE, stack_top - USER_STACK_GROW_BASE,
-                PROT_READ | PROT_WRITE, 0, true) < 0) {
+                PROT_READ | PROT_WRITE, 0, true, &stack_id) < 0) {
         stack_release(space, stack_base, phys, USER_STACK_PAGES, false);
         return 0;
     }
@@ -186,7 +187,7 @@ uint64_t setup_user_stack(vmm_space_t *space, const elf_load_result_t *elf, int 
 
 int process_exec(const void *data, uint64_t size, const char *name) {
     elf_load_result_t res;
-    if (elf_load(data, size, &res) < 0) {
+    if (elf_load(data, size, &res, name) < 0) {
         log_error("process_exec: elf_load failed");
         kfree((void *) data);
         return -1;
@@ -218,6 +219,16 @@ int process_exec(const void *data, uint64_t size, const char *name) {
     p->jail_id = JAIL_HOST;
     p->jail_exempt = 1; // init lineage is never auto-isolated
     p->state = PROC_RUNNING;
+
+    if (name) {
+        strncpy(p->exe_path, name, sizeof(p->exe_path) - 1);
+        p->exe_path[sizeof(p->exe_path) - 1] = '\0';
+        const char *base = name;
+        for (const char *c = name; *c; c++)
+            if (*c == '/') base = c + 1;
+        strncpy(p->comm, base, sizeof(p->comm) - 1);
+        p->comm[sizeof(p->comm) - 1] = '\0';
+    }
 
     vfs_copy_fdtable(p->fds, vfs_get_fdtable());
     vfs_set_fdtable(p->fds);

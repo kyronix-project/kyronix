@@ -16,6 +16,7 @@
 #include "prof/profiler.h"
 #endif
 #include "mm/pmm.h"
+#include "mm/vma.h"
 #include "mm/vmm.h"
 #include "module/loader.h"
 #include "proc/jail.h"
@@ -640,19 +641,92 @@ static int64_t proc_self_statm_read(vfs_node_t *n, char *buf, uint64_t len, uint
     return read_buf(buf, len, off, tmp, (uint64_t) sz);
 }
 
+static int maps_line(vmm_space_t *sp, int i, char *out, uint64_t cap) {
+    vmm_vma_t *v = &sp->vmas[i];
+    const vma_meta_t *m = sp->vma_meta[i];
+
+    char perms[5];
+    perms[0] = (v->prot & PROT_READ) ? 'r' : '-';
+    perms[1] = (v->prot & PROT_WRITE) ? 'w' : '-';
+    perms[2] = (v->prot & PROT_EXEC) ? 'x' : '-';
+    perms[3] = (v->map_flags & VMA_MAP_SHARED) ? 's' : 'p';
+    perms[4] = '\0';
+
+    bool has_file = m && m->kind == VMA_KIND_FILE;
+    int n = snprintf(out, cap, "%08lx-%08lx %s %08lx %02x:%02x %lu %s\n",
+                     (unsigned long) v->start, (unsigned long) v->end, perms,
+                     (unsigned long) (has_file ? m->file_off : 0), has_file ? m->dev_major : 0,
+                     has_file ? m->dev_minor : 0, (unsigned long) (has_file ? m->inode : 0),
+                     m ? m->name : "");
+    if (n < 0) return -1;
+    return (int) ((uint64_t) n < cap ? (uint64_t) n : cap - 1);
+}
+
+static int maps_ordered_slots(vmm_space_t *sp, uint16_t *out, int cap) {
+    int n = 0;
+    for (int i = 0; i < VMM_VMA_MAX; i++)
+        if (sp->vmas[i].used) {
+            if (n == cap) break;
+            out[n++] = (uint16_t) i;
+        }
+    for (int a = 1; a < n; a++) {
+        uint16_t key = out[a];
+        uint64_t ks = sp->vmas[key].start;
+        int b = a - 1;
+        while (b >= 0 && sp->vmas[out[b]].start > ks) {
+            out[b + 1] = out[b];
+            b--;
+        }
+        out[b + 1] = key;
+    }
+    return n;
+}
+
 static int64_t proc_self_maps_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {
     proc_t *p = node_to_proc(n);
-    if (!p) return 0;
-    char tmp[768];
-    const char *exe = p->exe_path[0] ? p->exe_path : "";
-    // randomized addresses: don't leak actual VA to non-root
-    int sz = snprintf(tmp, sizeof(tmp),
-                      "00400000-00800000 r-xp 00000000 00:00 0 %s\n"
-                      "xxxxxxxx-xxxxxxxx rw-p 00000000 00:00 0 [heap]\n"
-                      "yyyyyyyy-yyyyyyyy rw-p 00000000 00:00 0 [stack]\n",
-                      exe);
+    if (!p || !p->space || !len) {
+        if (p && n->fs_private) proc_unref(p);
+        return 0;
+    }
+
+    uint16_t order[VMM_VMA_MAX];
+    int nslots = maps_ordered_slots(p->space, order, VMM_VMA_MAX);
+
+    int64_t rc = 0;
+    uint64_t produced = 0;
+    uint64_t line_start = 0;
+    char tmp[512];
+
+    for (int k = 0; k < nslots; k++) {
+        int i = order[k];
+        int n_ = maps_line(p->space, i, tmp, sizeof(tmp));
+        if (n_ < 0) break;
+        uint64_t llen = (uint64_t) n_;
+        uint64_t line_end = line_start + llen;
+
+        if (line_end <= off) {
+            line_start = line_end;
+            continue;
+        }
+
+        uint64_t from = off > line_start ? off - line_start : 0;
+        uint64_t take = llen - from;
+        if (take > len - produced) take = len - produced;
+        if (!uptr_ok_w(buf + produced, take)) {
+            rc = -(int64_t) EFAULT;
+            goto out;
+        }
+        memcpy(buf + produced, tmp + from, take);
+        produced += take;
+        off += take;
+        line_start = line_end;
+        if (produced == len) break;
+    }
+
+    rc = (int64_t) produced;
+out:
     if (n->fs_private) proc_unref(p);
-    return read_buf(buf, len, off, tmp, (uint64_t) sz);
+    return rc;
 }
 
 static int64_t proc_self_pagemap_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t off) {

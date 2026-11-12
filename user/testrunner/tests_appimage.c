@@ -259,7 +259,17 @@ int test_appimage_real_maps(void) {
     char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
     int rc = capture_cmd(argv, buf, sizeof(buf));
     ASSERT_EQ(0, rc);
-    ASSERT_NOTNULL(strstr(buf, "maps-ok\n"));
+
+    char *p = strstr(buf, "maps-ok");
+    ASSERT_NOTNULL(p);
+    int lines = 0, bad = 0, exec = 0, stack = 0, named_exe = 0;
+    ASSERT_EQ(5, sscanf(p, "maps-ok lines=%d bad=%d exec=%d stack=%d named_exe=%d", &lines, &bad,
+                        &exec, &stack, &named_exe));
+    ASSERT_GT(lines, 2);
+    ASSERT_EQ(0, bad);
+    ASSERT_GT(exec, 0);
+    ASSERT_GT(stack, 0);
+    ASSERT_GT(named_exe, 0);
     return 1;
 }
 REGISTER_TEST(appimage_real_maps, "Phase 7: AppImage");
