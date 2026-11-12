@@ -17,7 +17,8 @@ import tempfile
 import urllib.request
 
 BASE = "https://deb.debian.org/debian/dists/bookworm/main/binary-amd64/"
-PKGS = ["libc6", "libgcc-s1", "libstdc++6", "zlib1g"]
+PKGS = ["libc6", "libgcc-s1", "libstdc++6", "zlib1g",
+        "libwayland-client0", "libffi8"]
 
 
 def fetch(url, dest):

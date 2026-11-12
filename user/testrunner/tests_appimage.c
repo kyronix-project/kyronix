@@ -583,8 +583,80 @@ int test_appimage_shm_visible_in_sandbox(void) {
     if (!real_appimg_ok()) return 1;
     char buf[2048];
     char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
-    ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));q
+    ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));
     ASSERT_NOTNULL(strstr(buf, "dev_shm_writable=1\n"));
     return 1;
 }
 REGISTER_TEST(appimage_shm_visible_in_sandbox, "Phase 9: Wayland");
+
+#define WL_PROBEIMG "/wl_probe.img"
+
+static int wl_probe_ok(void) {
+    struct stat st;
+    return stat(WL_PROBEIMG, &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 4096 &&
+           appimg_sandboxed();
+}
+
+int test_appimage_wl_probe_loads(void) {
+    if (!wl_probe_ok()) return 1;
+    char buf[2048];
+    char *argv[] = { "/bin/kair", WL_PROBEIMG, NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    if (rc != 0 && failure_pipe[1] >= 0)
+        dprintf(failure_pipe[1], "wl probe rc=%d out=[%.400s]\n", rc, buf);
+    ASSERT_EQ(0, rc);
+    ASSERT_NOTNULL(strstr(buf, "WL_PROBE ok\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_wl_probe_loads, "Phase 9: Wayland");
+
+int test_appimage_wl_probe_no_compositor(void) {
+    if (!wl_probe_ok()) return 1;
+    char buf[2048];
+    char *argv[] = { "/bin/kair", WL_PROBEIMG, NULL };
+    ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));
+    ASSERT_NOTNULL(strstr(buf, "wl_display_connect=0"));
+    ASSERT_NOTNULL(strstr(buf, "wl_globals=0\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_wl_probe_no_compositor, "Phase 9: Wayland");
+
+int test_appimage_wl_probe_connect_attempted(void) {
+    if (!wl_probe_ok()) return 1;
+    if (!kx_rt_setup()) return 1;
+
+    setenv("XDG_RUNTIME_DIR", kx_rtdir, 1);
+    setenv("WAYLAND_DISPLAY", KX_FAKE_SOCKET, 1);
+    char buf[2048];
+    char *argv[] = { "/bin/kair", WL_PROBEIMG, NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    unsetenv("XDG_RUNTIME_DIR");
+    unsetenv("WAYLAND_DISPLAY");
+
+    ASSERT_EQ(0, rc);
+    char expect[512];
+    snprintf(expect, sizeof(expect), "xdg_runtime=%s\n", kx_rtdir);
+    ASSERT_NOTNULL(strstr(buf, expect));
+    ASSERT_NOTNULL(strstr(buf, "wayland_display=" KX_FAKE_SOCKET "\n"));
+    ASSERT_NOTNULL(strstr(buf, "wl_display_connect=0"));
+    kx_rt_cleanup();
+    return 1;
+}
+REGISTER_TEST(appimage_wl_probe_connect_attempted, "Phase 9: Wayland");
+
+int test_appimage_wl_probe_finds_sysroot_lib(void) {
+    if (!wl_probe_ok()) return 1;
+    char buf[2048];
+    char *argv[] = { "/bin/kair", WL_PROBEIMG, NULL };
+    ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));
+    char *p = strstr(buf, "wl_lib_sysroot=");
+    ASSERT_NOTNULL(p);
+    int sysroot = 0, wldir = 0, app = 0;
+    ASSERT_EQ(3, sscanf(p, "wl_lib_sysroot=%d wl_lib_wayland_dir=%d wl_lib_app=%d", &sysroot,
+                        &wldir, &app));
+    ASSERT_GT(sysroot, 0);
+    ASSERT_EQ(0, wldir);
+    ASSERT_EQ(0, app);
+    return 1;
+}
+REGISTER_TEST(appimage_wl_probe_finds_sysroot_lib, "Phase 9: Wayland");

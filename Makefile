@@ -32,7 +32,7 @@ CONTAINER_GOALS := $(filter-out run boot,$(BUILD_GOALS)) \
 # on the host via a throwaway debian container BEFORE the Alpine build runs,
 # cuz the kyronix-build image has no glibc/apt. The inner make then treats
 # these as already-present prerequisites and only packs/wraps them.
-DEBIAN_FIXTURE_TARGETS := build/fixtures-glibc/.stamp build/real-app.img
+DEBIAN_FIXTURE_TARGETS := build/fixtures-glibc/.stamp build/real-app.img build/wl-probe.img
 
 fixture-pre:
 	@$(call phase,Debian fixtures (host))

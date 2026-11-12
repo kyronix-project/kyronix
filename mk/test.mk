@@ -161,7 +161,7 @@ $(BASH_APPIMG): $(BASH_APP_SQSH) scripts/wrap_appimages.py
 	@python3 $(CURDIR)/scripts/wrap_appimages.py --single $(BASH_APP_SQSH) $(BASH_APPIMG)
 	@$(call ok,$(BASH_APPIMG))
 
-$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH) $(TEST_SQSH_XZ) $(GLIBC_STAMP) $(SYSROOT_SQSH) $(REAL_APPIMG) $(BASH_STAMP) $(BASH_APPIMG) $(NVIM_STAMP)
+$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH) $(TEST_SQSH_XZ) $(GLIBC_STAMP) $(SYSROOT_SQSH) $(REAL_APPIMG) $(BASH_STAMP) $(BASH_APPIMG) $(NVIM_STAMP) $(WL_PROBEIMG)
 	@$(call phase,Test initrd)
 	rm -rf $(TEST_ROOTFS)
 	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt $(TEST_ROOTFS)/sqfs \
@@ -186,6 +186,13 @@ $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/test
 	    cp $(NVIM_APPIMG) $(TEST_ROOTFS)/nvim.appimage; \
 	else \
 	    echo "  [WARN] no neovim AppImage; real-app tests will skip"; \
+	fi
+	@# The Wayland client goes through the sysroot, not the image: it has no
+	@# libs/ of its own, so its libwayland-client comes from the glibc sysroot.
+	@if [ -f $(WL_PROBEIMG) ]; then \
+	    cp $(WL_PROBEIMG) $(TEST_ROOTFS)/wl_probe.img; \
+	else \
+	    echo "  [WARN] no Wayland client fixture; wayland tests will skip"; \
 	fi
 	mkdir -p $(TEST_ROOTFS)/glibc $(TEST_ROOTFS)/lib64
 	cp $(GLIBC_FIXTURES)/hello-glibc $(GLIBC_FIXTURES)/libc.so.6 $(GLIBC_FIXTURES)/libm.so.6 $(TEST_ROOTFS)/glibc/

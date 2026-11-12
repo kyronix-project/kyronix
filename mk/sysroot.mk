@@ -92,3 +92,50 @@ endif
 $(REAL_APPIMG): $(REAL_APP_SQSH) scripts/wrap_appimages.py
 	@python3 $(CURDIR)/scripts/wrap_appimages.py --single $(REAL_APP_SQSH) $(REAL_APPIMG)
 	@$(call ok,$(REAL_APPIMG))
+
+WL_PROBEIMG := $(BUILD)/wl-probe.img
+WL_PROBE_SQSH := $(BUILD)/wl-probe.sqsh
+WL_PROBE_STAGE := $(BUILD)/wl-probe-stage
+WL_PROBE_SRC := user/testrunner/fixtures/appimg/WaylandProbe.c
+
+WL_PROBE_SCRIPT := \
+    set -e; export DEBIAN_FRONTEND=noninteractive; \
+    apt-get update >/dev/null 2>&1; \
+    apt-get install -y --no-install-recommends gcc libc6-dev libwayland-dev >/dev/null 2>&1; \
+    rm -rf /src/$(WL_PROBE_STAGE); mkdir -p /src/$(WL_PROBE_STAGE); \
+    gcc -O2 -o /src/$(WL_PROBE_STAGE)/AppRun /src/$(WL_PROBE_SRC) -lwayland-client; \
+    chmod 755 /src/$(WL_PROBE_STAGE)/AppRun; \
+    echo WL_PROBE_OK
+
+ifeq ($(strip $(INSIDE_CONTAINER)),1)
+WL_PROBE_BUILD := @echo "WL_PROBE_OK (prebuilt by outer stage)"
+else
+WL_PROBE_BUILD := $(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
+    docker.io/library/debian:bookworm-slim sh -c "$(WL_PROBE_SCRIPT)"
+endif
+
+$(WL_PROBE_STAGE): $(WL_PROBE_SRC)
+	@$(call phase,Wayland client fixture)
+	rm -rf $(WL_PROBE_STAGE); mkdir -p $(WL_PROBE_STAGE)
+	@out=$$($(WL_PROBE_BUILD) 2>/dev/null || true); \
+	if echo "$$out" | grep -q WL_PROBE_OK && [ -f $(WL_PROBE_STAGE)/AppRun ]; then \
+	    $(call ok,Wayland probe staged); \
+	else \
+	    rm -rf $(WL_PROBE_STAGE); \
+	    $(call warn,Wayland probe build failed - wayland tests will skip); \
+	fi
+
+$(WL_PROBE_SQSH): $(WL_PROBE_STAGE) $(WL_PROBE_SRC)
+ifeq ($(strip $(INSIDE_CONTAINER)),1)
+	@command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
+	    mksquashfs $(WL_PROBE_STAGE) $(WL_PROBE_SQSH) -comp xz -b 131072 -noappend -no-progress >/dev/null
+else
+	@$(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
+	    $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
+	    sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
+	        mksquashfs /src/$(WL_PROBE_STAGE) /src/$(WL_PROBE_SQSH) -comp xz -b 131072 -noappend -no-progress" >/dev/null
+endif
+
+$(WL_PROBEIMG): $(WL_PROBE_SQSH) scripts/wrap_appimages.py
+	@python3 $(CURDIR)/scripts/wrap_appimages.py --single $(WL_PROBE_SQSH) $(WL_PROBEIMG)
+	@$(call ok,$(WL_PROBEIMG))
