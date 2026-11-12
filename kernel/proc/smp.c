@@ -22,6 +22,17 @@ extern void syscall_entry(void);
 volatile uint32_t g_cpu_count = 1;
 volatile uint32_t g_aps_ready = 0;
 volatile uint32_t g_kernel_ready = 0;
+volatile uint64_t g_cpu_sleep_mask = 0;
+
+void sched_kick_sleepers(void) {
+    uint64_t mask = __atomic_load_n(&g_cpu_sleep_mask, __ATOMIC_RELAXED);
+    while (mask) {
+        int i = __builtin_ctzll(mask);
+        mask &= mask - 1;
+        if (i >= MAX_CPUS) break;
+        lapic_send_ipi(g_cpu_local[i].lapic_id, LAPIC_TIMER_VEC | ICR_LEVEL_ASSERT);
+    }
+}
 
 static volatile struct limine_smp_request smp_req = {
     .id = LIMINE_SMP_REQUEST,
@@ -85,7 +96,7 @@ void __attribute__((noreturn)) ap_sched_loop(void) {
             g_current_space = idle->space;
             cpu_set_kernel_stack(idle->kstack_top);
         } else {
-            __asm__ volatile("sti; hlt" ::: "memory");
+            sched_cpu_sleep();
         }
     }
 }
@@ -127,6 +138,7 @@ void __attribute__((noreturn)) ap_init_cpu(cpu_local_t *cpu) {
     while (__atomic_load_n(&g_kernel_ready, __ATOMIC_ACQUIRE) == 0) cpu_relax();
 
     lapic_timer_start_periodic(250);
+    sti();
 
     ap_sched_loop();
 }

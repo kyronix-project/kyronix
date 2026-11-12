@@ -181,9 +181,7 @@ int64_t sys_pause(void) {
         }
         if (!next) {
             cpu_set_kernel_stack(p->kstack_top);
-            sti();
-            hlt();
-            cli();
+            sched_cpu_sleep();
             continue;
         }
         p->state = PROC_WAITING;
@@ -226,9 +224,7 @@ int64_t sys_rt_sigsuspend(const uint64_t *mask, uint64_t sigsetsize) {
         }
         if (!next) {
             cpu_set_kernel_stack(p->kstack_top);
-            sti();
-            hlt();
-            cli();
+            sched_cpu_sleep();
             continue;
         }
         p->state = PROC_WAITING;
@@ -305,9 +301,7 @@ int64_t sys_rt_sigtimedwait(const uint64_t *set, void *info, const void *timeout
         if (proc_next_ready(p))
             sched_yield_blocking();
         else {
-            sti();
-            hlt();
-            cli();
+            sched_cpu_sleep();
         }
     }
     uint64_t bit = p->pending_sigs & mask;

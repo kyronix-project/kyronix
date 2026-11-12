@@ -90,9 +90,7 @@ int64_t sys_futex(uint32_t *uaddr, int op, uint32_t val, void *timeout, uint32_t
                     proc_set_ready(p);
                 sched_block_current();
             } else {
-                sti();
-                hlt();
-                cli();
+                sched_cpu_sleep();
             }
         }
         bool timed_out = deadline && g_ticks >= deadline;

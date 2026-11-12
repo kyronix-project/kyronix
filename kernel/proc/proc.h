@@ -148,10 +148,14 @@ static inline proc_t *proc_slot_of_pid(uint32_t pid) {
     return p;
 }
 
+extern volatile uint64_t g_cpu_sleep_mask;
+void sched_kick_sleepers(void);
+
 static inline void proc_set_ready(proc_t *p) {
     int bit = proc_slot(p);
     __atomic_fetch_or(&g_used_mask, 1ULL << bit, __ATOMIC_RELAXED);
     __atomic_fetch_or(&g_ready_mask, 1ULL << bit, __ATOMIC_RELEASE);
+    sched_kick_sleepers();
 }
 
 static inline void proc_publish_ready(proc_t *p) {
@@ -196,6 +200,12 @@ static inline proc_t **__g_current_proc_slot(void) {
     return (proc_t **) &g_cpu_local[cpu_id].current;
 }
 #define g_current_proc (*__g_current_proc_slot())
+
+static inline void sched_cpu_sleep(void) {
+    __atomic_fetch_or(&g_cpu_sleep_mask, 1ULL << this_cpu_id(), __ATOMIC_RELEASE);
+    __asm__ volatile("sti; hlt" ::: "memory");
+    __atomic_fetch_and(&g_cpu_sleep_mask, ~(1ULL << this_cpu_id()), __ATOMIC_RELAXED);
+}
 
 void proc_init(void);
 proc_t *proc_alloc(uint32_t ppid);

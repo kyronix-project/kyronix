@@ -57,9 +57,7 @@ int64_t sys_nanosleep(void *r, void *m) {
         if (proc_next_ready(p))
             sched_yield_blocking();
         else {
-            sti();
-            hlt();
-            cli();
+            sched_cpu_sleep();
         }
     }
     p->wakeup_tick = 0;
@@ -92,9 +90,7 @@ int64_t sys_clock_nanosleep(int clockid, int flags, const void *req, void *rem) 
         if (proc_next_ready(p))
             sched_yield_blocking();
         else {
-            sti();
-            hlt();
-            cli();
+            sched_cpu_sleep();
         }
     }
     p->wakeup_tick = 0;
