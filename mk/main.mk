@@ -13,8 +13,10 @@ TEST_ISO := $(DIST)/kyronix-test.iso
 include mk/common.mk
 include mk/output.mk
 include mk/kernel.mk
+include mk/bash.mk
 include mk/userspace.mk
 include mk/sysroot.mk
+include mk/nvim.mk
 include mk/image.mk
 include mk/qemu.mk
 include mk/test.mk

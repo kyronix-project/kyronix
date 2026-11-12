@@ -19,11 +19,14 @@ typedef struct {
 } loop_info64_t;
 
 #define APPIMG "/app.img"
+#define SYSROOT_PRESENT "/usr/lib/sysroots/debian.sqsh"
 
 static int appimg_ok(void) {
     struct stat st;
     return stat(APPIMG, &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 4096;
 }
+
+static int appimg_sandboxed(void) { return access(SYSROOT_PRESENT, F_OK) == 0; }
 
 static int loop_free(int n) {
     char dev[32];
@@ -57,7 +60,8 @@ int test_appimage_basic(void) {
     int rc = capture_cmd(argv, buf, sizeof(buf));
     ASSERT_EQ(0, rc);
     ASSERT_NOTNULL(strstr(buf, "AppRun executed\n"));
-    ASSERT_NOTNULL(strstr(buf, "APPDIR=/tmp/aimnt-"));
+
+    ASSERT_NOTNULL(strstr(buf, "APPDIR=/tmp/aisb-"));
     ASSERT_NOTNULL(strstr(buf, "APPIMAGE=/app.img\n"));
     return 1;
 }
@@ -175,7 +179,7 @@ int test_appimage_xz_basic(void) {
     int rc = capture_cmd(argv, buf, sizeof(buf));
     ASSERT_EQ(0, rc);
     ASSERT_NOTNULL(strstr(buf, "AppRun executed\n"));
-    ASSERT_NOTNULL(strstr(buf, "APPDIR=/tmp/aimnt-"));
+    ASSERT_NOTNULL(strstr(buf, "APPDIR=/tmp/aisb-"));
     ASSERT_NOTNULL(strstr(buf, "APPIMAGE=" APPIMG_XZ "\n"));
     return 1;
 }
@@ -219,13 +223,12 @@ REGISTER_TEST(appimage_xz_cleanup, "Phase 7: AppImage");
 
 // real glibc AppImage + sandboxing
 #define REAL_APPIMG "/real_app.img"
-#define SYSROOT_PRESENT "/usr/lib/sysroots/debian.sqsh"
 
 static int real_appimg_ok(void) {
     struct stat st;
     // Both the image and the sysroot must exist for the sandbox path to run.
     return stat(REAL_APPIMG, &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 4096 &&
-           access(SYSROOT_PRESENT, F_OK) == 0;
+           appimg_sandboxed();
 }
 
 int test_appimage_real_basic(void) {
@@ -326,3 +329,65 @@ int test_appimage_real_cleanup(void) {
     return 1;
 }
 REGISTER_TEST(appimage_real_cleanup, "Phase 7: AppImage");
+
+#define BASH_APPIMG "/bash_app.img"
+
+static int bash_appimg_fixture_ok(void) {
+    struct stat st;
+    if (stat(BASH_APPIMG, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size <= 4096) return 0;
+    if (access("/bin/bash", X_OK) != 0) return 0;
+    return 1;
+}
+
+int test_appimage_script_apprun_sandboxed(void) {
+    ASSERT_TRUE(bash_appimg_fixture_ok());
+    if (!appimg_sandboxed()) return 1; /* no sysroot: nothing to load the app with */
+    char buf[1024];
+    char *argv[] = { "/bin/kair", BASH_APPIMG, NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    ASSERT_EQ(0, rc);
+    /* bash ran the script at all */
+    ASSERT_NOTNULL(strstr(buf, "bash-apprun ok\n"));
+    /* and it was inside the chroot: $0's dirname is /app, the in-sandbox path */
+    ASSERT_NOTNULL(strstr(buf, "apdir=/app\n"));
+    /* APPDIR is the sandbox path, proving the sandbox was built */
+    ASSERT_NOTNULL(strstr(buf, "APPDIR=/tmp/aisb-"));
+    /* the glibc binary the script exec'd loaded through the sysroot */
+    ASSERT_NOTNULL(strstr(buf, "REAL_APPRUN ok\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_script_apprun_sandboxed, "Phase 7: AppImage");
+
+int test_appimage_script_apprun_args(void) {
+    ASSERT_TRUE(bash_appimg_fixture_ok());
+    if (!appimg_sandboxed()) return 1;
+    char buf[1024];
+    char *argv[] = { "/bin/kair", BASH_APPIMG, "scriptarg", NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    ASSERT_EQ(0, rc);
+    /* ${@+"$@"} survives the script and reaches the exec'd binary */
+    ASSERT_NOTNULL(strstr(buf, "ARG1=scriptarg\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_script_apprun_args, "Phase 7: AppImage");
+
+int test_appimage_script_apprun_cleanup(void) {
+    ASSERT_TRUE(bash_appimg_fixture_ok());
+    if (!appimg_sandboxed()) return 1;
+    char buf[1024];
+    char *argv[] = { "/bin/kair", BASH_APPIMG, NULL };
+    ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));
+    DIR *d = opendir("/tmp");
+    ASSERT_NOTNULL(d);
+    struct dirent *e;
+    int resid = 0;
+    while ((e = readdir(d)) != NULL) {
+        if (strncmp(e->d_name, "aisb-", 5) == 0 || strncmp(e->d_name, "aisr-", 5) == 0 ||
+            strncmp(e->d_name, "aimnt-", 6) == 0)
+            resid = 1;
+    }
+    closedir(d);
+    ASSERT_FALSE(resid);
+    return 1;
+}
+REGISTER_TEST(appimage_script_apprun_cleanup, "Phase 7: AppImage");

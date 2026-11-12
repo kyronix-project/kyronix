@@ -6,7 +6,7 @@ TEST_SQSH := $(BUILD)/test.sqsh
 TEST_SQSH_XZ := $(BUILD)/test-xz.sqsh
 TEST_SQFS_SRC := $(BUILD)/sqfs-src
 TEST_LOG := $(BUILD)/test.log
-TEST_TIMEOUT ?= 120
+TEST_TIMEOUT ?= 600
 TEST_MODULE := $(BUILD)/hello.ko
 TEST_DEP_MODULE := $(BUILD)/hello_user.ko
 FUZZ_ISO := $(DIST)/kyronix-posix-fuzz.iso
@@ -130,7 +130,38 @@ $(TEST_SQSH_XZ): $(TEST_SQFS_SRC)
 	$(MKSQ_XZ)
 	@$(call ok,$(TEST_SQSH_XZ))
 
-$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH) $(TEST_SQSH_XZ) $(GLIBC_STAMP) $(SYSROOT_SQSH) $(REAL_APPIMG)
+# A script AppRun with no libs/, which is the shape real AppImages have. The
+# script is the same construct neovim uses, so the test covers dirname and
+# readlink -f resolving inside the chroot; usr/bin/prog is the glibc fixture
+# binary, which only loads where the sysroot provides its interpreter.
+BASH_APP_STAGE := $(BUILD)/bash-app-stage
+BASH_APP_SQSH := $(BUILD)/bash-app.sqsh
+BASH_APPIMG := $(BUILD)/bash-app.img
+
+$(BASH_APP_STAGE): $(REAL_APP_STAGE)
+	@$(call phase,Script AppRun fixture)
+	rm -rf $(BASH_APP_STAGE)
+	mkdir -p $(BASH_APP_STAGE)/usr/bin
+	cp $(REAL_APP_STAGE)/AppRun $(BASH_APP_STAGE)/usr/bin/prog
+	printf '#!/bin/bash\nunset ARGV0\necho "bash-apprun ok"\necho "apdir=$$(dirname "$$(readlink -f "$${0}")")"\nexec "$$(dirname "$$(readlink -f "$${0}")")/usr/bin/prog" $${@+"$$@"}\n' > $(BASH_APP_STAGE)/AppRun
+	chmod 755 $(BASH_APP_STAGE)/AppRun
+
+$(BASH_APP_SQSH): $(BASH_APP_STAGE)
+ifeq ($(strip $(INSIDE_CONTAINER)),1)
+	@command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
+	    mksquashfs $(BASH_APP_STAGE) $(BASH_APP_SQSH) -comp xz -b 131072 -noappend -no-progress >/dev/null
+else
+	@$(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
+	    $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
+	    sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
+	        mksquashfs /src/$(BASH_APP_STAGE) /src/$(BASH_APP_SQSH) -comp xz -b 131072 -noappend -no-progress" >/dev/null
+endif
+
+$(BASH_APPIMG): $(BASH_APP_SQSH) scripts/wrap_appimages.py
+	@python3 $(CURDIR)/scripts/wrap_appimages.py --single $(BASH_APP_SQSH) $(BASH_APPIMG)
+	@$(call ok,$(BASH_APPIMG))
+
+$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH) $(TEST_SQSH_XZ) $(GLIBC_STAMP) $(SYSROOT_SQSH) $(REAL_APPIMG) $(BASH_STAMP) $(BASH_APPIMG) $(NVIM_STAMP)
 	@$(call phase,Test initrd)
 	rm -rf $(TEST_ROOTFS)
 	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt $(TEST_ROOTFS)/sqfs \
@@ -141,6 +172,16 @@ $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/test
 	    cp $(REAL_APPIMG) $(TEST_ROOTFS)/real_app.img; \
 	else \
 	    echo "  [WARN] no real AppImage fixture; real-appimage tests will skip"; \
+	fi
+	@if [ -f $(BASH_APPIMG) ]; then \
+	    cp $(BASH_APPIMG) $(TEST_ROOTFS)/bash_app.img; \
+	else \
+	    echo "  [WARN] no script-AppRun fixture; bash-appimage tests will skip"; \
+	fi
+	@if [ -s $(NVIM_APPIMG) ]; then \
+	    cp $(NVIM_APPIMG) $(TEST_ROOTFS)/nvim.appimage; \
+	else \
+	    echo "  [WARN] no neovim AppImage; real-app tests will skip"; \
 	fi
 	mkdir -p $(TEST_ROOTFS)/glibc $(TEST_ROOTFS)/lib64
 	cp $(GLIBC_FIXTURES)/hello-glibc $(GLIBC_FIXTURES)/libc.so.6 $(GLIBC_FIXTURES)/libm.so.6 $(TEST_ROOTFS)/glibc/
@@ -164,6 +205,8 @@ $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/test
 	    tr true tty umount unshare uname uniq unlink wc wget which whoami yes; do \
 	    cp $(BUILD)/bin/$$app $(TEST_ROOTFS)/bin/; \
 	done
+	@if [ -s $(BUILD)/bin/bash ]; then cp $(BUILD)/bin/bash $(TEST_ROOTFS)/bin/; \
+	else echo "  [WARN] no static bash; script AppRun tests will skip"; fi
 	for bin in tar gzip gunzip bzip2 bunzip2 xz unxz; do \
 	    cp -P $(BUILD)/bin/$$bin $(TEST_ROOTFS)/bin/; \
 	done
@@ -186,7 +229,7 @@ test: $(TEST_ISO) $(TEST_SQSH)
 	@mkfs.ext2 -F -b 4096 -L kyronix-test $(TEST_DISK) >/dev/null 2>&1
 	@set +e; \
 	timeout $(TEST_TIMEOUT) $(QEMU) \
-	    -M q35 -cpu max -m 512M -smp 4 \
+	    -M q35 -cpu max -m 2G -smp 4 \
 	    -cdrom $(TEST_ISO) \
 	    -device isa-debug-exit,iobase=0x501 \
 	    -display none \

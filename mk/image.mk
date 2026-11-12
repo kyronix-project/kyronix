@@ -89,6 +89,12 @@ $(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROO
 		./scripts/local-pkg-install --registry ./pkg-registry-src --target $(abspath $(INITRD_ROOT)) --list packages.list || true; \
 		$(call ok,Local packages); \
 	fi
+	@mkdir -p $(INITRD_ROOT)/usr/lib/sysroots
+	@if [ -f $(SYSROOT_SQSH) ]; then \
+	    cp $(SYSROOT_SQSH) $(INITRD_ROOT)/usr/lib/sysroots/debian.sqsh; \
+	else \
+	    echo "  [WARN] no glibc sysroot; kair cannot run non-self-contained AppImages"; \
+	fi
 	@touch $(INITRD_ROOT)
 	@$(call ok,initrd root)
 

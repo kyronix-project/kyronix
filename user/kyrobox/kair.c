@@ -68,6 +68,30 @@ static int apprun_is_elf(const char *apprun_path) {
     return n == 4 && memcmp(m, "\x7f" "ELF", 4) == 0;
 }
 
+static int apprun_is_script(const char *apprun_path) {
+    int fd = open(apprun_path, O_RDONLY);
+    if (fd < 0) return 0;
+    char line[256];
+    ssize_t n = read(fd, line, sizeof(line) - 1);
+    close(fd);
+    if (n < 2 || line[0] != '#' || line[1] != '!') return 0;
+    line[n] = '\0';
+
+    char *p = line + 2;
+    for (char *nl = p; *nl; nl++) {
+        if (*nl == '\n' || *nl == '\r') {
+            *nl = '\0';
+            break;
+        }
+    }
+    while (*p == ' ' || *p == '\t') p++;
+    char *end = p;
+    while (*end && *end != ' ' && *end != '\t') end++;
+    *end = '\0';
+
+    return strcmp(p, "/bin/sh") == 0 || strcmp(p, "/bin/bash") == 0;
+}
+
 static void usage(void) {
     fprintf(stderr, "usage: %s [options] <AppImage> [args...]\n", kx_prog);
     fprintf(stderr, "\noptions:\n");
@@ -325,8 +349,13 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    int use_sandbox = apprun_is_elf(apprun);
+    int is_elf = apprun_is_elf(apprun);
+    int is_script = apprun_is_script(apprun);
+    int use_sandbox = is_elf || is_script;
     int self_contained = apprun_self_contained(apprun, mp);
+
+    struct stat sysroot_st;
+    int have_sysroot = stat(SYSROOT_IMG, &sysroot_st) == 0 && S_ISREG(sysroot_st.st_mode);
 
     char sb[] = "/tmp/aisb-XXXXXX";
     char sb_app[PATH_MAX] = {0}, sb_proc[PATH_MAX] = {0};
@@ -380,8 +409,7 @@ int main(int argc, char **argv) {
                 if (sb_bind(src, dst) < 0) break;
                 sb_bound_paths[n_sb_bound++] = strdup(dst);
             } else {
-                struct stat sst;
-                if (stat(SYSROOT_IMG, &sst) == 0 && S_ISREG(sst.st_mode)) {
+                if (have_sysroot) {
                     if (!mkdtemp(sr_mp)) break;
                     sr_created = 1;
                     int sfd = open(SYSROOT_IMG, O_RDONLY);
@@ -422,6 +450,11 @@ int main(int argc, char **argv) {
             }
             sb_ready = 1; // all mandatory mounts succeeded
         } while (0);
+    }
+
+    if (use_sandbox && !self_contained && !have_sysroot) {
+        fprintf(stderr, "%s: %s: no glibc sysroot at %s\n", kx_prog, image, SYSROOT_IMG);
+        fprintf(stderr, "%s: the app is a glibc binary; it cannot load without one\n", kx_prog);
     }
 
     char apprun_final[PATH_MAX];

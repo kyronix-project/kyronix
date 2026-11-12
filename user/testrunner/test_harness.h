@@ -184,7 +184,17 @@ static inline int run_cmd(char *const argv[]) {
     return -1;
 }
 
-static inline int capture_cmd(char *const argv[], char *buf, size_t bufsz) {
+#define CAPTURE_TIMEOUT_SECS 20
+#define CAPTURE_TIMED_OUT (-2)
+
+static volatile sig_atomic_t capture_alarm_fired = 0;
+
+static void capture_alarm_handler(int sig) {
+    (void) sig;
+    capture_alarm_fired = 1;
+}
+
+static inline int capture_cmd_full(char *const argv[], char *buf, size_t bufsz, int stdin_null) {
     int p[2];
     if (pipe(p) < 0) return -1;
     pid_t pid = fork();
@@ -197,23 +207,73 @@ static inline int capture_cmd(char *const argv[], char *buf, size_t bufsz) {
         close(p[0]);
         dup2(p[1], STDOUT_FILENO);
         close(p[1]);
+        if (stdin_null) {
+            int dn = open("/dev/null", O_RDONLY);
+            if (dn >= 0) {
+                dup2(dn, STDIN_FILENO);
+                if (dn != STDIN_FILENO) close(dn);
+            }
+        }
         execvp(argv[0], argv);
         _exit(127);
     }
     close(p[1]);
+
+    capture_alarm_fired = 0;
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = capture_alarm_handler;
+    sigaction(SIGALRM, &sa, NULL);
+    alarm(CAPTURE_TIMEOUT_SECS);
+
     ssize_t total = 0;
+    int timed_out = 0;
     while (total < (ssize_t) bufsz) {
+        if (capture_alarm_fired) {
+            timed_out = 1;
+            break;
+        }
+
         ssize_t n = read(p[0], buf + total, bufsz - 1 - total);
-        if (n < 0 && errno == EINTR) continue;
+        if (n < 0 && errno == EINTR) {
+            if (capture_alarm_fired) {
+                timed_out = 1;
+                break;
+            }
+            continue;
+        }
         if (n <= 0) break;
         total += n;
     }
+    alarm(0);
     close(p[0]);
     buf[total > 0 ? total : 0] = '\0';
+
+    if (timed_out) {
+        kill(pid, SIGKILL);
+
+        int st = 0;
+        for (int i = 0; i < 200; i++) {
+            pid_t r = waitpid(pid, &st, WNOHANG);
+            if (r == pid || r < 0) break;
+            struct timespec ts = { 0, 10 * 1000 * 1000 };
+            nanosleep(&ts, NULL);
+        }
+        return CAPTURE_TIMED_OUT;
+    }
+
     int status;
     waitpid(pid, &status, 0);
     if (WIFEXITED(status)) return WEXITSTATUS(status);
     return -1;
+}
+
+static inline int capture_cmd(char *const argv[], char *buf, size_t bufsz) {
+    return capture_cmd_full(argv, buf, bufsz, 0);
+}
+
+static inline int capture_cmd_eof(char *const argv[], char *buf, size_t bufsz) {
+    return capture_cmd_full(argv, buf, bufsz, 1);
 }
 
 static inline pid_t spawn_cmd(char *const argv[]) {
