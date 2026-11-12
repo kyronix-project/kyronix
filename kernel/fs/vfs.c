@@ -1592,6 +1592,18 @@ const char *vfs_copy_user_path(const char *path, char *kbuf) {
     return kbuf;
 }
 
+static bool is_shm_path(const char *path) {
+    return strncmp(path, "/dev/shm/", 9) == 0 && path[9] != '\0';
+}
+
+static bool shm_attach(vfs_node_t *n) {
+    if (n->shmem) return true;
+    n->shmem = shmem_create();
+    if (!n->shmem) return false;
+    n->size = 0;
+    return true;
+}
+
 static int fd_open_impl(const char *path, int flags, int mode, bool reroot, bool from_user) {
     char _pbuf[512];
     path = from_user ? vfs_copy_user_path(path, _pbuf) : vfs_copy_kernel_path(path, _pbuf);
@@ -1645,6 +1657,7 @@ static int fd_open_impl(const char *path, int flags, int mode, bool reroot, bool
         for (int i = 0; i < g_filesystem_cnt; i++) {
             if (g_filesystems[i]->create && g_filesystems[i]->create(n, lpath, mode) == 0) break;
         }
+        if (is_shm_path(lpath)) shm_attach(n);
         node_ref(n); /* ref for the fd; create_file returns unrefed node */
     } else {
         if ((flags & O_CREAT) && (flags & O_EXCL)) {

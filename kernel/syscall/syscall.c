@@ -868,7 +868,7 @@ void syscall_dispatch(syscall_frame_t *f) {
     case 150:
     case 151:
     case 152:
-        ret = -(int64_t) ENOSYS;
+        ret = 0;
         break; /* mlock/munlock */
     case 153:
         ret = host_priv() ? 0 : -(int64_t) EPERM;
@@ -1421,7 +1421,11 @@ void syscall_dispatch(syscall_frame_t *f) {
         ret = 0;
         break;
     case 325:
-        ret = -(int64_t) ENOSYS;
+        if (a3 & ~(uint64_t) 1) {
+            ret = -(int64_t) EINVAL;
+            break;
+        }
+        ret = 0;
         break; /* mlock2 */
     case 326:
         ret = sys_copy_file_range((int) a1, (uint64_t *) a2, (int) a3, (uint64_t *) a4, a5,

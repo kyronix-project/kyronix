@@ -95,3 +95,79 @@ int test_abi_close_range_bad_flags(void) {
     return 1;
 }
 REGISTER_TEST(abi_close_range_bad_flags, "Phase 10: Security ABI");
+
+int test_abi_mlock_succeeds(void) {
+    char buf[4096] = {0};
+
+    ASSERT_EQ(0, mlock(buf, sizeof(buf)));
+    ASSERT_EQ(0, munlock(buf, sizeof(buf)));
+    ASSERT_EQ(0, mlockall(MCL_CURRENT));
+    ASSERT_EQ(0, munlockall());
+    return 1;
+}
+REGISTER_TEST(abi_mlock_succeeds, "Phase 10: Security ABI");
+
+int test_abi_mlock2(void) {
+    char buf[4096] = {0};
+    ASSERT_EQ(0, (int) syscall(325, buf, sizeof(buf), 0));
+    ASSERT_EQ(0, (int) syscall(325, buf, sizeof(buf), 1));
+
+    errno = 0;
+    ASSERT_EQ(-1, (int) syscall(325, buf, sizeof(buf), 0x8));
+    ASSERT_EQ(EINVAL, errno);
+    return 1;
+}
+REGISTER_TEST(abi_mlock2, "Phase 10: Security ABI");
+
+int test_abi_shm_shared_across_processes(void) {
+    const char *name = "/dev/shm/abi-shm-test";
+    unlink(name);
+
+    int fd = open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
+    ASSERT_GE(fd, 0);
+    ASSERT_EQ(0, ftruncate(fd, 4096));
+
+    int *map = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    ASSERT_TRUE(map != MAP_FAILED);
+    *map = 0;
+
+    pid_t pid = fork();
+    ASSERT_GE(pid, 0);
+    if (pid == 0) {
+        int cfd = open(name, O_RDWR);
+        if (cfd < 0) _exit(1);
+        int *cm = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, cfd, 0);
+        if (cm == MAP_FAILED) _exit(2);
+        *cm = 0x5eed;
+        _exit(0);
+    }
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    ASSERT_EQ(0x5eed, *map);
+
+    munmap(map, 4096);
+    close(fd);
+    unlink(name);
+    return 1;
+}
+REGISTER_TEST(abi_shm_shared_across_processes, "Phase 10: Security ABI");
+
+int test_abi_shm_truncate(void) {
+    const char *name = "/dev/shm/abi-shm-size";
+    unlink(name);
+
+    int fd = open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
+    ASSERT_GE(fd, 0);
+    ASSERT_EQ(0, ftruncate(fd, 8192));
+
+    struct stat st;
+    ASSERT_EQ(0, fstat(fd, &st));
+    ASSERT_EQ(8192, (int) st.st_size);
+
+    close(fd);
+    unlink(name);
+    return 1;
+}
+REGISTER_TEST(abi_shm_truncate, "Phase 10: Security ABI");
