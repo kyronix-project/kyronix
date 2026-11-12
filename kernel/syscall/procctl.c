@@ -775,36 +775,27 @@ __attribute__((noreturn)) void proc_do_exit(int code) {
         p->state = PROC_DYING;
         proc_clear_ready(p);
         proc_defer_thread_reap(p);
-        proc_t *nt = sched_claim_next(p);
-        if (nt) {
-            vfs_set_fdtable(nt->fds);
-            g_current_space = nt->space;
-            cpu_set_kernel_stack(nt->kstack_top);
-            sched_switch(nt);
+    } else {
+        p->exit_code = code;
+        p->state = PROC_ZOMBIE;
+        proc_clear_ready(p);
+
+        proc_t *parent = proc_find(p->ppid);
+        if (parent && parent->state != PROC_UNUSED) {
+            proc_send_signal(parent, SIGCHLD);
+            proc_unref(parent);
         }
-        // unreachable: this thread is dead and never scheduled again
-        cpu_halt();
-    }
 
-    p->exit_code = code;
-    p->state = PROC_ZOMBIE;
-    proc_clear_ready(p);
-
-    proc_t *parent = proc_find(p->ppid);
-    if (parent && parent->state != PROC_UNUSED) {
-        proc_send_signal(parent, SIGCHLD);
-        proc_unref(parent);
-    }
-
-    // switch to this cpu's idle process
-    uint32_t cpu_id = this_cpu_id();
-    proc_t *idle = (proc_t *) g_cpu_local[cpu_id].idle;
-    if (idle && idle->state == PROC_READY) {
-        idle->state = PROC_RUNNING;
-        vfs_set_fdtable(idle->fds);
-        g_current_space = idle->space;
-        cpu_set_kernel_stack(idle->kstack_top);
-        sched_switch(idle);
+        // switch to this cpu's idle process
+        uint32_t cpu_id = this_cpu_id();
+        proc_t *idle = (proc_t *) g_cpu_local[cpu_id].idle;
+        if (idle && idle->state == PROC_READY) {
+            idle->state = PROC_RUNNING;
+            vfs_set_fdtable(idle->fds);
+            g_current_space = idle->space;
+            cpu_set_kernel_stack(idle->kstack_top);
+            sched_switch(idle);
+        }
     }
 
     // fallback
@@ -816,9 +807,7 @@ __attribute__((noreturn)) void proc_do_exit(int code) {
             cpu_set_kernel_stack(next->kstack_top);
             sched_switch(next);
         }
-        sti();
-        hlt();
-        cli();
+        sched_cpu_sleep();
     }
     cpu_halt();
 }

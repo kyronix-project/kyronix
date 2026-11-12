@@ -122,6 +122,7 @@ void lapic_timer_start_periodic(uint32_t hz) {
 
     uint32_t count = g_lapic_timer_freq * 1000 / hz;
 
+    *lapic_reg(LAPIC_LVT_TIMER) = LAPIC_TIMER_VEC | LAPIC_TIMER_PERIODIC;
     *lapic_reg(LAPIC_TIMER_DIV) = 0x0B;
     *lapic_reg(LAPIC_TIMER_ICOUNT) = count;
 }

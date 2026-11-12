@@ -46,6 +46,7 @@
 #define ICR_DEST_LOGICAL (1 << 11)
 
 #define ICR_SEND_PENDING (1 << 12)
+#define ICR_LEVEL_ASSERT (1 << 14)
 
 #define ICR_DEST_SELF (1 << 18)
 #define ICR_DEST_ALL (2 << 18)

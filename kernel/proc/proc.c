@@ -257,9 +257,7 @@ proc_t *proc_idle_until_ready(proc_t *skip) {
     for (;;) {
         proc_t *nt = sched_claim_next(skip);
         if (nt) return nt;
-        sti();
-        hlt();
-        cli();
+        sched_cpu_sleep();
     }
 }
 

@@ -93,9 +93,7 @@ int64_t signalfd_read(vfs_file_t *f, char *buf, uint64_t len) {
         if (proc_next_ready(p))
             sched_yield_blocking();
         else {
-            sti();
-            hlt();
-            cli();
+            sched_cpu_sleep();
         }
     }
 }
