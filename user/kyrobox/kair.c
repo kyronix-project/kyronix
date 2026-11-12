@@ -202,11 +202,11 @@ static void report_unsupported_compression(int fd, int64_t sqfs_off) {
     for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); i++)
         if (names[i].id == sb[0]) name = names[i].name;
 
-    if (sb[0] == 1 || sb[0] == 4) return;
+    if (sb[0] == 1 || sb[0] == 4 || sb[0] == 6) return;
 
     fprintf(stderr,
             "%s: squashfs uses %s compression, which this kernel does not support "
-            "(only gzip and xz)\n",
+            "(only gzip, xz and zstd)\n",
             kx_prog, name);
 }
 

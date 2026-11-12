@@ -158,6 +158,7 @@ KERNEL_C_SRCS := \
 	kernel/lib/xz/xz_dec_lzma2.c \
 	kernel/lib/xz/xz_dec_bcj.c \
 	kernel/lib/xz/xz_kernel.c \
+	kernel/lib/zstd/zstd_kernel.c \
 	kernel/lib/log.c \
 	kernel/lib/kallsyms.c \
 	kernel/mm/kmemleak.c \

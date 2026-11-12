@@ -5,6 +5,7 @@
 #include "../lib/printf.h"
 #include "../lib/string.h"
 #include "../lib/xz/xz_kernel.h"
+#include "../lib/zstd/zstd_kernel.h"
 #include "../mm/heap.h"
 #include "vfs.h"
 #include "vfs_internal.h"
@@ -14,6 +15,7 @@
 #define SQFS_MINOR 0
 #define SQFS_COMP_ZLIB 1
 #define SQFS_COMP_XZ 4
+#define SQFS_COMP_ZSTD 6
 #define SQFS_META_SIZE 8192
 #define SQFS_NAME_MAX 256
 #define SQFS_DIR_COUNT_MAX 256
@@ -208,6 +210,7 @@ static int64_t sqfs_zlib_decompress(const uint8_t *src, uint64_t src_len, uint8_
 static int64_t sqfs_decompress(sqfs_t *sq, const uint8_t *src, uint64_t src_len, uint8_t *dst,
                                uint64_t dst_cap) {
 	if (sq->compression == SQFS_COMP_XZ) return kxz_decode(src, src_len, dst, dst_cap);
+	if (sq->compression == SQFS_COMP_ZSTD) return kzstd_decode(src, src_len, dst, dst_cap);
 	return sqfs_zlib_decompress(src, src_len, dst, dst_cap);
 }
 
@@ -894,7 +897,7 @@ bool squashfs_probe(struct block_device *dev) {
 	uint16_t minor = (uint16_t) buf[30] | ((uint16_t) buf[31] << 8);
 	uint16_t comp = (uint16_t) buf[20] | ((uint16_t) buf[21] << 8);
 	return magic == SQFS_MAGIC && major == SQFS_MAJOR && minor == SQFS_MINOR &&
-	       (comp == SQFS_COMP_ZLIB || comp == SQFS_COMP_XZ);
+	       (comp == SQFS_COMP_ZLIB || comp == SQFS_COMP_XZ || comp == SQFS_COMP_ZSTD);
 }
 
 static sqfs_t *sqfs_open(struct block_device *dev) {

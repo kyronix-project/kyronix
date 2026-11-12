@@ -17,6 +17,7 @@ include mk/bash.mk
 include mk/userspace.mk
 include mk/sysroot.mk
 include mk/nvim.mk
+include mk/galculator.mk
 include mk/image.mk
 include mk/qemu.mk
 include mk/test.mk
