@@ -36,6 +36,7 @@
 #include "proc/smp.h"
 #include "procctl.h"
 #include "ptrace.h"
+#include "rseq.h"
 #include "security/anti_toctou.h"
 #include "security/caps.h"
 #include "security/seccomp.h"
@@ -1435,10 +1436,17 @@ void syscall_dispatch(syscall_frame_t *f) {
     case 332:
         ret = sys_statx((int) a1, (const char *) a2, (int) a3, (uint32_t) a4, (struct statx *) a5);
         break;
-    case 334: {
+    case SYS_rseq:
+        ret = sys_rseq(a1, a2, (int) a3, (uint32_t) a4);
+        break;
+    case SYS_close_range: {
         int _lo = (int) a1, _hi = (int) a2;
+        if (a3 & ~(uint64_t) 1) {
+            ret = -(int64_t) EINVAL;
+            break;
+        }
         if (_lo < 0) _lo = 0;
-        if (_hi >= VFS_FD_MAX) _hi = VFS_FD_MAX - 1;
+        if (_hi < 0 || _hi >= VFS_FD_MAX) _hi = VFS_FD_MAX - 1;
         for (int _fd = _lo; _fd <= _hi; _fd++)
             if (fd_valid(_fd)) fd_close(_fd);
         ret = 0;

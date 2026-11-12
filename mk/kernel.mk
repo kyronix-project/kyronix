@@ -57,6 +57,7 @@ KERNEL_C_SRCS := \
 	kernel/syscall/time.c \
 	kernel/syscall/mount.c \
 	kernel/syscall/phantom.c \
+	kernel/syscall/rseq.c \
 	kernel/syscall/jitter.c \
 	kernel/exec/elf.c \
 	kernel/exec/process.c \
