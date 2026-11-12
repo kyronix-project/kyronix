@@ -300,6 +300,8 @@ void vmm_space_free(vmm_space_t *sp) {
 
     pmm_free((void *) sp->pml4_phys);
 
+    vma_reset(sp);
+
     spin_lock(&g_pool_lock);
     for (int i = 0; i < VMM_MAX_SPACES; i++) {
         if (&g_pool[i] == sp) {

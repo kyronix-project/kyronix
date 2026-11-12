@@ -12,11 +12,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
-      
+
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y podman
-      
+
+      - name: Build container image
+        run: podman build -t kyronix-build:latest -f Containerfile .
+
+      - name: Sanity check image
+        run: podman image exists kyronix-build:latest && echo OK || (echo MISSING; exit 1)
+
       - name: Build and run tests
         run: make test CRUNTIME=podman

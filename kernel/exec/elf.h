@@ -81,5 +81,5 @@ typedef struct {
 } elf_load_result_t;
 
 int elf_load_into(vmm_space_t *space, const void *data, uint64_t size, uint64_t bias,
-                  elf_load_result_t *out);
-int elf_load(const void *data, uint64_t size, elf_load_result_t *out);
+                  elf_load_result_t *out, const char *name);
+int elf_load(const void *data, uint64_t size, elf_load_result_t *out, const char *name);

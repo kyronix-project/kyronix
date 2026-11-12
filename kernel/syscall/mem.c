@@ -18,6 +18,15 @@
 #define MAP_FIXED 0x10
 #define MAP_PRIVATE 0x02
 #define MAP_SHARED 0x01
+#define MAP_GROWSDOWN 0x0100
+#define MAP_DENYWRITE 0x0800
+#define MAP_EXECUTABLE 0x1000
+#define MAP_LOCKED 0x2000
+#define MAP_NORESERVE 0x4000
+#define MAP_POPULATE 0x8000
+#define MAP_NONBLOCK 0x10000
+#define MAP_STACK 0x20000
+#define MAP_FIXED_NOREPLACE 0x100000
 
 #define MREMAP_MAYMOVE 1
 #define MREMAP_FIXED 2
@@ -30,6 +39,7 @@ void syscall_set_brk(uint64_t brk_base) {
 static int64_t sys_brk_impl(uint64_t addr) {
     proc_t *p = cur();
     if (!p || !p->space) return -(int64_t) ENOMEM;
+    static const vma_ident_t heap_id = { .kind = VMA_KIND_HEAP, .name = "[heap]" };
     if (addr == 0) return (int64_t) p->brk;
     if (addr < p->brk_base) return (int64_t) p->brk;
     if (addr >= USER_LIMIT || addr > USER_LIMIT - (PAGE_SIZE - 1)) return (int64_t) p->brk;
@@ -47,7 +57,8 @@ static int64_t sys_brk_impl(uint64_t addr) {
         if (old_end > p->brk_base)
             vma_remove_overlaps(p->space, p->brk_base, old_end - p->brk_base);
         if (new_end > p->brk_base)
-            vma_add(p->space, p->brk_base, new_end - p->brk_base, PROT_READ | PROT_WRITE, 0, true);
+            vma_add(p->space, p->brk_base, new_end - p->brk_base, PROT_READ | PROT_WRITE, 0,
+                    true, &heap_id);
         p->brk = addr;
         return (int64_t) p->brk;
     }
@@ -78,7 +89,7 @@ static int64_t sys_brk_impl(uint64_t addr) {
     }
     p->pages_alloc += nallocd;
     if (old > p->brk_base) vma_remove_overlaps(p->space, p->brk_base, old - p->brk_base);
-    vma_add(p->space, p->brk_base, new - p->brk_base, PROT_READ | PROT_WRITE, 0, true);
+    vma_add(p->space, p->brk_base, new - p->brk_base, PROT_READ | PROT_WRITE, 0, true, &heap_id);
     p->brk = addr;
     return (int64_t) addr;
 }
@@ -104,7 +115,10 @@ static bool prot_valid(uint64_t prot) {
 }
 
 static bool mmap_flags_valid(uint64_t flags) {
-    if (flags & ~(uint64_t) (MAP_ANON | MAP_FIXED | MAP_PRIVATE | MAP_SHARED)) return false;
+    if (flags & ~(uint64_t) (MAP_ANON | MAP_FIXED | MAP_PRIVATE | MAP_SHARED | MAP_GROWSDOWN |
+                             MAP_DENYWRITE | MAP_EXECUTABLE | MAP_LOCKED | MAP_NORESERVE |
+                             MAP_POPULATE | MAP_NONBLOCK | MAP_STACK | MAP_FIXED_NOREPLACE))
+        return false;
     uint64_t kind = flags & (MAP_PRIVATE | MAP_SHARED);
     return kind == MAP_PRIVATE || kind == MAP_SHARED;
 }
@@ -187,6 +201,14 @@ static int64_t sys_mmap_impl(uint64_t addr, uint64_t length, uint64_t prot, uint
             return -(int64_t) EACCES;
     }
 
+    if (flags & MAP_FIXED_NOREPLACE) {
+        if (!addr) return -(int64_t) EINVAL;
+        uint64_t nva = PAGE_ALIGN_DOWN(addr);
+        if (!user_map_range_ok(nva, length)) return -(int64_t) EINVAL;
+        if (vma_conflicts(p->space, nva, length)) return -(int64_t) EEXIST;
+        flags |= MAP_FIXED;
+    }
+
     uint64_t va = 0;
     int pick = mmap_pick_addr(p, addr, length, flags, &va);
     if (pick < 0) return pick;
@@ -198,10 +220,22 @@ static int64_t sys_mmap_impl(uint64_t addr, uint64_t length, uint64_t prot, uint
     if (prot & PROT_EXEC) vf &= ~(uint64_t) VMM_NX;
     bool reserve_only = (prot & (PROT_READ | PROT_WRITE | PROT_EXEC)) == 0;
 
+    vma_ident_t id = { .kind = VMA_KIND_ANON, .name = NULL };
+    if (!(flags & MAP_ANON) && file) {
+        id.kind = VMA_KIND_FILE;
+        id.name = file->path[0] ? file->path : fn->name;
+        id.file_off = off;
+        id.inode = fn->ino;
+    } else if (flags & (MAP_GROWSDOWN | MAP_STACK)) {
+        id.kind = VMA_KIND_STACK;
+        id.name = "[stack]";
+    }
+
     if (!(flags & MAP_ANON)) {
         // chr-dev with custom mmap (e.g. uio physical bar mapping)
         if (fn->type == VFS_TYPE_CHR && fn->chr_mmap) {
-            int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, false);
+            int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, false,
+                             &id);
             if (rc < 0) return rc;
             if (reserve_only) return (int64_t) va;
             int64_t mr = fn->chr_mmap(fn, off, length, va, vf);
@@ -215,7 +249,7 @@ static int64_t sys_mmap_impl(uint64_t addr, uint64_t length, uint64_t prot, uint
         if (fn->type != VFS_TYPE_REG) return -(int64_t) EBADF;
         if (fn->shmem) {
             if (off > UINT64_MAX - length) return -(int64_t) EINVAL;
-            int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, true);
+            int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, true, &id);
             if (rc < 0) return rc;
             if (reserve_only) return (int64_t) va;
             for (uint64_t o = 0; o < length; o += PAGE_SIZE) {
@@ -248,12 +282,12 @@ static int64_t sys_mmap_impl(uint64_t addr, uint64_t length, uint64_t prot, uint
             return (int64_t) va;
         }
 
-        int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, true);
+        int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, true, &id);
         if (rc < 0) return rc;
         if (reserve_only) return (int64_t) va;
 
-        // lazily load file data if filesystem hasnt populated fn->data yet (ext2)
-        if (!fn->data && fn->fs_ops && fn->fs_ops->read) fn->fs_ops->read(fn, NULL, 0, 0);
+        if (!fn->data && fn->fs_ops && fn->fs_ops->read)
+            fn->fs_ops->read(fn, NULL, 0, fn->size);
 
         // file-backed: MAP_PRIVATE - allocate pages and copy file content
         uint64_t file_size = fn->size;
@@ -281,7 +315,7 @@ static int64_t sys_mmap_impl(uint64_t addr, uint64_t length, uint64_t prot, uint
         return (int64_t) va;
     }
 
-    int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, true);
+    int rc = vma_add(p->space, va, length, (uint32_t) prot, (uint32_t) flags, true, &id);
     if (rc < 0) return rc;
     if (reserve_only) return (int64_t) va;
 
@@ -421,7 +455,22 @@ static int64_t sys_mremap_impl(uint64_t old_addr, uint64_t old_sz, uint64_t new_
         if (pick < 0) return pick;
     }
 
-    int rc = vma_add(p->space, new_va, new_sz, old_prot, old_map_flags, true);
+    vma_ident_t mid;
+    char mid_name[256];
+    const vma_meta_t *sm = vma_get_meta(p->space, old_addr);
+    memset(&mid, 0, sizeof(mid));
+    if (sm) {
+        mid.kind = sm->kind;
+        mid.file_off = sm->file_off;
+        mid.dev_major = sm->dev_major;
+        mid.dev_minor = sm->dev_minor;
+        mid.inode = sm->inode;
+        strncpy(mid_name, sm->name, sizeof(mid_name) - 1);
+        mid_name[sizeof(mid_name) - 1] = '\0';
+        mid.name = mid_name;
+    }
+
+    int rc = vma_add(p->space, new_va, new_sz, old_prot, old_map_flags, true, &mid);
     if (rc < 0) return rc;
 
     uint64_t page_flags = VMM_USER | VMM_NX;

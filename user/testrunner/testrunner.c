@@ -18,6 +18,7 @@ static int nfailures = 0;
 
 test_entry_t test_registry[MAX_TESTS];
 int test_count = 0;
+int test_registry_overflow = 0;
 
 static const char *cur_phase = NULL;
 static int ph_total = 0;
@@ -42,6 +43,8 @@ static int run_sandbox(const char *test_name, int (*test_fn)(void)) {
         p[0] = -1;
         p[1] = -1;
     }
+
+    if (p[1] >= 0) fcntl(p[1], F_SETFD, FD_CLOEXEC);
     failure_pipe[0] = p[0];
     failure_pipe[1] = p[1];
 
@@ -317,6 +320,9 @@ int main(void) {
     fprintf(stderr, ANSI_CYAN "  kmemleak: %s" ANSI_RESET "\n",
             access("/proc/kmemleak", R_OK) == 0 ? "available (full scan skipped)" :
                                                   "not available");
+    if (test_registry_overflow)
+        fprintf(stderr, ANSI_RED "  WARNING: %d test(s) dropped (MAX_TESTS=%d)" ANSI_RESET "\n",
+                test_registry_overflow, MAX_TESTS);
     fprintf(stderr, "\n");
 
     for (int i = 0; i < test_count; i++) {
@@ -331,6 +337,7 @@ int main(void) {
         int failures_before = nfailures;
         int result = run_sandbox(e->name, e->func);
 
+        ph_total++;
         if (result == TEST_PASS) {
             passed++;
             ph_passed++;
@@ -361,7 +368,7 @@ int main(void) {
 
     cleanup_tmpdir();
 
-    if (failed == 0) {
+    if (failed == 0 && test_registry_overflow == 0) {
         fprintf(stderr, ANSI_GREEN "ALL TESTS PASSED" ANSI_RESET "\n");
     } else {
         fprintf(stderr, ANSI_RED "SOME TESTS FAILED" ANSI_RESET "\n");

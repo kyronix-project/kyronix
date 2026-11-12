@@ -114,7 +114,9 @@ static int64_t blk_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
     struct block_device *bd = node_to_blk(n);
     if (!bd) return -(int64_t) EINVAL;
 
-    switch (req) {
+    uint32_t req32 = (uint32_t) req;
+
+    switch (req32) {
     case BLKGETSIZE: {
         if (bd->sector_size && bd->sectors > UINT64_MAX / bd->sector_size) return -(int64_t) EINVAL;
         uint64_t size = (uint64_t) bd->sectors * bd->sector_size;
@@ -144,6 +146,7 @@ static int64_t blk_ioctl(vfs_node_t *n, uint64_t req, uint64_t arg) {
         if (bd->parent) return -(int64_t) EINVAL;
         return partition_rescan_disk(bd) ? 0 : -(int64_t) EINVAL;
     default:
+        if (bd->ioctl) return bd->ioctl(bd, req32, arg);
         return -(int64_t) EINVAL;
     }
 }

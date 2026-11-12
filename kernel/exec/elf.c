@@ -23,7 +23,7 @@ static int elf_valid(const Elf64_Ehdr *eh, uint64_t size) {
 }
 
 int elf_load_into(vmm_space_t *space, const void *data, uint64_t size, uint64_t bias,
-                  elf_load_result_t *out) {
+                  elf_load_result_t *out, const char *name) {
     if (!space || !out || !data || size < sizeof(Elf64_Ehdr)) return -1;
     const Elf64_Ehdr *eh = (const Elf64_Ehdr *) data;
     if (!elf_valid(eh, size)) return -1;
@@ -100,7 +100,13 @@ int elf_load_into(vmm_space_t *space, const void *data, uint64_t size, uint64_t 
         if (ph->p_flags & PF_R) prot |= PROT_READ;
         if (ph->p_flags & PF_W) prot |= PROT_WRITE;
         if (ph->p_flags & PF_X) prot |= PROT_EXEC;
-        if (vma_add(space, page_base, page_end - page_base, prot, 0, true) < 0) return -1;
+        uint64_t page_delta = vaddr - page_base;
+        vma_ident_t id = {
+            .kind = (name && name[0]) ? VMA_KIND_FILE : VMA_KIND_ANON,
+            .name = (name && name[0]) ? name : "",
+            .file_off = ph->p_offset >= page_delta ? ph->p_offset - page_delta : 0,
+        };
+        if (vma_add(space, page_base, page_end - page_base, prot, 0, true, &id) < 0) return -1;
 
         uint64_t end = PAGE_ALIGN_UP(vaddr + ph->p_memsz);
         if (end > brk) brk = end;
@@ -116,7 +122,7 @@ int elf_load_into(vmm_space_t *space, const void *data, uint64_t size, uint64_t 
     return 0;
 }
 
-int elf_load(const void *data, uint64_t size, elf_load_result_t *out) {
+int elf_load(const void *data, uint64_t size, elf_load_result_t *out, const char *name) {
     if (!data || size < sizeof(Elf64_Ehdr)) { return -1; }
     const Elf64_Ehdr *eh = (const Elf64_Ehdr *) data;
     if (!elf_valid(eh, size)) { return -1; }
@@ -131,7 +137,7 @@ int elf_load(const void *data, uint64_t size, elf_load_result_t *out) {
     memset(out, 0, sizeof(*out));
     out->space = space;
 
-    if (elf_load_into(space, data, size, bias, out) < 0) {
+    if (elf_load_into(space, data, size, bias, out, name) < 0) {
         log_error("ELF: load failed");
         vmm_space_free(space);
         return -1;

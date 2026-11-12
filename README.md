@@ -1,181 +1,31 @@
 # Kyronix
 
-<img align="left" src="meta/logo.png" width="120" alt="Kyronix logo">
+<img align="left" src="meta/logo.png" width="96" alt="Kyronix logo">
 
-Operating system that sucks less.
+Minimalist x86-64 operating system that sucks less.
 
 ![Commits per month](https://img.shields.io/github/commit-activity/m/kyronix-project/kyronix)
 [![test](https://github.com/kyronix-project/kyronix/actions/workflows/test.yml/badge.svg)](https://github.com/kyronix-project/kyronix/actions/workflows/test.yml)
-[![ISC](https://img.shields.io/badge/license-ISC-blue)](#)
+[![ISC](https://img.shields.io/badge/license-ISC-blue)](LICENSE)
 [![x86-64](https://img.shields.io/badge/arch-x86__64-lightgrey)](#)
 
 <br clear="left"/>
 
-Kyronix is a modern hybrid operating system focused on
-performance, security and stability.
+| <img src="meta/screenshots/preview.png" alt="Kyronix screenshot" width="760"> |
+| :---: |
 
-<img src="meta/screenshots/preview.png" alt="Kyronix preview" width="640">
+## Building & Running
 
-## Features
-
-### Kernel
-- x86-64, 4-level paging, SMEP, NX-bit
-- Limine bootloader (BIOS + UEFI)
-- Preemptive scheduler (~250 Hz)
-- ELF64 loader (PIE + musl)
-- 150+ Linux-compatible syscalls
-- Loadable ELF64 kernel modules (`insmod`, `rmmod`, `lsmod`)
-- Demand paging (`mmap`, `mprotect`, `mremap`, `brk`)
-- RTC, CPUID, RDRAND
-
-### Drivers
-- Framebuffer console (PSF fonts)
-- PS/2 keyboard & mouse
-- PCI enumeration
-- AHCI (SATA)
-- virtio-net
-- Serial console (COM1)
-- evdev (`/dev/input/event*`)
-- Virtual terminals
-- UIO
-
-### Filesystems
-- POSIX VFS
-- CPIO initramfs
-- Ext2 (R/W)
-- FAT32 (R/W)
-- procfs, devfs
-- eventfd, pipe, AF_UNIX sockets
-
-### Networking ([LwIP](https://github.com/stm32duino/lwip))
-- ARP, IPv4, ICMP, UDP, TCP
-- DHCP client
-- AF_INET socket API
-- ping, wget, nc
-
-### Userspace
-- **ksh** shell
-- **vi** text editor
-- **kyrobox** POSIX utilities
-- **login** authentication
-- **pkg** package manager
-- Runs musl-linked applications
-
-### Advanced
-- POSIX signals
-- `clone()` threads
-- Jails (FS/PID/IPC isolation)
-- Shared memory
-- futex
-- epoll, poll, select
-- Continuous integration test suite
-
-### Security hooks
-
-`PHANTOM_FORKING` records suspicious faults, VFS access and network activity.
-Trap mode can create a COW sandbox with an isolated synthetic VFS, dummy crypto
-material, sanitized descriptors and simulated network replies.
-
-Quarantine mode parks the source process. User write/NX faults are queued to a
-kernel worker, which builds the sandbox and resumes the exact faulting
-instruction there. Sandbox setup is atomic and fails closed.
-
-This is an experimental mechanism: the queue is bounded, unsupported faults use
-the normal signal/panic path, and fault-quarantined sources cannot be safely
-resumed.
-
-`Anti-TOCTOU jitter` correlates rapid cross-thread VFS and futex/memory access,
-then delays the flagged thread's next wake-up by 25–250 µs.
-
-## Build
-
-### Dependencies
+Build using a container runtime (`podman` or `docker`):
 
 ```sh
-gcc binutils make nasm bison flex musl-tools qemu-system xorriso cpio
-dosfstools mtools e2fsprogs gawk libncurses-dev curl wget tar file git
+make CRUNTIME=podman -j $(nproc)
 ```
 
-### Quick start
-
+and run: 
 ```sh
-make iso
 make run
 ```
 
-`make run` boots the live system and attaches a persistent 512 MiB disk. Log
-in as `root`/`root` and run `installer`. After installation, boot that disk
-directly with:
-
-```sh
-make boot
-```
-
-The installed system is stored in `dist/kyronix-disk.img`. `make clean` keeps
-this file.
-
-### Make targets
-
-| Target | Description |
-|---------|-------------|
-| `make` / `make iso` | Build `dist/kyronix.iso` |
-| `make live` | Build a RELEASE image `dist/kyronix-<ver>-RELEASE-amd64-live.iso` (+ `.sha256`) |
-| `make run` | Build and boot the ISO with the persistent disk |
-| `make boot` | Boot the installed disk without the ISO |
-| `make test` | Build and run all tests in QEMU |
-| `make fuzz-posix` | Run deterministic POSIX syscall property tests in QEMU and write metrics |
-| `make clean` | Remove build output, preserving the installed disk |
-
-### POSIX syscall property tests
-
-`make fuzz-posix` boots a separate, small initrd and tests user-visible behavior
-of `open`, `read`, `write`, `lseek`, `pread`, `pwrite`, `dup`, `ftruncate`, and
-`pipe`. The current scenarios cover exclusive creation, byte round trips,
-positional I/O, shared file offsets, truncation and zero extension, pipe EOF,
-and `EBADF`. Inputs are generated from a deterministic seed; every case starts
-with a fresh file in `/tmp`. This is an initial property-based conformance
-suite, not syscall coverage-guided fuzzing or a full POSIX certification run.
-
-The command writes `build/posix-fuzz-report.json` and
-`build/posix-fuzz-report.md`, including pass/fail counts by scenario, unique
-deviations, and replay commands. It exits with an error when a property fails
-or the VM run is incomplete. For example:
-
-```sh
-make fuzz-posix FUZZ_SEED=42 FUZZ_CASES=700
-make fuzz-posix FUZZ_SEED=42 FUZZ_ONLY=3
-```
-
-The same test can be run against the host POSIX implementation for an oracle
-sanity check:
-
-```sh
-gcc -std=c11 -O2 user/posix_fuzz/posix_fuzz.c -o /tmp/posix-fuzz
-/tmp/posix-fuzz --seed 42 --cases 700
-/tmp/posix-fuzz --seed 42 --cases 700 --case 3
-```
-
-To build in a container, append `CRUNTIME=podman` or `CRUNTIME=docker`.
-
-## Project structure
-
-| Directory | Purpose |
-|-----------|---------|
-| `kernel/` | Kernel source |
-| `user/` | Userspace |
-| `rootfs/` | Initramfs |
-| `boot/` | Limine boot configs & boot wallpaper |
-| `limine/` | Bootloader |
-| `meta/` | Assets & screenshots |
-
-## Support
-
-If you like Kyronix, consider supporting its development.
-
-<a href="https://buymeacoffee.com/kyron1x">
-  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="50" alt="Buy Me a Coffee">
-</a>
-
 ## License
-
-Distributed under the ISC License. See `LICENSE` for more information.
+ISC License. See [LICENSE](./LICENSE) for details.

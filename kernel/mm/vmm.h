@@ -35,9 +35,24 @@ typedef struct {
 } vmm_vma_t;
 
 typedef struct {
+    uint64_t file_off;
+    uint32_t dev_major, dev_minor;
+    uint64_t inode;
+    uint8_t kind;
+    char name[];
+} vma_meta_t;
+
+#define VMA_KIND_NONE 0
+#define VMA_KIND_ANON 1
+#define VMA_KIND_FILE 2
+#define VMA_KIND_HEAP 3
+#define VMA_KIND_STACK 4
+
+typedef struct {
     uint64_t pml4_phys;
     uint64_t kernel_map_generation;
     vmm_vma_t vmas[VMM_VMA_MAX];
+    vma_meta_t *vma_meta[VMM_VMA_MAX];
     volatile uint32_t refcount;
     volatile uint32_t user_accessors;
     volatile uint32_t user_mutating;

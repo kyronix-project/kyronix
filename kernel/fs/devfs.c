@@ -278,7 +278,12 @@ static int64_t pty_common_ioctl(pty_inst_t *p, uint64_t req, uint64_t arg) {
     }
     case 0x5414: { /* TIOCSWINSZ */
         if (!p || !uptr_ok((void *) (uintptr_t) arg, sizeof(pty_winsize_t))) return -EFAULT;
-        memcpy(&p->ws, (const void *) (uintptr_t) arg, sizeof(p->ws));
+        pty_winsize_t ws;
+        memcpy(&ws, (const void *) (uintptr_t) arg, sizeof(ws));
+        
+        int changed = ws.ws_row != p->ws.ws_row || ws.ws_col != p->ws.ws_col;
+        p->ws = ws;
+        if (changed) pty_send_sig(p->pgid, SIGWINCH);
         return 0;
     }
     case 0x540F: /* TIOCGPGRP */

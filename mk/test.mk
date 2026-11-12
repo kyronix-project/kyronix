@@ -3,9 +3,10 @@ TEST_ROOTFS := $(BUILD)/test-rootfs
 TEST_ISO_ROOT := $(BUILD)/test-iso-root
 TEST_DISK := $(BUILD)/test-disk.img
 TEST_SQSH := $(BUILD)/test.sqsh
+TEST_SQSH_XZ := $(BUILD)/test-xz.sqsh
 TEST_SQFS_SRC := $(BUILD)/sqfs-src
 TEST_LOG := $(BUILD)/test.log
-TEST_TIMEOUT ?= 120
+TEST_TIMEOUT ?= 600
 TEST_MODULE := $(BUILD)/hello.ko
 TEST_DEP_MODULE := $(BUILD)/hello_user.ko
 FUZZ_ISO := $(DIST)/kyronix-posix-fuzz.iso
@@ -64,24 +65,55 @@ $(TEST_DEP_MODULE): user/testrunner/fixtures/modules/dependent.c kernel/module.h
 	@$(call step,CC $<)
 	@$(CC) $(CFLAGS) -fno-asynchronous-unwind-tables -c $< -o $@
 
-SQFS_OPTS := -noappend -no-progress -comp gzip -b 131072 -no-exports
+SQFS_COMP ?= gzip
+SQFS_OPTS := -noappend -no-progress -comp $(SQFS_COMP) -b 131072 -no-exports
+
+GLIBC_FIXTURES := $(BUILD)/fixtures-glibc
+GLIBC_STAMP := $(GLIBC_FIXTURES)/.stamp
+GLIBC_SRC := user/testrunner/fixtures/glibc/hello.c
+GLIBC_SCRIPT := apt-get update >/dev/null 2>&1; \
+    apt-get install -y --no-install-recommends gcc libc6-dev >/dev/null 2>&1; \
+    gcc -O2 -o /src/$(GLIBC_FIXTURES)/hello-glibc /src/$(GLIBC_SRC) && \
+    cp /lib64/ld-linux-x86-64.so.2 /usr/lib/x86_64-linux-gnu/libc.so.6 \
+       /usr/lib/x86_64-linux-gnu/libm.so.6 /src/$(GLIBC_FIXTURES)/
+
+ifeq ($(strip $(INSIDE_CONTAINER)),1)
+GLIBC_BUILD := sh -c "$(GLIBC_SCRIPT)" >/dev/null
+else
+GLIBC_BUILD := $(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
+    docker.io/library/debian:bookworm-slim sh -c "$(GLIBC_SCRIPT)" >/dev/null
+endif
+
+$(GLIBC_STAMP): $(GLIBC_SRC)
+	@$(call phase,Glibc fixtures)
+	rm -rf $(GLIBC_FIXTURES)
+	mkdir -p $(GLIBC_FIXTURES)
+	$(GLIBC_BUILD)
+	@touch $(GLIBC_STAMP)
+	@$(call ok,$(GLIBC_FIXTURES))
 
 ifeq ($(strip $(INSIDE_CONTAINER)),1)
 MKSQ := sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
     mksquashfs $(TEST_SQFS_SRC) $(TEST_SQSH) $(SQFS_OPTS)" >/dev/null
+MKSQ_XZ := sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
+    mksquashfs $(TEST_SQFS_SRC) $(TEST_SQSH_XZ) -noappend -no-progress -comp xz -b 131072 -no-exports" >/dev/null
 else
 MKSQ := $(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
     $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
     sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
         mksquashfs /src/$(TEST_SQFS_SRC) /src/$(TEST_SQSH) $(SQFS_OPTS)" >/dev/null
+MKSQ_XZ := $(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
+    $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
+    sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
+        mksquashfs /src/$(TEST_SQFS_SRC) /src/$(TEST_SQSH_XZ) -noappend -no-progress -comp xz -b 131072 -no-exports" >/dev/null
 endif
 
-$(TEST_SQSH):
+$(TEST_SQFS_SRC):
 	@$(call phase,Squashfs fixture)
 	rm -rf $(TEST_SQFS_SRC)
 	mkdir -p $(TEST_SQFS_SRC)/bin $(TEST_SQFS_SRC)/usr/share/doc
 	printf 'hello from squashfs\n' > $(TEST_SQFS_SRC)/hello.txt
-	printf '#!/bin/sh\necho AppRun executed\n' > $(TEST_SQFS_SRC)/AppRun
+	printf '#!/bin/sh\necho AppRun executed\necho "APPDIR=$$APPDIR"\necho "APPIMAGE=$$APPIMAGE"\necho "ARG1=$$1"\nexit $$AI_EXIT\n' > $(TEST_SQFS_SRC)/AppRun
 	chmod 755 $(TEST_SQFS_SRC)/AppRun
 	printf 'docs\n' > $(TEST_SQFS_SRC)/usr/share/doc/readme.md
 	python3 -c "open('$(TEST_SQFS_SRC)/big.bin','wb').write(bytes((i*31+7)&0xFF for i in range(300000)))"
@@ -89,28 +121,103 @@ $(TEST_SQSH):
 	python3 -c "d=bytearray(1024*1024); [d.__setitem__(i,(i*13+1)&0xFF) for i in range(1024)]; open('$(TEST_SQFS_SRC)/sparse.bin','wb').write(d)"
 	ln -sf hello.txt $(TEST_SQFS_SRC)/link.txt
 	ln -sf ../hello.txt $(TEST_SQFS_SRC)/bin/up.txt
+
+$(TEST_SQSH): $(TEST_SQFS_SRC)
 	$(MKSQ)
 	@$(call ok,$(TEST_SQSH))
 
-$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE)
+$(TEST_SQSH_XZ): $(TEST_SQFS_SRC)
+	$(MKSQ_XZ)
+	@$(call ok,$(TEST_SQSH_XZ))
+
+# A script AppRun with no libs/, which is the shape real AppImages have. The
+# script is the same construct neovim uses, so the test covers dirname and
+# readlink -f resolving inside the chroot; usr/bin/prog is the glibc fixture
+# binary, which only loads where the sysroot provides its interpreter.
+BASH_APP_STAGE := $(BUILD)/bash-app-stage
+BASH_APP_SQSH := $(BUILD)/bash-app.sqsh
+BASH_APPIMG := $(BUILD)/bash-app.img
+
+$(BASH_APP_STAGE): $(REAL_APP_STAGE)
+	@$(call phase,Script AppRun fixture)
+	rm -rf $(BASH_APP_STAGE)
+	mkdir -p $(BASH_APP_STAGE)/usr/bin
+	cp $(REAL_APP_STAGE)/AppRun $(BASH_APP_STAGE)/usr/bin/prog
+	printf '#!/bin/bash\nunset ARGV0\necho "bash-apprun ok"\necho "apdir=$$(dirname "$$(readlink -f "$${0}")")"\nexec "$$(dirname "$$(readlink -f "$${0}")")/usr/bin/prog" $${@+"$$@"}\n' > $(BASH_APP_STAGE)/AppRun
+	chmod 755 $(BASH_APP_STAGE)/AppRun
+
+$(BASH_APP_SQSH): $(BASH_APP_STAGE)
+ifeq ($(strip $(INSIDE_CONTAINER)),1)
+	@command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
+	    mksquashfs $(BASH_APP_STAGE) $(BASH_APP_SQSH) -comp xz -b 131072 -noappend -no-progress >/dev/null
+else
+	@$(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
+	    $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
+	    sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
+	        mksquashfs /src/$(BASH_APP_STAGE) /src/$(BASH_APP_SQSH) -comp xz -b 131072 -noappend -no-progress" >/dev/null
+endif
+
+$(BASH_APPIMG): $(BASH_APP_SQSH) scripts/wrap_appimages.py
+	@python3 $(CURDIR)/scripts/wrap_appimages.py --single $(BASH_APP_SQSH) $(BASH_APPIMG)
+	@$(call ok,$(BASH_APPIMG))
+
+$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH) $(TEST_SQSH_XZ) $(GLIBC_STAMP) $(SYSROOT_SQSH) $(REAL_APPIMG) $(BASH_STAMP) $(BASH_APPIMG) $(NVIM_STAMP) $(WL_PROBEIMG)
 	@$(call phase,Test initrd)
 	rm -rf $(TEST_ROOTFS)
 	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt $(TEST_ROOTFS)/sqfs \
 	    $(TEST_ROOTFS)/etc $(TEST_ROOTFS)/lib/modules
 	printf 'sdb /sqfs squashfs ro 0 0\n' > $(TEST_ROOTFS)/etc/fstab
+	@# kair binds the host's /etc/terminfo into the sandbox; TERM=xterm-color is
+	@# not in neovim's builtin table, so the guest has to carry the real entries.
+	@mkdir -p $(TEST_ROOTFS)/etc/terminfo
+	@cp -a rootfs/etc/terminfo/. $(TEST_ROOTFS)/etc/terminfo/
+	python3 scripts/wrap_appimages.py '$(TEST_ROOTFS)' '$(TEST_SQSH)' '$(TEST_SQSH_XZ)'
+	@if [ -f $(REAL_APPIMG) ]; then \
+	    cp $(REAL_APPIMG) $(TEST_ROOTFS)/real_app.img; \
+	else \
+	    echo "  [WARN] no real AppImage fixture; real-appimage tests will skip"; \
+	fi
+	@if [ -f $(BASH_APPIMG) ]; then \
+	    cp $(BASH_APPIMG) $(TEST_ROOTFS)/bash_app.img; \
+	else \
+	    echo "  [WARN] no script-AppRun fixture; bash-appimage tests will skip"; \
+	fi
+	@if [ -s $(NVIM_APPIMG) ]; then \
+	    cp $(NVIM_APPIMG) $(TEST_ROOTFS)/nvim.appimage; \
+	else \
+	    echo "  [WARN] no neovim AppImage; real-app tests will skip"; \
+	fi
+	@# The Wayland client goes through the sysroot, not the image: it has no
+	@# libs/ of its own, so its libwayland-client comes from the glibc sysroot.
+	@if [ -f $(WL_PROBEIMG) ]; then \
+	    cp $(WL_PROBEIMG) $(TEST_ROOTFS)/wl_probe.img; \
+	else \
+	    echo "  [WARN] no Wayland client fixture; wayland tests will skip"; \
+	fi
+	mkdir -p $(TEST_ROOTFS)/glibc $(TEST_ROOTFS)/lib64
+	cp $(GLIBC_FIXTURES)/hello-glibc $(GLIBC_FIXTURES)/libc.so.6 $(GLIBC_FIXTURES)/libm.so.6 $(TEST_ROOTFS)/glibc/
+	cp $(GLIBC_FIXTURES)/ld-linux-x86-64.so.2 $(TEST_ROOTFS)/lib64/
+	@mkdir -p $(TEST_ROOTFS)/usr/lib/sysroots
+	@if [ -f $(SYSROOT_SQSH) ]; then \
+	    cp $(SYSROOT_SQSH) $(TEST_ROOTFS)/usr/lib/sysroots/debian.sqsh; \
+	else \
+	    echo "  [WARN] no sysroot image; real-appimage tests will skip"; \
+	fi
 	cp $(BUILD)/bin/testrunner $(TEST_ROOTFS)/init
 	cp $(KERNEL_MODULES) $(TEST_ROOTFS)/lib/modules/
 	cp $(TEST_MODULE) $(TEST_ROOTFS)/lib/modules/hello.ko
 	cp $(TEST_DEP_MODULE) $(TEST_ROOTFS)/lib/modules/hello_user.ko
 	cp $(BUILD)/bin/ksh $(TEST_ROOTFS)/bin/
 	ln -sf ksh $(TEST_ROOTFS)/bin/sh
-	for app in basename cat chgrp chmod chown cksum clear cmp cp cut date dd \
-	    dirname du echo env false find grep head hostname kill killall less \
-	    link ln ls mkdir mktemp mv nc nslookup ping printenv printf ps pwd \
+	for app in basename cat chgrp chmod chown chroot cksum clear cmp cp cut date dd \
+	    dirname du echo env false find grep head hostname kair kill killall less \
+	    link ln ls mkdir mktemp mount mv nc nslookup ping printenv printf ps pwd \
 	    readlink reboot rm rmdir sed seq sleep sort sync tail tee test touch \
-	    tr true tty uname uniq unlink wc wget which whoami yes; do \
+	    tr true tty umount unshare uname uniq unlink wc wget which whoami yes; do \
 	    cp $(BUILD)/bin/$$app $(TEST_ROOTFS)/bin/; \
 	done
+	@if [ -s $(BUILD)/bin/bash ]; then cp $(BUILD)/bin/bash $(TEST_ROOTFS)/bin/; \
+	else echo "  [WARN] no static bash; script AppRun tests will skip"; fi
 	for bin in tar gzip gunzip bzip2 bunzip2 xz unxz; do \
 	    cp -P $(BUILD)/bin/$$bin $(TEST_ROOTFS)/bin/; \
 	done
@@ -133,7 +240,7 @@ test: $(TEST_ISO) $(TEST_SQSH)
 	@mkfs.ext2 -F -b 4096 -L kyronix-test $(TEST_DISK) >/dev/null 2>&1
 	@set +e; \
 	timeout $(TEST_TIMEOUT) $(QEMU) \
-	    -M q35 -cpu max -m 512M -smp 4 \
+	    -M q35 -cpu max -m 2G -smp 4 \
 	    -cdrom $(TEST_ISO) \
 	    -device isa-debug-exit,iobase=0x501 \
 	    -display none \

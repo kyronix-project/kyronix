@@ -4,6 +4,8 @@
 include/config/
 include/generated/
 scripts/kconfig/
+*.png~
+
 # logs
 *.log
 *.d
@@ -27,3 +29,6 @@ rootfs/usr/bin/kyronix-panel
 
 # vendored GNU make tree (configured & built; artifacts only)
 user/kyrobox/make/
+
+# idk just postfix for ignoring some files
+*.ignore

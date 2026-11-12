@@ -140,6 +140,16 @@ void tty_usb_input_char(uint8_t c) {
     irq_restore(flags);
 }
 
+void tty_inject_input(const char *buf, uint64_t len) {
+    if (!buf) return;
+    uint64_t flags = irq_save();
+    for (uint64_t i = 0; i < len; i++) {
+        if (tty_buf_full()) break;
+        tty_enqueue((uint8_t) buf[i]);
+    }
+    irq_restore(flags);
+}
+
 void tty_process_input(void) {
     uint64_t flags = irq_save();
 #ifdef CONFIG_SERIAL_CONSOLE

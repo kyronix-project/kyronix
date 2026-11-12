@@ -4,6 +4,8 @@
 #include "../lib/log.h"
 #include "../lib/printf.h"
 #include "../lib/string.h"
+#include "../lib/xz/xz_kernel.h"
+#include "../lib/zstd/zstd_kernel.h"
 #include "../mm/heap.h"
 #include "vfs.h"
 #include "vfs_internal.h"
@@ -12,6 +14,8 @@
 #define SQFS_MAJOR 4
 #define SQFS_MINOR 0
 #define SQFS_COMP_ZLIB 1
+#define SQFS_COMP_XZ 4
+#define SQFS_COMP_ZSTD 6
 #define SQFS_META_SIZE 8192
 #define SQFS_NAME_MAX 256
 #define SQFS_DIR_COUNT_MAX 256
@@ -91,6 +95,7 @@ typedef struct {
 
 typedef struct {
 	struct block_device *dev;
+	uint16_t compression;
 	uint32_t block_size;
 	uint32_t block_log;
 	uint64_t bytes_used;
@@ -192,13 +197,21 @@ static int sqfs_read_bytes(sqfs_t *sq, uint64_t abs, void *dst, uint64_t n) {
 	return 0;
 }
 
-static int64_t sqfs_inflate(const uint8_t *src, uint64_t src_len, uint8_t *dst, uint64_t dst_cap) {
+static int64_t sqfs_zlib_decompress(const uint8_t *src, uint64_t src_len, uint8_t *dst,
+                                    uint64_t dst_cap) {
 	if (src_len <= 2) return -1;
 	if ((src[0] & 0x0fu) != 8u) return -1;
 	if ((src[0] >> 4) > 7u) return -1;
 	if (((uint32_t) src[0] * 256u + (uint32_t) src[1]) % 31u != 0u) return -1;
 	if (src[1] & 0x20u) return -1;
 	return kinflate(src + 2, src_len - 2, dst, dst_cap);
+}
+
+static int64_t sqfs_decompress(sqfs_t *sq, const uint8_t *src, uint64_t src_len, uint8_t *dst,
+                               uint64_t dst_cap) {
+	if (sq->compression == SQFS_COMP_XZ) return kxz_decode(src, src_len, dst, dst_cap);
+	if (sq->compression == SQFS_COMP_ZSTD) return kzstd_decode(src, src_len, dst, dst_cap);
+	return sqfs_zlib_decompress(src, src_len, dst, dst_cap);
 }
 
 static sqfs_meta_slot_t *sqfs_meta_get(sqfs_t *sq, uint64_t pos) {
@@ -249,7 +262,7 @@ static sqfs_meta_slot_t *sqfs_meta_get(sqfs_t *sq, uint64_t pos) {
 			kfree(src);
 			return NULL;
 		}
-		int64_t n = sqfs_inflate(src, on_disk, slot->data, SQFS_META_SIZE);
+		int64_t n = sqfs_decompress(sq, src, on_disk, slot->data, SQFS_META_SIZE);
 		kfree(src);
 		if (n <= 0 || (uint64_t) n > SQFS_META_SIZE) return NULL;
 		slot->len = (uint32_t) n;
@@ -520,7 +533,7 @@ static int sqfs_read_block(sqfs_t *sq, uint64_t pos, uint32_t raw, uint8_t *dst,
 		kfree(src);
 		return -1;
 	}
-	int64_t n = sqfs_inflate(src, on_disk, dst, expect);
+	int64_t n = sqfs_decompress(sq, src, on_disk, dst, expect);
 	kfree(src);
 	if (n < 0 || (uint64_t) n != expect) return -1;
 	return 0;
@@ -560,7 +573,7 @@ static int sqfs_read_fragment(sqfs_t *sq, uint32_t idx, uint32_t off, uint8_t *d
 			kfree(frag);
 			return -1;
 		}
-		int64_t produced = sqfs_inflate(src, on_disk, frag, sq->block_size);
+		int64_t produced = sqfs_decompress(sq, src, on_disk, frag, sq->block_size);
 		kfree(src);
 		if (produced < 0 || (uint64_t) produced > sq->block_size) {
 			kfree(frag);
@@ -884,7 +897,7 @@ bool squashfs_probe(struct block_device *dev) {
 	uint16_t minor = (uint16_t) buf[30] | ((uint16_t) buf[31] << 8);
 	uint16_t comp = (uint16_t) buf[20] | ((uint16_t) buf[21] << 8);
 	return magic == SQFS_MAGIC && major == SQFS_MAJOR && minor == SQFS_MINOR &&
-	       comp == SQFS_COMP_ZLIB;
+	       (comp == SQFS_COMP_ZLIB || comp == SQFS_COMP_XZ || comp == SQFS_COMP_ZSTD);
 }
 
 static sqfs_t *sqfs_open(struct block_device *dev) {
@@ -900,6 +913,7 @@ static sqfs_t *sqfs_open(struct block_device *dev) {
 		return NULL;
 	}
 
+	sq->compression = sb.compression;
 	sq->block_size = sb.block_size;
 	sq->block_log = sb.block_log;
 	sq->bytes_used = sb.bytes_used;
@@ -1114,6 +1128,12 @@ static struct filesystem sqfs_fs = {
 	.name = "squashfs",
 	.check_root = NULL,
 	.mount = squashfs_mount,
+	.build_root = squashfs_build_root,
+	.destroy_root = squashfs_destroy,
+	.readonly = true,
 };
 
-void squashfs_init(void) { vfs_register_fs(&sqfs_fs); }
+void squashfs_init(void) {
+	kxz_init();
+	vfs_register_fs(&sqfs_fs);
+}

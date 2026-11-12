@@ -68,3 +68,4 @@ void fb_cursor_enable(int enable);
 void fb_cursor_update(void);
 void fb_cursor_blink_tick(uint64_t ticks);
 void fb_console_suspend(int suspend);
+void fb_set_reply_hook(void (*hook)(const char *buf, uint64_t len));
