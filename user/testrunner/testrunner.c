@@ -43,6 +43,8 @@ static int run_sandbox(const char *test_name, int (*test_fn)(void)) {
         p[0] = -1;
         p[1] = -1;
     }
+
+    if (p[1] >= 0) fcntl(p[1], F_SETFD, FD_CLOEXEC);
     failure_pipe[0] = p[0];
     failure_pipe[1] = p[1];
 

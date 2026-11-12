@@ -11,6 +11,7 @@
  * has to be a marker on stdout, and the exit code has to be asserted first.
  */
 #include "test_harness.h"
+#include <pty.h>
 
 #define NVIM_APPIMG "/nvim.appimage"
 
@@ -102,3 +103,93 @@ int test_appimage_nvim_cleanup(void) {
     return 1;
 }
 REGISTER_TEST(appimage_nvim_cleanup, "Phase 7: AppImage");
+
+/* The interactive path. neovim only enters TUI mode when its stdout is a
+ * terminal, so the run has to go behind a real pty -- and the bytes it then
+ * writes are the ones it can only produce after it has found a terminfo entry
+ * for $TERM and successfully opened a screen. That makes smcup the one marker
+ * worth asserting: it proves the sandbox handed over the terminfo database and
+ * a writable /dev/tty at once, which is the whole point of this stage.
+ *
+ * The test deliberately does not require the editor to exit. Driving a full
+ * screen editor to a clean quit from a harness is a test of the harness, and it
+ * is what made the earlier version of this test slow and flaky. Reaching the
+ * alternate screen is the thing under test; quitting is not. */
+static int nvim_smcup(const char *term, char *out, size_t outsz) {
+    int master = -1;
+    pid_t child = forkpty(&master, NULL, NULL, NULL);
+    if (child < 0) return 0;
+
+    if (child == 0) {
+        setenv("TERM", term, 1);
+        setenv("LINES", "24", 1);
+        setenv("COLUMNS", "80", 1);
+        char *argv[] = { "/bin/kair", NVIM_APPIMG, NULL };
+        execv(argv[0], argv);
+        _exit(127);
+    }
+
+    size_t total = 0;
+    int found = 0;
+
+    for (int spin = 0; spin < 2500 && !found; spin++) {
+        int flags = fcntl(master, F_GETFL, 0);
+        fcntl(master, F_SETFL, flags | O_NONBLOCK);
+        char buf[4096];
+        for (;;) {
+            ssize_t n = read(master, buf, sizeof(buf));
+            if (n <= 0) break;
+            if (total + (size_t) n < outsz - 1) {
+                memcpy(out + total, buf, (size_t) n);
+                total += (size_t) n;
+            }
+
+            for (ssize_t i = 0; i + 2 < n; i++) {
+                if (buf[i] != '\033' || buf[i + 1] != '[') continue;
+                if (buf[i + 2] == 'c') {
+                    ssize_t w = write(master, "\033[?1;2c", 7);
+                    (void) w;
+                } else if (buf[i + 2] == '6' && i + 3 < n && buf[i + 3] == 'n') {
+                    ssize_t w = write(master, "\033[1;1R", 6);
+                    (void) w;
+                }
+            }
+        }
+        fcntl(master, F_SETFL, flags);
+        out[total] = '\0';
+        found = strstr(out, "\033[?1049h") != NULL || strstr(out, "\033[?47h") != NULL;
+        if (!found) usleep(20000);
+    }
+
+    kill(child, SIGKILL);
+    close(master);
+    return found;
+}
+
+int test_appimage_nvim_tui(void) {
+    if (!nvim_runnable()) return 1;
+
+    char *buf = malloc(65536);
+    ASSERT_NOTNULL(buf);
+    int ok = nvim_smcup("xterm-256color", buf, 65536);
+    if (!ok && failure_pipe[1] >= 0)
+        dprintf(failure_pipe[1], "xterm-256color: no smcup, got [%.120s]\n", buf);
+    free(buf);
+    ASSERT_TRUE(ok);
+    return 1;
+}
+REGISTER_TEST(appimage_nvim_tui, "Phase 7: AppImage");
+
+int test_appimage_nvim_tui_external_terminfo(void) {
+    if (!nvim_runnable()) return 1;
+
+    char *buf = malloc(65536);
+    ASSERT_NOTNULL(buf);
+    int ok = nvim_smcup("xterm-color", buf, 65536);
+    if (!ok && failure_pipe[1] >= 0)
+        dprintf(failure_pipe[1], "xterm-color: no smcup, got [%.120s]\n", buf);
+    free(buf);
+    ASSERT_TRUE(ok);
+    return 1;
+}
+REGISTER_TEST(appimage_nvim_tui_external_terminfo, "Phase 7: AppImage");

@@ -167,6 +167,10 @@ $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/test
 	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt $(TEST_ROOTFS)/sqfs \
 	    $(TEST_ROOTFS)/etc $(TEST_ROOTFS)/lib/modules
 	printf 'sdb /sqfs squashfs ro 0 0\n' > $(TEST_ROOTFS)/etc/fstab
+	@# kair binds the host's /etc/terminfo into the sandbox; TERM=xterm-color is
+	@# not in neovim's builtin table, so the guest has to carry the real entries.
+	@mkdir -p $(TEST_ROOTFS)/etc/terminfo
+	@cp -a rootfs/etc/terminfo/. $(TEST_ROOTFS)/etc/terminfo/
 	python3 scripts/wrap_appimages.py '$(TEST_ROOTFS)' '$(TEST_SQSH)' '$(TEST_SQSH_XZ)'
 	@if [ -f $(REAL_APPIMG) ]; then \
 	    cp $(REAL_APPIMG) $(TEST_ROOTFS)/real_app.img; \

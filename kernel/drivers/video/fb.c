@@ -23,13 +23,40 @@ static uint8_t *g_shadow;
 static uint64_t g_shadow_bytes;
 static uint32_t g_bytes_per_px = 4;
 
+static uint8_t *g_alt;
+static bool g_alt_active;
+
+static uint32_t g_scroll_top;
+static uint32_t g_scroll_bot;
+
+static uint32_t g_saved_col, g_saved_row;
+static uint32_t g_saved_fg, g_saved_bg;
+static int g_saved_g0, g_saved_g1, g_saved_gl;
+static bool g_saved_bold, g_saved_gfx, g_saved_valid;
+
+static uint32_t g_tab_stops[8];
+
+static void (*g_reply_hook)(const char *buf, uint64_t len);
+
+void fb_set_reply_hook(void (*hook)(const char *buf, uint64_t len)) { g_reply_hook = hook; }
+
+static void fb_reply(const char *s) {
+    if (g_reply_hook) g_reply_hook(s, (uint64_t) strlen(s));
+}
+
+static inline uint8_t *shadow_active(void) { return (g_alt_active && g_alt) ? g_alt : g_shadow; }
+
 static bool g_console_suspended;
 
-static inline bool console_blackholed(void) { return g_console_suspended && !g_shadow; }
+static inline bool console_blackholed(void) { return g_console_suspended && !shadow_active(); }
 
 static inline uint8_t *vram_base(void) {
-    return (g_console_suspended && g_shadow) ? g_shadow : (uint8_t *) g_fb.addr;
+    return (g_console_suspended && shadow_active()) ? shadow_active() : (uint8_t *) g_fb.addr;
 }
+
+static inline uint32_t screen_rows(void) { return (uint32_t) (g_fb.height / FONT_H); }
+
+static inline uint32_t screen_cols(void) { return (uint32_t) (g_fb.width / FONT_W); }
 
 static inline uint8_t *vram_at(uint64_t off) { return vram_base() + off; }
 
@@ -39,6 +66,18 @@ static inline uint64_t px_off(uint32_t x, uint32_t y) {
 
 static void cursor_draw(uint32_t col, uint32_t row, uint32_t color);
 static uint32_t adjust_bold(uint32_t color);
+static void screen_fill_rows(uint32_t first, uint32_t last, uint32_t color);
+static void screen_move_cells(uint32_t row, uint32_t dst_col, uint32_t src_col, uint32_t count);
+static void fb_present(void);
+static void fb_alloc_alt(void);
+static void fb_alt_screen_enter(bool save_cursor);
+static void fb_alt_screen_leave(bool restore_cursor);
+
+static inline void screen_write(uint64_t off, uint32_t color) {
+    if (!g_console_suspended) *(uint32_t *) ((uint8_t *) g_fb.addr + off) = color;
+    uint8_t *s = shadow_active();
+    if (s) *(uint32_t *) (s + off) = color;
+}
 
 static const kfnt_header_t *g_kfnt;
 static const uint8_t *g_glyph_data;
@@ -170,14 +209,28 @@ static void draw_char(uint32_t col, uint32_t row, uint32_t glyph_idx) {
     for (uint32_t ri = 0; ri < FONT_H; ri++) {
         uint8_t bits = glyph[ri * g_bpf];
         uint64_t off = px_off(px, py + ri);
-        uint32_t *v = (uint32_t *) vram_at(off);
-        uint32_t *s = g_shadow ? (uint32_t *) (g_shadow + off) : NULL;
-        for (uint32_t b = 0; b < FONT_W; b++) {
-            uint32_t color = (bits & (0x80u >> b)) ? fg : bg;
-            v[b] = color;
-            if (s) s[b] = color;
-        }
+        for (uint32_t b = 0; b < FONT_W; b++)
+            screen_write(off + b * g_bytes_per_px, (bits & (0x80u >> b)) ? fg : bg);
     }
+}
+
+static void fb_alloc_alt(void) {
+    if (g_alt || !g_shadow_bytes) return;
+    uint64_t pages = (g_shadow_bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+    void *phys = pmm_alloc_contiguous(pages);
+    if (!phys) return;
+    g_alt = (uint8_t *) phys_to_virt((uint64_t) phys);
+    memset(g_alt, 0, g_shadow_bytes);
+#ifdef CONFIG_KMEMLEAK
+    for (uint64_t i = 0; i < pages; i++)
+        kmemleak_untrack_page((void *) ((uint64_t) phys + i * PAGE_SIZE));
+#endif
+}
+
+static void fb_present(void) {
+    if (g_console_suspended || !g_fb.addr) return;
+    uint8_t *s = shadow_active();
+    if (s) memcpy(g_fb.addr, s, g_shadow_bytes);
 }
 
 void fb_init(struct limine_framebuffer *fb) {
@@ -216,25 +269,27 @@ void fb_init(struct limine_framebuffer *fb) {
             kmemleak_untrack_page((void *) ((uint64_t) phys + i * PAGE_SIZE));
 #endif
     }
+
+    g_scroll_top = 0;
+    g_scroll_bot = screen_rows() ? screen_rows() - 1 : 0;
+    for (int i = 0; i < 8; i++) g_tab_stops[i] = (uint32_t) ((i + 1) * 8);
 }
 
 void fb_put_pixel(uint32_t x, uint32_t y, uint32_t color) {
     if (x >= g_fb.width || y >= g_fb.height) return;
     if (console_blackholed()) return;
-    uint64_t off = px_off(x, y);
-    *(uint32_t *) vram_at(off) = color;
-    if (g_shadow) *(uint32_t *) (g_shadow + off) = color;
+    screen_write(px_off(x, y), color);
 }
 
 void fb_clear(uint32_t color) {
     if (console_blackholed()) return;
+    uint8_t *s = shadow_active();
     for (uint64_t y = 0; y < g_fb.height; y++) {
         uint64_t off = px_off(0, (uint32_t) y);
-        uint32_t *v = (uint32_t *) vram_at(off);
-        for (uint64_t x = 0; x < g_fb.width; x++) v[x] = color;
-        if (g_shadow) {
-            uint32_t *s = (uint32_t *) (g_shadow + off);
-            for (uint64_t x = 0; x < g_fb.width; x++) s[x] = color;
+        uint32_t *v = (uint32_t *) ((uint8_t *) g_fb.addr + off);
+        for (uint64_t x = 0; x < g_fb.width; x++) {
+            if (!g_console_suspended) v[x] = color;
+            if (s) ((uint32_t *) (s + off))[x] = color;
         }
     }
     g_fb.col = 0;
@@ -251,12 +306,7 @@ void fb_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color
     if (h > g_fb.height - y) h = (uint32_t) (g_fb.height - y);
     for (uint32_t dy = 0; dy < h; dy++) {
         uint64_t off = px_off(x, y + dy);
-        uint32_t *v = (uint32_t *) vram_at(off);
-        for (uint32_t dx = 0; dx < w; dx++) v[dx] = color;
-        if (g_shadow) {
-            uint32_t *s = (uint32_t *) (g_shadow + off);
-            for (uint32_t dx = 0; dx < w; dx++) s[dx] = color;
-        }
+        for (uint32_t dx = 0; dx < w; dx++) screen_write(off + dx * g_bytes_per_px, color);
     }
 }
 
@@ -265,47 +315,150 @@ void fb_set_color(uint32_t fg, uint32_t bg) {
     g_fb.bg = bg;
 }
 
-static void scroll_up(void) {
-    if (console_blackholed()) return;
+static void screen_move_rows(uint32_t dst_row, uint32_t src_row, uint32_t count) {
+    if (!count) return;
     uint64_t line_bytes = (uint64_t) FONT_H * g_fb.pitch;
-    uint64_t rows_total = g_fb.height / FONT_H;
-    if (rows_total < 2) return;
-    uint64_t keep_bytes = (rows_total - 1) * line_bytes;
-    uint32_t last_y = (uint32_t) ((rows_total - 1) * FONT_H);
+    uint8_t *s = shadow_active();
+    uint64_t dst_off = (uint64_t) dst_row * line_bytes;
+    uint64_t src_off = (uint64_t) src_row * line_bytes;
+    uint64_t n = (uint64_t) count * line_bytes;
 
-    if (!g_shadow) {
-        memmove(vram_base(), vram_base() + line_bytes, keep_bytes);
-        fb_fill_rect(0, last_y, (uint32_t) g_fb.width, FONT_H, g_fb.bg);
-        return;
-    }
-
-    memmove(g_shadow, g_shadow + line_bytes, keep_bytes);
-    for (uint32_t dy = 0; dy < FONT_H; dy++) {
-        uint32_t *s = (uint32_t *) (g_shadow + px_off(0, last_y + dy));
-        for (uint64_t x = 0; x < g_fb.width; x++) s[x] = g_fb.bg;
-    }
-    if (!g_console_suspended) memcpy(g_fb.addr, g_shadow, keep_bytes + line_bytes);
+    if (!g_console_suspended)
+        memmove((uint8_t *) g_fb.addr + dst_off, (uint8_t *) g_fb.addr + src_off, n);
+    if (s) memmove(s + dst_off, s + src_off, n);
 }
 
-// KDSETMODE: hand video memory over to a display server, or take it back
+static void screen_fill_rows(uint32_t first, uint32_t last, uint32_t color) {
+    for (uint32_t r = first; r <= last; r++)
+        fb_fill_rect(0, r * FONT_H, (uint32_t) g_fb.width, FONT_H, color);
+}
+
+static void screen_move_cells(uint32_t row, uint32_t dst_col, uint32_t src_col, uint32_t count) {
+    if (!count) return;
+    uint64_t row_off = (uint64_t) row * FONT_H * g_fb.pitch;
+    uint64_t dst_off = row_off + (uint64_t) dst_col * FONT_W * g_bytes_per_px;
+    uint64_t src_off = row_off + (uint64_t) src_col * FONT_W * g_bytes_per_px;
+    uint64_t n = (uint64_t) count * FONT_W * g_bytes_per_px;
+    uint8_t *s = shadow_active();
+
+    for (uint32_t dy = 0; dy < FONT_H; dy++) {
+        uint64_t off = (uint64_t) dy * g_fb.pitch;
+        if (!g_console_suspended)
+            memmove((uint8_t *) g_fb.addr + dst_off + off,
+                    (uint8_t *) g_fb.addr + src_off + off, n);
+        if (s) memmove(s + dst_off + off, s + src_off + off, n);
+    }
+}
+
+static void fb_alt_screen_enter(bool save_cursor) {
+    uint32_t cols = screen_cols();
+    uint32_t rows = screen_rows();
+    if (save_cursor) {
+        g_saved_col = g_fb.col;
+        g_saved_row = g_fb.row;
+        g_saved_valid = true;
+    }
+    if (!g_alt) fb_alloc_alt();
+    if (!g_alt) return;
+
+    g_alt_active = true;
+    if (rows) screen_fill_rows(0, rows - 1, g_fb.bg);
+    if (save_cursor) {
+        g_fb.col = 0;
+        g_fb.row = 0;
+    }
+    if (cols && g_fb.col >= cols) g_fb.col = cols - 1;
+    if (rows && g_fb.row >= rows) g_fb.row = rows - 1;
+    fb_present();
+}
+
+static void fb_alt_screen_leave(bool restore_cursor) {
+    if (!g_alt_active) return;
+    g_alt_active = false;
+    if (restore_cursor && g_saved_valid) {
+        g_fb.col = g_saved_col;
+        g_fb.row = g_saved_row;
+    }
+    fb_present();
+}
+
+static void scroll_up(void) {
+    if (console_blackholed()) return;
+    uint32_t rows_total = screen_rows();
+    if (rows_total < 2) return;
+
+    uint32_t top = g_scroll_top < rows_total ? g_scroll_top : 0;
+    uint32_t bot = g_scroll_bot < rows_total ? g_scroll_bot : rows_total - 1;
+    if (top >= bot) {
+        top = 0;
+        bot = rows_total - 1;
+    }
+
+    screen_move_rows(top, top + 1, bot - top);
+    screen_fill_rows(bot, bot, g_fb.bg);
+}
+
+static void scroll_down(void) {
+    if (console_blackholed()) return;
+    uint32_t rows_total = screen_rows();
+    if (rows_total < 2) return;
+
+    uint32_t top = g_scroll_top < rows_total ? g_scroll_top : 0;
+    uint32_t bot = g_scroll_bot < rows_total ? g_scroll_bot : rows_total - 1;
+    if (top >= bot) {
+        top = 0;
+        bot = rows_total - 1;
+    }
+
+    screen_move_rows(top + 1, top, bot - top);
+    screen_fill_rows(top, top, g_fb.bg);
+}
+
+static uint32_t region_bottom(void) {
+    uint32_t rows_total = screen_rows();
+    return g_scroll_bot < rows_total ? g_scroll_bot : (rows_total ? rows_total - 1 : 0);
+}
+
+static uint32_t region_top(void) {
+    uint32_t rows_total = screen_rows();
+    return g_scroll_top < rows_total ? g_scroll_top : 0;
+}
+
+static void index_down(void) {
+    uint32_t rows_total = screen_rows();
+    if (!rows_total) return;
+    if (g_fb.row == region_bottom()) {
+        scroll_up();
+    } else if (g_fb.row < rows_total - 1) {
+        g_fb.row++;
+    }
+}
+
+static void reverse_index(void) {
+    if (g_fb.row == region_top()) {
+        scroll_down();
+    } else if (g_fb.row > 0) {
+        g_fb.row--;
+    }
+}
+
 void fb_console_suspend(int suspend) {
     bool off = suspend != 0;
     if (off == g_console_suspended) return;
     g_console_suspended = off;
     if (off) return;
-    if (g_shadow)
-        memcpy(g_fb.addr, g_shadow, g_shadow_bytes);
-    else
-        fb_clear(g_fb.bg);
+    fb_present();
+    if (!shadow_active()) fb_clear(g_fb.bg);
     fb_cursor_update();
 }
 
-// sgr
-
-enum { ESC_NONE, ESC_ESC, ESC_CSI, ESC_CHARSET } g_esc;
+enum { ESC_NONE, ESC_ESC, ESC_CSI, ESC_CHARSET, ESC_OSC, ESC_DCS } g_esc;
 static int g_esc_params[16];
 static int g_esc_np;
 static bool g_esc_priv;
+static char g_esc_inter;
+static char g_dcs[16];
+static int g_dcs_len;
 
 static const uint32_t ansi_fg[8] = {
     COLOR_BLACK, COLOR_RED,          COLOR_GREEN, COLOR_YELLOW,
@@ -451,25 +604,62 @@ void fb_putchar(char c) {
     uint32_t rows = (uint32_t) (g_fb.height / FONT_H);
 
     switch (g_esc) {
+    case ESC_OSC:
+        if (c == '\a') g_esc = ESC_NONE;
+        if (c == '\033') g_esc = ESC_ESC;
+        return;
+
+    case ESC_DCS:
+        if (c == '\033') {
+            if (g_dcs_len == 3 && g_dcs[0] == '$' && g_dcs[1] == 'q' && g_dcs[2] == 'm')
+                fb_reply("\033P1$r0m\033\\");
+            g_dcs_len = 0;
+            g_esc = ESC_ESC;
+            return;
+        }
+        if (g_dcs_len < (int) sizeof(g_dcs)) g_dcs[g_dcs_len++] = (char) c;
+        return;
+
     case ESC_ESC:
         if (c == '[') {
             g_esc = ESC_CSI;
             for (int i = 0; i < 16; i++) g_esc_params[i] = 0;
             g_esc_np = 0;
             g_esc_priv = false;
+            g_esc_inter = 0;
         } else if (c == ']') {
-            g_esc = ESC_NONE; // OSC: consume until BEL/ST
+            g_esc = ESC_OSC;
+        } else if (c == 'P') {
+            g_esc = ESC_DCS;
+            g_dcs_len = 0;
         } else if (c == '(' || c == ')') {
-            // ESC( / ESC) - charset designation, next char selects
             g_esc_charset_slot = (c == ')') ? 1 : 0;
             g_esc = ESC_CHARSET;
         } else {
-            // Single-char ESC sequences
             g_esc = ESC_NONE;
             if (c == '7') {
-                // DECSC: save cursor - no-op
+                g_saved_col = g_fb.col;
+                g_saved_row = g_fb.row;
+                g_saved_fg = g_fb.fg;
+                g_saved_bg = g_fb.bg;
+                g_saved_bold = g_fb.bold;
+                g_saved_g0 = g_charset_g0;
+                g_saved_g1 = g_charset_g1;
+                g_saved_gl = g_gl;
+                g_saved_gfx = g_fb.vt100_graphics;
+                g_saved_valid = true;
             } else if (c == '8') {
-                // DECRC: restore cursor - no-op
+                if (g_saved_valid) {
+                    g_fb.col = g_saved_col;
+                    g_fb.row = g_saved_row;
+                    g_fb.fg = g_saved_fg;
+                    g_fb.bg = g_saved_bg;
+                    g_fb.bold = g_saved_bold;
+                    g_charset_g0 = g_saved_g0;
+                    g_charset_g1 = g_saved_g1;
+                    g_gl = g_saved_gl;
+                    g_fb.vt100_graphics = g_saved_gfx;
+                }
             } else if (c == 'c') {
                 // RIS: full reset
                 g_fb.fg = COLOR_WHITE;
@@ -481,32 +671,15 @@ void fb_putchar(char c) {
                 g_gl = 0;
                 fb_clear(COLOR_BG);
             } else if (c == 'D') {
-                // IND: index - move cursor down, scroll if at bottom
-                if (g_fb.row < rows - 1) {
-                    g_fb.row++;
-                } else {
-                    scroll_up();
-                }
+                // IND: index - move cursor down, scroll if at the region bottom
+                index_down();
             } else if (c == 'E') {
                 // NEL: next line
                 g_fb.col = 0;
-                if (g_fb.row < rows - 1) {
-                    g_fb.row++;
-                } else {
-                    scroll_up();
-                }
+                index_down();
             } else if (c == 'M') {
                 // RI: reverse index
-                if (g_fb.row > 0) {
-                    g_fb.row--;
-                } else {
-                    uint32_t line_bytes = FONT_H * (uint32_t) g_fb.pitch;
-                    uint8_t *src = g_fb.addr;
-                    uint8_t *dst = src + line_bytes;
-                    uint64_t copy_bytes = (rows - 1) * line_bytes;
-                    memmove(dst, src, copy_bytes);
-                    fb_fill_rect(0, 0, (uint32_t) g_fb.width, FONT_H, g_fb.bg);
-                }
+                reverse_index();
             }
         }
         return;
@@ -545,13 +718,51 @@ void fb_putchar(char c) {
             g_esc_params[g_esc_np] = g_esc_params[g_esc_np] * 10 + (c - '0');
             return;
         }
-        if (c == ';') {
+        if (c == ';' || c == ':') {
             g_esc_np++;
             if (g_esc_np >= 16) g_esc_np = 15;
             g_esc_params[g_esc_np] = 0;
             return;
         }
+        if (c >= 0x20 && c <= 0x2F) {
+            g_esc_inter = c;
+            return;
+        }
+        if (c >= 0x3C && c <= 0x3F) {
+            g_esc_inter = c;
+            return;
+        }
         g_esc = ESC_NONE;
+
+        if (g_esc_priv && g_esc_inter == '$' && c == 'p') {
+            char out[24];
+            int n = 0;
+            int v = g_esc_params[0];
+            char num[8];
+            int dn = 0;
+            out[n++] = '\033';
+            out[n++] = '[';
+            out[n++] = '?';
+            if (v == 0) num[dn++] = '0';
+            while (v > 0 && dn < 7) {
+                num[dn++] = (char) ('0' + v % 10);
+                v /= 10;
+            }
+            while (dn > 0) out[n++] = num[--dn];
+            out[n++] = ';';
+            out[n++] = '0';
+            out[n++] = '$';
+            out[n++] = 'y';
+            out[n] = '\0';
+            g_esc_priv = false;
+            fb_reply(out);
+            return;
+        }
+        if (g_esc_priv && c == 'u') {
+            g_esc_priv = false;
+            fb_reply("\033[?0u");
+            return;
+        }
 
         // Private/DEC mode: ESC[?...h / ESC[?...l
         if (g_esc_priv) {
@@ -564,8 +775,10 @@ void fb_putchar(char c) {
                     // DECAWM: auto wrap - always on
                 } else if (p == 1) {
                     // DECCKM: cursor key mode
+                } else if (p == 47) {
+                    fb_alt_screen_enter(false);
                 } else if (p == 1049) {
-                    // alternate screen - not supported
+                    fb_alt_screen_enter(true);
                 } else if (p == 2004) {
                     // bracketed paste - not supported
                 }
@@ -578,8 +791,10 @@ void fb_putchar(char c) {
                     // DECAWM off
                 } else if (p == 1) {
                     // DECCKM off
+                } else if (p == 47) {
+                    fb_alt_screen_leave(false);
                 } else if (p == 1049) {
-                    // leave alternate screen
+                    fb_alt_screen_leave(true);
                 } else if (p == 2004) {
                     // disable bracketed paste
                 }
@@ -645,11 +860,103 @@ void fb_putchar(char c) {
             for (int i = 0; i < n && g_fb.col + i < cols; i++)
                 draw_char(g_fb.col + i, g_fb.row, ' ');
         } else if (c == 's') {
-            // SCP: save cursor position - no-op
+            g_saved_col = g_fb.col;
+            g_saved_row = g_fb.row;
+            g_saved_valid = true;
         } else if (c == 'u') {
-            // RCP: restore cursor position - no-op
+            if (g_saved_valid) {
+                g_fb.col = g_saved_col;
+                g_fb.row = g_saved_row;
+            }
+        } else if (c == 'r') {
+            uint32_t top = (uint32_t) (g_esc_params[0] > 0 ? g_esc_params[0] - 1 : 0);
+            uint32_t bot = g_esc_params[1] > 0 ? (uint32_t) (g_esc_params[1] - 1) :
+                                                 (rows ? rows - 1 : 0);
+            if (bot >= rows) bot = rows ? rows - 1 : 0;
+            if (top < bot) {
+                g_scroll_top = top;
+                g_scroll_bot = bot;
+            } else {
+                g_scroll_top = 0;
+                g_scroll_bot = rows ? rows - 1 : 0;
+            }
+            g_fb.col = 0;
+            g_fb.row = g_scroll_top;
+        } else if (c == 'L') {
+            int n = g_esc_params[0] > 0 ? g_esc_params[0] : 1;
+            uint32_t bot = g_scroll_bot < rows ? g_scroll_bot : (rows ? rows - 1 : 0);
+            if (g_fb.row >= g_scroll_top && g_fb.row <= bot) {
+                if ((uint32_t) n > bot - g_fb.row + 1) n = (int) (bot - g_fb.row + 1);
+                uint32_t room = bot - g_fb.row + 1 - (uint32_t) n;
+                if (room) screen_move_rows(g_fb.row + (uint32_t) n, g_fb.row, room);
+                screen_fill_rows(g_fb.row, g_fb.row + (uint32_t) n - 1, g_fb.bg);
+                g_fb.col = 0;
+            }
+        } else if (c == 'M') {
+            int n = g_esc_params[0] > 0 ? g_esc_params[0] : 1;
+            uint32_t bot = g_scroll_bot < rows ? g_scroll_bot : (rows ? rows - 1 : 0);
+            if (g_fb.row >= g_scroll_top && g_fb.row <= bot) {
+                if ((uint32_t) n > bot - g_fb.row + 1) n = (int) (bot - g_fb.row + 1);
+                uint32_t room = bot - g_fb.row + 1 - (uint32_t) n;
+                if (room) screen_move_rows(g_fb.row, g_fb.row + (uint32_t) n, room);
+                screen_fill_rows(bot - (uint32_t) n + 1, bot, g_fb.bg);
+                g_fb.col = 0;
+            }
+        } else if (c == 'P') {
+            int n = g_esc_params[0] > 0 ? g_esc_params[0] : 1;
+            if (g_fb.col < cols) {
+                if ((uint32_t) n > cols - g_fb.col) n = (int) (cols - g_fb.col);
+                screen_move_cells(g_fb.row, g_fb.col, g_fb.col + (uint32_t) n,
+                                  cols - g_fb.col - (uint32_t) n);
+                for (uint32_t x = cols - (uint32_t) n; x < cols; x++)
+                    draw_char(x, g_fb.row, ' ');
+            }
+        } else if (c == '@') {
+            int n = g_esc_params[0] > 0 ? g_esc_params[0] : 1;
+            if (g_fb.col < cols) {
+                if ((uint32_t) n > cols - g_fb.col) n = (int) (cols - g_fb.col);
+                screen_move_cells(g_fb.row, g_fb.col + (uint32_t) n, g_fb.col,
+                                  cols - g_fb.col - (uint32_t) n);
+                for (uint32_t k = 0; k < (uint32_t) n; k++)
+                    draw_char(g_fb.col + k, g_fb.row, ' ');
+            }
+        } else if (c == 'S') {
+            int n = g_esc_params[0] > 0 ? g_esc_params[0] : 1;
+            while (n-- > 0) scroll_up();
+        } else if (c == 'T') {
+            int n = g_esc_params[0] > 0 ? g_esc_params[0] : 1;
+            while (n-- > 0) scroll_down();
+        } else if (c == 'd') {
+            uint32_t row = (uint32_t) (g_esc_params[0] > 0 ? g_esc_params[0] - 1 : 0);
+            if (row < rows) g_fb.row = row;
+        } else if (c == 'g') {
+            if (g_esc_params[0] == 3) {
+                for (int i = 0; i < 8; i++) g_tab_stops[i] = 0;
+            } else {
+                uint32_t cell = g_fb.col / 8;
+                if (cell < 8) g_tab_stops[cell] = 0;
+            }
+        } else if (c == 'n') {
+            if (g_esc_params[0] == 6) {
+                char out[32];
+                int len = 0;
+                uint32_t v = g_fb.row + 1;
+                out[len++] = '\033';
+                out[len++] = '[';
+                if (v >= 10) out[len++] = (char) ('0' + v / 10);
+                out[len++] = (char) ('0' + v % 10);
+                out[len++] = ';';
+                v = g_fb.col + 1;
+                if (v >= 10) out[len++] = (char) ('0' + v / 10);
+                out[len++] = (char) ('0' + v % 10);
+                out[len++] = 'R';
+                out[len] = '\0';
+                fb_reply(out);
+            }
+        } else if (c == 'c') {
+            fb_reply("\033[?1;2c");
         } else if (c == '~') {
-            // ESC[N~ sequences - consumed silently
+            // ESC[N~ sequences. pass
         }
         fb_cursor_update();
         return;
@@ -680,11 +987,18 @@ void fb_putchar(char c) {
 
     if (c == '\n') {
         g_fb.col = 0;
-        g_fb.row++;
+        index_down();
     } else if (c == '\r') {
         g_fb.col = 0;
     } else if (c == '\t') {
-        g_fb.col = (g_fb.col + 8) & ~7u;
+        uint32_t next = cols;
+        for (int i = 0; i < 8; i++) {
+            if (g_tab_stops[i] && g_tab_stops[i] > g_fb.col) {
+                next = g_tab_stops[i];
+                break;
+            }
+        }
+        g_fb.col = next < cols ? next : (cols ? cols - 1 : 0);
     } else if (c == '\b') {
         if (g_fb.col > 0) {
             g_fb.col--;
@@ -706,7 +1020,11 @@ void fb_putchar(char c) {
         g_fb.col++;
         if (g_fb.col >= cols) {
             g_fb.col = 0;
-            g_fb.row++;
+            if (g_fb.row == region_bottom()) {
+                scroll_up();
+            } else {
+                g_fb.row++;
+            }
         }
     }
 

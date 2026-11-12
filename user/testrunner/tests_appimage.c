@@ -330,6 +330,77 @@ int test_appimage_real_cleanup(void) {
 }
 REGISTER_TEST(appimage_real_cleanup, "Phase 7: AppImage");
 
+int test_appimage_real_dev_tty_writable(void) {
+    if (!real_appimg_ok()) return 1;
+    char buf[2048];
+    char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
+
+    ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));
+    ASSERT_NOTNULL(strstr(buf, "dev_tty_rw=1 errno=0\n"));
+
+    return 1;
+}
+REGISTER_TEST(appimage_real_dev_tty_writable, "Phase 7: AppImage");
+
+int test_appimage_real_tmp_writable(void) {
+    if (!real_appimg_ok()) return 1;
+    char buf[2048];
+    char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
+    ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));
+    ASSERT_NOTNULL(strstr(buf, "tmp_writable=1 errno=0\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_real_tmp_writable, "Phase 7: AppImage");
+
+int test_appimage_real_terminfo(void) {
+    if (!real_appimg_ok()) return 1;
+    char buf[2048];
+    char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
+    ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));
+
+    ASSERT_NOTNULL(strstr(buf, "terminfo_xterm_color=1\n"));
+    ASSERT_NOTNULL(strstr(buf, "terminfo_linux=1\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_real_terminfo, "Phase 7: AppImage");
+
+int test_appimage_real_home_valid(void) {
+    if (!real_appimg_ok()) return 1;
+    char buf[2048];
+    char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
+    ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));
+    ASSERT_NOTNULL(strstr(buf, "home=/tmp home_isdir=1\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_real_home_valid, "Phase 7: AppImage");
+
+int test_appimage_real_cwd_preserved(void) {
+    if (!real_appimg_ok()) return 1;
+    char buf[2048];
+    char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
+    ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));
+    ASSERT_NOTNULL(strstr(buf, "cwd=/\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_real_cwd_preserved, "Phase 7: AppImage");
+
+int test_appimage_real_cwd_binds_caller_dir(void) {
+    if (!real_appimg_ok()) return 1;
+    char path[512];
+    tmpfile_path(path, sizeof(path), "rel.txt");
+    ASSERT_TRUE(write_file(path, "hello\n"));
+    ASSERT_EQ(0, chdir(tmpdir));
+
+    char buf[2048];
+    char *argv[] = { "/bin/kair", REAL_APPIMG, "rel.txt", NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    ASSERT_EQ(0, rc);
+    ASSERT_NOTNULL(strstr(buf, "cwd=/work\n"));
+    ASSERT_NOTNULL(strstr(buf, "rel_arg_exists=1\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_real_cwd_binds_caller_dir, "Phase 7: AppImage");
+
 #define BASH_APPIMG "/bash_app.img"
 
 static int bash_appimg_fixture_ok(void) {
@@ -391,3 +462,129 @@ int test_appimage_script_apprun_cleanup(void) {
     return 1;
 }
 REGISTER_TEST(appimage_script_apprun_cleanup, "Phase 7: AppImage");
+
+#define KX_RT_SENTINEL ".kx-rt-sentinel"
+#define KX_FAKE_SOCKET "wayland-0"
+
+static char kx_rtdir[256];
+static int kx_rtdir_ready = 0;
+
+static int kx_rt_setup(void) {
+    snprintf(kx_rtdir, sizeof(kx_rtdir), "/run/user/%d", getpid());
+    if (mkdir_p(kx_rtdir) < 0 && errno != EEXIST) return 0;
+    if (chmod(kx_rtdir, 0700) < 0) return 0;
+
+    char p[512];
+    snprintf(p, sizeof(p), "%s/%s", kx_rtdir, KX_RT_SENTINEL);
+    if (!write_file(p, "sentinel\n")) return 0;
+
+    snprintf(p, sizeof(p), "%s/%s", kx_rtdir, KX_FAKE_SOCKET);
+    if (!write_file(p, "")) return 0;
+
+    kx_rtdir_ready = 1;
+    return 1;
+}
+
+static void kx_rt_cleanup(void) {
+    if (!kx_rtdir_ready) return;
+    char p[512];
+    snprintf(p, sizeof(p), "%s/%s", kx_rtdir, KX_RT_SENTINEL);
+    unlink(p);
+    snprintf(p, sizeof(p), "%s/%s", kx_rtdir, KX_FAKE_SOCKET);
+    unlink(p);
+    rmdir(kx_rtdir);
+    kx_rtdir_ready = 0;
+}
+
+int test_appimage_runtime_dir_bound(void) {
+    if (!real_appimg_ok()) return 1;
+    if (!kx_rt_setup()) return 1;
+
+    setenv("XDG_RUNTIME_DIR", kx_rtdir, 1);
+    setenv("WAYLAND_DISPLAY", KX_FAKE_SOCKET, 1);
+    char buf[2048];
+    char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    unsetenv("XDG_RUNTIME_DIR");
+    unsetenv("WAYLAND_DISPLAY");
+
+    if (rc != 0 && failure_pipe[1] >= 0)
+        dprintf(failure_pipe[1], "runtime dir run rc=%d out=[%.400s]\n", rc, buf);
+    ASSERT_EQ(0, rc);
+    ASSERT_NOTNULL(strstr(buf, "xdg_runtime="));
+    ASSERT_NOTNULL(strstr(buf, "xdg_runtime_isdir=1\n"));
+    ASSERT_NOTNULL(strstr(buf, "xdg_sentinel=1\n"));
+    ASSERT_NOTNULL(strstr(buf, "wayland_display=" KX_FAKE_SOCKET "\n"));
+    kx_rt_cleanup();
+    return 1;
+}
+REGISTER_TEST(appimage_runtime_dir_bound, "Phase 9: Wayland");
+
+int test_appimage_runtime_dir_writable(void) {
+    if (!real_appimg_ok()) return 1;
+    if (!kx_rt_setup()) return 1;
+
+    setenv("XDG_RUNTIME_DIR", kx_rtdir, 1);
+    setenv("WAYLAND_DISPLAY", KX_FAKE_SOCKET, 1);
+    char buf[2048];
+    char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    unsetenv("XDG_RUNTIME_DIR");
+    unsetenv("WAYLAND_DISPLAY");
+
+    ASSERT_EQ(0, rc);
+    ASSERT_NOTNULL(strstr(buf, "xdg_runtime_writable=1\n"));
+    ASSERT_NOTNULL(strstr(buf, "wl_sock_visible=1"));
+    kx_rt_cleanup();
+    return 1;
+}
+REGISTER_TEST(appimage_runtime_dir_writable, "Phase 9: Wayland");
+
+int test_appimage_wayland_env_propagated(void) {
+    if (!real_appimg_ok()) return 1;
+    if (!kx_rt_setup()) return 1;
+
+    setenv("XDG_RUNTIME_DIR", kx_rtdir, 1);
+    unsetenv("WAYLAND_DISPLAY");
+
+    char buf[2048];
+    char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    unsetenv("XDG_RUNTIME_DIR");
+
+    ASSERT_EQ(0, rc);
+    char expect[512];
+    snprintf(expect, sizeof(expect), "xdg_runtime=%s\n", kx_rtdir);
+    ASSERT_NOTNULL(strstr(buf, expect));
+    ASSERT_NOTNULL(strstr(buf, "wayland_display=wayland-0\n"));
+    ASSERT_NOTNULL(strstr(buf, "wl_sock_visible=1"));
+    kx_rt_cleanup();
+    return 1;
+}
+REGISTER_TEST(appimage_wayland_env_propagated, "Phase 9: Wayland");
+
+int test_appimage_no_runtime_dir_still_runs(void) {
+    if (!real_appimg_ok()) return 1;
+    unsetenv("XDG_RUNTIME_DIR");
+    unsetenv("WAYLAND_DISPLAY");
+    char buf[2048];
+    char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
+    int rc = capture_cmd(argv, buf, sizeof(buf));
+    ASSERT_EQ(0, rc);
+    ASSERT_NOTNULL(strstr(buf, "REAL_APPRUN ok\n"));
+    ASSERT_NOTNULL(strstr(buf, "xdg_runtime=(null)\n"));
+    ASSERT_NOTNULL(strstr(buf, "wayland_display=(null)\n"));
+    ASSERT_NOTNULL(strstr(buf, "wl_sock_visible=0"));
+    return 1;
+}
+REGISTER_TEST(appimage_no_runtime_dir_still_runs, "Phase 9: Wayland");
+
+int test_appimage_shm_visible_in_sandbox(void) {
+    if (!real_appimg_ok()) return 1;
+    char buf[2048];
+    char *argv[] = { "/bin/kair", REAL_APPIMG, NULL };
+    ASSERT_EQ(0, capture_cmd(argv, buf, sizeof(buf)));q
+    ASSERT_NOTNULL(strstr(buf, "dev_shm_writable=1\n"));
+    return 1;
+}
+REGISTER_TEST(appimage_shm_visible_in_sandbox, "Phase 9: Wayland");

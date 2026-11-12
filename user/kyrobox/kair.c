@@ -45,6 +45,17 @@ static int sb_bind(const char *src, const char *dst) {
     return 0;
 }
 
+static int sb_bind_rw(const char *src, const char *dst) {
+    if (mount(src, dst, NULL, MS_BIND, NULL) < 0) return -1;
+    return 0;
+}
+
+static int sb_under(const char *path, const char *prefix) {
+    size_t n = strlen(prefix);
+    if (strncmp(path, prefix, n) != 0) return 0;
+    return path[n] == '\0' || path[n] == '/';
+}
+
 static int sb_mkdir(char *base, const char *rel) {
     char path[PATH_MAX];
     snprintf(path, sizeof(path), "%s/%s", base, rel);
@@ -222,12 +233,13 @@ static int loop_acquire(int img_fd, int64_t sqfs_off, char *dev, size_t devsz) {
     return -1;
 }
 
-static char **build_env(const char *abs, const char *mp) {
+static char **build_env(const char *abs, const char *mp, const char *home,
+                        const char *xdg_runtime, const char *wl_display) {
     extern char **environ;
     int count = 0;
     while (environ[count]) count++;
 
-    char **env = calloc((size_t) count + 4, sizeof(char *));
+    char **env = calloc((size_t) count + 8, sizeof(char *));
     if (!env) return NULL;
 
     size_t need = strlen(abs) + strlen(mp) + 32;
@@ -237,16 +249,46 @@ static char **build_env(const char *abs, const char *mp) {
     snprintf(e_image, need, "APPIMAGE=%s", abs);
     snprintf(e_dir, need, "APPDIR=%s", mp);
 
+    char *e_home = NULL;
+    if (home) {
+        e_home = malloc(strlen(home) + 8);
+        if (!e_home) { free(env); free(e_image); free(e_dir); return NULL; }
+        sprintf(e_home, "HOME=%s", home);
+    }
+
+    char *e_xdg = NULL;
+    if (xdg_runtime) {
+        e_xdg = malloc(strlen(xdg_runtime) + 20);
+        if (!e_xdg) { free(env); free(e_image); free(e_dir); free(e_home); return NULL; }
+        sprintf(e_xdg, "XDG_RUNTIME_DIR=%s", xdg_runtime);
+    }
+
+    char *e_wl = NULL;
+    if (wl_display) {
+        e_wl = malloc(strlen(wl_display) + 20);
+        if (!e_wl) {
+            free(env); free(e_image); free(e_dir); free(e_home); free(e_xdg);
+            return NULL;
+        }
+        sprintf(e_wl, "WAYLAND_DISPLAY=%s", wl_display);
+    }
+
     int n = 0;
     for (int i = 0; i < count; i++) {
         if (strncmp(environ[i], "APPIMAGE=", 9) == 0 || strncmp(environ[i], "APPDIR=", 7) == 0 ||
             strncmp(environ[i], "APPIMAGE_EXTRACT_AND_RUN=", 25) == 0)
             continue;
+        if (e_home && strncmp(environ[i], "HOME=", 5) == 0) continue;
+        if (e_xdg && strncmp(environ[i], "XDG_RUNTIME_DIR=", 16) == 0) continue;
+        if (e_wl && strncmp(environ[i], "WAYLAND_DISPLAY=", 16) == 0) continue;
         env[n++] = environ[i];
     }
     env[n++] = e_image;
     env[n++] = e_dir;
     env[n++] = "APPIMAGE_EXTRACT_AND_RUN=1";
+    if (e_home) env[n++] = e_home;
+    if (e_xdg) env[n++] = e_xdg;
+    if (e_wl) env[n++] = e_wl;
     env[n] = NULL;
     return env;
 }
@@ -256,7 +298,9 @@ static void free_env(char **env) {
 
     extern char **environ;
     for (int i = 0; env[i]; i++) {
-        if (strncmp(env[i], "APPIMAGE=", 9) == 0 || strncmp(env[i], "APPDIR=", 7) == 0) {
+        if (strncmp(env[i], "APPIMAGE=", 9) == 0 || strncmp(env[i], "APPDIR=", 7) == 0 ||
+            strncmp(env[i], "HOME=", 5) == 0 || strncmp(env[i], "XDG_RUNTIME_DIR=", 16) == 0 ||
+            strncmp(env[i], "WAYLAND_DISPLAY=", 16) == 0) {
             int inherited = 0;
             for (int j = 0; environ[j]; j++) if (environ[j] == env[i]) { inherited = 1; break; }
             if (!inherited) free(env[i]);
@@ -364,8 +408,11 @@ int main(int argc, char **argv) {
     int sr_created = 0, sr_mounted = 0;
     int sr_loopfd = -1;
 
-    char *sb_bound_paths[16];
+    char *sb_bound_paths[32];
     int n_sb_bound = 0;
+    char *sandbox_tmp = NULL;
+    char *sandbox_work = NULL;
+    char *sandbox_runtime = NULL;
 
     if (use_sandbox && mkdtemp(sb)) {
         sb_dir_exists = 1;
@@ -389,8 +436,59 @@ int main(int argc, char **argv) {
                 if (stat(src, &tst) != 0 || !S_ISDIR(tst.st_mode)) continue;
                 if (sb_mkdir(sb, hostdirs[hi]) < 0) break;
                 snprintf(dst, sizeof(dst), "%s/%s", sb, hostdirs[hi]);
-                if (sb_bind(src, dst) < 0) break;
+                int rc = strcmp(hostdirs[hi], "dev") == 0 ? sb_bind_rw(src, dst) : sb_bind(src, dst);
+                if (rc < 0) break;
                 sb_bound_paths[n_sb_bound++] = strdup(dst);
+            }
+
+            {
+                char dst[PATH_MAX];
+                struct stat tst;
+                if (stat("/etc/terminfo", &tst) == 0 && S_ISDIR(tst.st_mode)) {
+                    if (sb_mkdir(sb, "etc") < 0) break;
+                    snprintf(dst, sizeof(dst), "%s/etc/terminfo", sb);
+                    if (mkdir(dst, 0755) < 0 && errno != EEXIST) break;
+                    if (sb_bind("/etc/terminfo", dst) < 0) break;
+                    sb_bound_paths[n_sb_bound++] = strdup(dst);
+                }
+            }
+
+            {
+                char dst[PATH_MAX];
+                struct stat tst;
+                const char *rt = getenv("XDG_RUNTIME_DIR");
+                if (rt && rt[0] == '/' && stat(rt, &tst) == 0 && S_ISDIR(tst.st_mode)) {
+                    const char *rel = rt[0] == '/' ? rt + 1 : rt;
+                    if (sb_mkdir(sb, rel) < 0) break;
+                    snprintf(dst, sizeof(dst), "%s/%s", sb, rel);
+                    /* writable: libwayland creates its own sockets and lock
+                     * files in the runtime dir, not just the compositor's. */
+                    if (sb_bind_rw(rt, dst) < 0) break;
+                    sb_bound_paths[n_sb_bound++] = strdup(dst);
+                    sandbox_runtime = strdup(rt);
+                }
+            }
+
+            {
+                char dst[PATH_MAX];
+                snprintf(dst, sizeof(dst), "%s/tmp", sb);
+                if (mkdir(dst, 0777) < 0) break;
+                if (chmod(dst, 01777) < 0) break;
+                sandbox_tmp = strdup(dst);
+            }
+
+            {
+                char cwd[PATH_MAX];
+                char dst[PATH_MAX];
+                struct stat cst;
+                if (getcwd(cwd, sizeof(cwd)) && stat(cwd, &cst) == 0 && S_ISDIR(cst.st_mode) &&
+                    strcmp(cwd, "/") != 0 && !sb_under(cwd, sb) && !sb_under(sb, cwd)) {
+                    snprintf(dst, sizeof(dst), "%s/work", sb);
+                    if (mkdir(dst, 0755) < 0) break;
+                    if (sb_bind_rw(cwd, dst) < 0) break;
+                    sb_bound_paths[n_sb_bound++] = strdup(dst);
+                    sandbox_work = strdup("/work");
+                }
             }
 
             if (self_contained) {
@@ -465,14 +563,19 @@ int main(int argc, char **argv) {
     if (sb_ready) {
         snprintf(apprun_final, sizeof(apprun_final), "/app/AppRun");
         exec_apprun = apprun_final;
-        workdir = sb;
+        workdir = sandbox_work ? sandbox_work : "/";
         char ad_in_sb[PATH_MAX];
         snprintf(ad_in_sb, sizeof(ad_in_sb), "%s/app", sb);
-        env = build_env(abs, ad_in_sb);
+        const char *wl = NULL;
+        if (sandbox_runtime) {
+            wl = getenv("WAYLAND_DISPLAY");
+            if (!wl || !wl[0]) wl = "wayland-0";
+        }
+        env = build_env(abs, ad_in_sb, sandbox_tmp ? "/tmp" : NULL, sandbox_runtime, wl);
     } else {
         exec_apprun = apprun;
         workdir = mp;
-        env = build_env(abs, mp);
+        env = build_env(abs, mp, NULL, NULL, NULL);
     }
     if (!env) {
         fprintf(stderr, "%s: out of memory\n", kx_prog);
@@ -501,12 +604,10 @@ int main(int argc, char **argv) {
         if (sb_ready) {
             unshare(CLONE_NEWNS);
             if (chroot(sb) < 0) {
-
-                chdir(workdir);
-                execve(exec_apprun, cargv, env);
+                fprintf(stderr, "%s: chroot %s: %s\n", kx_prog, sb, strerror(errno));
                 _exit(127);
             }
-            if (chdir("/") < 0) { /* ignore */ }
+            if (chdir(workdir) < 0 && chdir("/") < 0) { /* ignore */ }
         } else {
             chdir(workdir);
         }
@@ -521,6 +622,9 @@ int main(int argc, char **argv) {
     free_env(env);
 
 cleanup:
+    free(sandbox_tmp);
+    free(sandbox_work);
+    free(sandbox_runtime);
     // Tear down inner-most mounts first, then outward.
     for (int bi = n_sb_bound - 1; bi >= 0; bi--) {
         if (sb_bound_paths[bi]) { umount2(sb_bound_paths[bi], 0); free(sb_bound_paths[bi]); }

@@ -502,3 +502,91 @@ int test_epoll_nested(void) {
     return 1;
 }
 REGISTER_TEST(epoll_nested, "Phase 7: I/O Multiplexing");
+
+static volatile sig_atomic_t winch_seen = 0;
+
+static void winch_handler(int sig) {
+    if (sig == SIGWINCH) winch_seen = 1;
+}
+
+/* A TUI redraws on SIGWINCH. If the kernel never sends it, a resized terminal
+ * leaves the application drawing for the old geometry. The parent holds the
+ * master: the signal goes to the pty's foreground process group, which the
+ * child claims with TIOCSCTTY. */
+int test_pty_tiocswinsz_sends_winch(void) {
+    int master = posix_openpt(O_RDWR | O_NOCTTY);
+    ASSERT_TRUE(master >= 0);
+    ASSERT_EQ(0, grantpt(master));
+    ASSERT_EQ(0, unlockpt(master));
+    char *name = ptsname(master);
+    ASSERT_TRUE(name != NULL);
+
+    int ready[2];
+    ASSERT_EQ(0, pipe(ready));
+
+    pid_t child = fork();
+    ASSERT_GE(child, 0);
+    if (child == 0) {
+        /* Own session and process group first. TIOCSCTTY records the caller's
+         * process group in the pty, and every pty signal (including the SIGHUP
+         * on master close, whose default action is fatal) is then sent to that
+         * whole group -- which, without this, is the test runner's own group
+         * and would take the suite down with the child. */
+        setsid();
+        close(master);
+        close(ready[0]);
+        int slave = open(name, O_RDWR);
+        if (slave < 0) _exit(1);
+        /* Makes this the controlling terminal and puts us in its foreground
+         * process group, which is what pty_send_sig targets. */
+        ioctl(slave, TIOCSCTTY, 0);
+
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_handler = winch_handler;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGWINCH, &sa, NULL);
+
+        char ok = 'x';
+        ssize_t w = write(ready[1], &ok, 1);
+        (void) w;
+        for (int i = 0; i < 300 && !winch_seen; i++) usleep(20000);
+        _exit(winch_seen ? 42 : 7);
+    }
+
+    close(ready[1]);
+    char ack = 0;
+    ssize_t r = read(ready[0], &ack, 1);
+    (void) r;
+    close(ready[0]);
+
+    struct winsize ws;
+    memset(&ws, 0, sizeof(ws));
+    ws.ws_row = 30;
+    ws.ws_col = 100;
+    ASSERT_EQ(0, ioctl(master, TIOCSWINSZ, &ws));
+
+    int status = 0;
+    int got = 0;
+    for (int i = 0; i < 400; i++) {
+        pid_t p = waitpid(child, &status, WNOHANG);
+        if (p == child) {
+            got = WIFEXITED(status) && WEXITSTATUS(status) == 42;
+            break;
+        }
+        usleep(20000);
+    }
+    if (!got) {
+        /* Best effort only: a child asleep in nanosleep cannot be killed, so a
+         * blocking reap here would hang the suite instead of failing the test. */
+        kill(child, SIGKILL);
+        for (int i = 0; i < 50; i++) {
+            if (waitpid(child, &status, WNOHANG) == child) break;
+            usleep(20000);
+        }
+    }
+    close(master);
+    ASSERT_TRUE(got);
+    return 1;
+}
+REGISTER_TEST(pty_tiocswinsz_sends_winch, "Phase 7: I/O Multiplexing");

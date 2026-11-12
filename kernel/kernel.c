@@ -385,6 +385,7 @@ void kmain(void) {
     }
     vt_init();
     kstatus("Initialising virtual tty", true);
+    fb_set_reply_hook(tty_inject_input);
     spi_stub_create_controller(0);
     tmp117_subsys_init();
     kstatus("Initialising TMP117 sensor", true);
