@@ -9,11 +9,18 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define RC_CONF "/etc/rc.conf"
+#define DEFAULT_RC_CONF "/etc/rc.conf"
+#define RC_CONF_ENV "KYRONIX_RC_CONF"
 #define SERVICES_STATE "/var/run/services"
 #define LOG_PATH "/var/log/messages"
 #define SERVICE_CTL_DIR "/var/run/servctl"
 #define INIT_PID_PATH "/var/run/kyronix-init.pid"
+
+static const char *rc_conf_path(void) {
+    const char *path = getenv(RC_CONF_ENV);
+    if (path && *path) return path;
+    return DEFAULT_RC_CONF;
+}
 
 static int valid_service_name(const char *name) {
     if (!name || !*name) return 0;
@@ -76,7 +83,7 @@ static void usage(void) {
 }
 
 static int rc_find_name(const char *name) {
-    FILE *f = fopen(RC_CONF, "r");
+    FILE *f = fopen(rc_conf_path(), "r");
     if (!f) return 0;
 
     char line[256];
@@ -114,9 +121,9 @@ static int rc_enable(const char *name, char *const *args, int nargs) {
         return 0;
     }
 
-    FILE *f = fopen(RC_CONF, "a");
+    FILE *f = fopen(rc_conf_path(), "a");
     if (!f) {
-        fprintf(stderr, "servctl: %s: %s\n", RC_CONF, strerror(errno));
+        fprintf(stderr, "servctl: %s: %s\n", rc_conf_path(), strerror(errno));
         return -1;
     }
 
@@ -136,9 +143,9 @@ static int rc_disable(const char *name) {
     }
 
     char tmp[PATH_MAX];
-    snprintf(tmp, sizeof(tmp), "%s.tmp", RC_CONF);
+    snprintf(tmp, sizeof(tmp), "%s.tmp", rc_conf_path());
 
-    FILE *in = fopen(RC_CONF, "r");
+    FILE *in = fopen(rc_conf_path(), "r");
     FILE *out = fopen(tmp, "w");
     if (!in || !out) {
         fprintf(stderr, "servctl: %s: %s\n", "rewriting rc.conf", strerror(errno));
@@ -181,7 +188,7 @@ static int rc_disable(const char *name) {
     fflush(out);
     fsync(fileno(out));
     fclose(out);
-    if (rename(tmp, RC_CONF) < 0) {
+    if (rename(tmp, rc_conf_path()) < 0) {
         fprintf(stderr, "servctl: %s: %s\n", "replacing rc.conf", strerror(errno));
         unlink(tmp);
         return -1;

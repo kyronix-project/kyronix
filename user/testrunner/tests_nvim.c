@@ -27,7 +27,7 @@ static int nvim_runnable(void) {
     struct stat st;
     if (!nvim_present()) return 0;
     if (access("/bin/bash", X_OK) != 0) return 0;
-    if (stat("/usr/lib/sysroots/debian.sqsh", &st) != 0) return 0;
+    if (stat("/usr/lib/sysroots/debian-runtime.sqsh", &st) != 0) return 0;
     return 1;
 }
 

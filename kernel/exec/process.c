@@ -185,7 +185,8 @@ uint64_t setup_user_stack(vmm_space_t *space, const elf_load_result_t *elf, int 
     return sp;
 }
 
-int process_exec(const void *data, uint64_t size, const char *name) {
+int process_exec(const void *data, uint64_t size, const char *name, int argc,
+                 const char *const *argv) {
     elf_load_result_t res;
     if (elf_load(data, size, &res, name) < 0) {
         log_error("process_exec: elf_load failed");
@@ -195,10 +196,13 @@ int process_exec(const void *data, uint64_t size, const char *name) {
 
     kfree((void *) data);
 
-    const char *init_argv[] = { name, NULL };
+    const char *const fallback_argv[] = { name, NULL };
     const char *init_envp[] = { "TERM=xterm-color", "HOME=/", "PATH=/:/bin:/usr/bin", "SHELL=/init",
                                 NULL };
-    uint64_t rsp = setup_user_stack(res.space, &res, 1, init_argv, init_envp, 0, 0, 0, 0, false);
+    bool have_argv = argc > 0 && argv;
+    uint64_t rsp = setup_user_stack(res.space, &res, have_argv ? argc : 1,
+                                    have_argv ? argv : fallback_argv, init_envp, 0, 0, 0, 0,
+                                    false);
     if (!rsp) {
         log_error("process_exec: stack setup failed");
         vmm_space_free(res.space);

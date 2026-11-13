@@ -10,7 +10,8 @@
 #endif
 extern int unshare(int flags);
 
-#define SYSROOT_IMG "/usr/lib/sysroots/debian.sqsh"
+#define SYSROOT_IMG "/usr/lib/sysroots/debian-runtime.sqsh"
+#define SYSROOT_PKG "kair-runtime"
 
 #ifndef LOOP_SET_FD
 #define LOOP_SET_FD 0x4C00
@@ -204,6 +205,31 @@ static int env_put(char **env, int *n, const char *fmt, ...) {
     if (!s) return -1;
     env[(*n)++] = s;
     return 0;
+}
+
+static int have_sysroot_file(void) {
+    struct stat sysroot_st;
+    return stat(SYSROOT_IMG, &sysroot_st) == 0 && S_ISREG(sysroot_st.st_mode);
+}
+
+static int install_sysroot_pkg(void) {
+    fprintf(stderr, "%s: app needs a glibc sysroot; installing '%s'\n", kx_prog, SYSROOT_PKG);
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        kx_warn("fork");
+        return -1;
+    }
+    if (pid == 0) {
+        char *argv[] = { "pkg", "install", SYSROOT_PKG, NULL };
+        execvp(argv[0], argv);
+        _exit(127);
+    }
+
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) return -1;
+    if (!WIFEXITED(status)) return -1;
+    return WEXITSTATUS(status);
 }
 
 static void usage(void) {
@@ -495,8 +521,13 @@ int main(int argc, char **argv) {
     int use_sandbox = is_elf || is_script;
     int self_contained = apprun_self_contained(apprun, mp);
 
-    struct stat sysroot_st;
-    int have_sysroot = stat(SYSROOT_IMG, &sysroot_st) == 0 && S_ISREG(sysroot_st.st_mode);
+    int have_sysroot = have_sysroot_file();
+
+    if (use_sandbox && !self_contained && !have_sysroot && geteuid() == 0) {
+        if (install_sysroot_pkg() == 0) {
+            have_sysroot = have_sysroot_file();
+        }
+    }
 
     char direct_app[PATH_MAX] = {0};
     int run_direct = 0;
@@ -783,6 +814,9 @@ int main(int argc, char **argv) {
 
     int status = 0;
     waitpid(pid, &status, 0);
+    if (getenv("KAIR_DEBUG")) fprintf(stderr, "kair[dbg]: status=0x%x exited=%d code=%d sig=%d\n",
+        status, WIFEXITED(status), WIFEXITED(status) ? WEXITSTATUS(status) : -1,
+        WIFSIGNALED(status) ? WTERMSIG(status) : 0);
     free(cargv);
     free_env(env);
 

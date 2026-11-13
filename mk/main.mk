@@ -13,16 +13,13 @@ TEST_ISO := $(DIST)/kyronix-test.iso
 include mk/common.mk
 include mk/output.mk
 include mk/kernel.mk
-include mk/bash.mk
+include mk/assets.mk
 include mk/userspace.mk
-include mk/sysroot.mk
-include mk/nvim.mk
-include mk/galculator.mk
 include mk/image.mk
 include mk/qemu.mk
 include mk/test.mk
 
-.PHONY: iso live help clean _summary
+.PHONY: iso live help clean distclean _summary
 
 iso: $(ISO) _summary
 
@@ -50,6 +47,12 @@ help:
 	@echo "  make iso INSTRUMENT=1  Build with frame pointers (kmemleak/profiler backtraces)"
 	@echo "  make clean    Remove build output (the installed disk is kept)"
 	@echo ""
+	@echo "Baked kair assets (assets/kair/, consumed by every build):"
+	@echo "  make bake          Bake whatever is missing (needs podman + network)"
+	@echo "  make rebake        Force-rebake everything"
+	@echo "  make bake-check    Verify asset checksums"
+	@echo "  make distclean     clean + drop the baked assets"
+	@echo ""
 	@echo "Container build: append CRUNTIME=podman or CRUNTIME=docker"
 
 clean:
@@ -58,7 +61,7 @@ clean:
 	rm -rf build/iso-root build/test-rootfs build/test-iso-root 2>/dev/null || true
 	rm -f test.log 2>/dev/null || true
 	rm -f $(ISO) $(TEST_ISO) 2>/dev/null || true
-	rm -f $(BUILD)/initrd-weston.cpio $(BUILD)/initrd-console.cpio 2>/dev/null || true
+	rm -f $(BUILD)/initrd.cpio $(BUILD)/initrd-weston.cpio $(BUILD)/initrd-console.cpio 2>/dev/null || true
 	rm -rf $(BUILD)/initrd-root-weston $(BUILD)/initrd-root-console 2>/dev/null || true
 	rm -f $(DIST)/kernel.elf $(DIST)/kyronix-boot.fat 2>/dev/null || true
 	rm -f $(DIST)/test-initrd.cpio $(DIST)/test-disk.img $(DIST)/disk.img 2>/dev/null || true
@@ -67,9 +70,16 @@ clean:
 	rm -f $(DIST)/kyronix-*-$(ARCH)-live.iso.sha256 2>/dev/null || true
 	rm -f $(BUILD)/os-release-INDEV $(BUILD)/os-release-RELEASE 2>/dev/null || true
 	$(MAKE) -C user clean 2>/dev/null || true
-	$(MAKE) -C limine clean 2>/dev/null || true
 	@rmdir $(DIST) 2>/dev/null || true
 	@$(call ok,Kept: $(DISK))
+	@$(call ok,Kept: $(KAIR_ASSETS) - make distclean drops baked assets)
+
+distclean: clean
+	@$(call phase,Dropping baked kair assets)
+	@find $(KAIR_ASSETS) -type f -not -name README.md -not -name SHA256SUMS \
+	    -delete 2>/dev/null || true
+	@find $(KAIR_ASSETS) -mindepth 1 -type d -empty -delete 2>/dev/null || true
+	@$(call ok,run 'make bake' to rebuild them)
 
 _summary:
 	@if [ -t 1 ] && [ -z "$$NO_COLOR" ]; then \

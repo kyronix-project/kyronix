@@ -11,7 +11,7 @@ Minimalist x86-64 operating system that sucks less.
 
 <br clear="left"/>
 
-| <img src="meta/screenshots/preview.png" alt="Kyronix screenshot" width="760"> |
+| <img src="meta/screenshots/weston_desktop.jpg" alt="Kyronix screenshot" width="760"> |
 | :---: |
 
 ## Building & Running
