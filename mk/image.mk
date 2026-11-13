@@ -84,11 +84,6 @@ $(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROO
 	@cp $(LIMINE)/limine-bios.sys $(INITRD_ROOT)/boot/limine/
 	@split -b 1M -d -a 2 $(BOOT_FAT) \
 	    $(INITRD_ROOT)/usr/share/kyronix/boot.fat.
-	@if [ -f packages.list ]; then \
-		$(call phase,Local packages); \
-		./scripts/local-pkg-install --registry ./pkg-registry-src --target $(abspath $(INITRD_ROOT)) --list packages.list || true; \
-		$(call ok,Local packages); \
-	fi
 	@mkdir -p $(INITRD_ROOT)/usr/lib/sysroots
 	@if [ -f $(SYSROOT_SQSH) ]; then \
 	    cp $(SYSROOT_SQSH) $(INITRD_ROOT)/usr/lib/sysroots/debian.sqsh; \

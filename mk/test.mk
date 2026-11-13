@@ -19,15 +19,16 @@ FUZZ_CASES ?= 140
 FUZZ_ONLY ?= -1
 FUZZ_TIMEOUT ?= 120
 
-.PHONY: fuzz-binary fuzz-posix
-fuzz-binary:
+.PHONY: fuzz-posix
+
+$(BUILD)/bin/posix-fuzz: user/posix_fuzz/posix_fuzz.c
 	@mkdir -p $(BUILD)/bin
 	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -static -fno-pie \
 	    -DKYRONIX_GUEST -DFUZZ_SEED=$(FUZZ_SEED) -DFUZZ_CASES=$(FUZZ_CASES) \
 	    -DFUZZ_ONLY=$(FUZZ_ONLY) \
-	    user/posix_fuzz/posix_fuzz.c -o $(BUILD)/bin/posix-fuzz
+	    user/posix_fuzz/posix_fuzz.c -o $@
 
-$(FUZZ_INITRD): fuzz-binary
+$(FUZZ_INITRD): $(BUILD)/bin/posix-fuzz
 	@mkdir -p $(FUZZ_ROOTFS)/tmp
 	@cp $(BUILD)/bin/posix-fuzz $(FUZZ_ROOTFS)/init
 	@cd $(FUZZ_ROOTFS) && find . | sort | \
@@ -68,44 +69,16 @@ $(TEST_DEP_MODULE): user/testrunner/fixtures/modules/dependent.c kernel/module.h
 SQFS_COMP ?= gzip
 SQFS_OPTS := -noappend -no-progress -comp $(SQFS_COMP) -b 131072 -no-exports
 
-GLIBC_FIXTURES := $(BUILD)/fixtures-glibc
-GLIBC_STAMP := $(GLIBC_FIXTURES)/.stamp
-GLIBC_SRC := user/testrunner/fixtures/glibc/hello.c
-GLIBC_SCRIPT := apt-get update >/dev/null 2>&1; \
-    apt-get install -y --no-install-recommends gcc libc6-dev >/dev/null 2>&1; \
-    gcc -O2 -o /src/$(GLIBC_FIXTURES)/hello-glibc /src/$(GLIBC_SRC) && \
-    cp /lib64/ld-linux-x86-64.so.2 /usr/lib/x86_64-linux-gnu/libc.so.6 \
-       /usr/lib/x86_64-linux-gnu/libm.so.6 /src/$(GLIBC_FIXTURES)/
-
 ifeq ($(strip $(INSIDE_CONTAINER)),1)
-GLIBC_BUILD := sh -c "$(GLIBC_SCRIPT)" >/dev/null
-else
-GLIBC_BUILD := $(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
-    docker.io/library/debian:bookworm-slim sh -c "$(GLIBC_SCRIPT)" >/dev/null
-endif
-
-$(GLIBC_STAMP): $(GLIBC_SRC)
-	@$(call phase,Glibc fixtures)
-	rm -rf $(GLIBC_FIXTURES)
-	mkdir -p $(GLIBC_FIXTURES)
-	$(GLIBC_BUILD)
-	@touch $(GLIBC_STAMP)
-	@$(call ok,$(GLIBC_FIXTURES))
-
-ifeq ($(strip $(INSIDE_CONTAINER)),1)
-MKSQ := sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
-    mksquashfs $(TEST_SQFS_SRC) $(TEST_SQSH) $(SQFS_OPTS)" >/dev/null
-MKSQ_XZ := sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
-    mksquashfs $(TEST_SQFS_SRC) $(TEST_SQSH_XZ) -noappend -no-progress -comp xz -b 131072 -no-exports" >/dev/null
+MKSQ := mksquashfs $(TEST_SQFS_SRC) $(TEST_SQSH) $(SQFS_OPTS) >/dev/null
+MKSQ_XZ := mksquashfs $(TEST_SQFS_SRC) $(TEST_SQSH_XZ) -noappend -no-progress -comp xz -b 131072 -no-exports >/dev/null
 else
 MKSQ := $(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
     $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
-    sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
-        mksquashfs /src/$(TEST_SQFS_SRC) /src/$(TEST_SQSH) $(SQFS_OPTS)" >/dev/null
+    sh -c "mksquashfs /src/$(TEST_SQFS_SRC) /src/$(TEST_SQSH) $(SQFS_OPTS)" >/dev/null
 MKSQ_XZ := $(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
     $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
-    sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
-        mksquashfs /src/$(TEST_SQFS_SRC) /src/$(TEST_SQSH_XZ) -noappend -no-progress -comp xz -b 131072 -no-exports" >/dev/null
+    sh -c "mksquashfs /src/$(TEST_SQFS_SRC) /src/$(TEST_SQSH_XZ) -noappend -no-progress -comp xz -b 131072 -no-exports" >/dev/null
 endif
 
 $(TEST_SQFS_SRC):
@@ -138,7 +111,7 @@ BASH_APP_STAGE := $(BUILD)/bash-app-stage
 BASH_APP_SQSH := $(BUILD)/bash-app.sqsh
 BASH_APPIMG := $(BUILD)/bash-app.img
 
-$(BASH_APP_STAGE): $(REAL_APP_STAGE)
+$(BASH_APP_STAGE): $(REAL_APP_STAGE)/.stamp
 	@$(call phase,Script AppRun fixture)
 	rm -rf $(BASH_APP_STAGE)
 	mkdir -p $(BASH_APP_STAGE)/usr/bin
@@ -147,18 +120,10 @@ $(BASH_APP_STAGE): $(REAL_APP_STAGE)
 	chmod 755 $(BASH_APP_STAGE)/AppRun
 
 $(BASH_APP_SQSH): $(BASH_APP_STAGE)
-ifeq ($(strip $(INSIDE_CONTAINER)),1)
-	@command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
-	    mksquashfs $(BASH_APP_STAGE) $(BASH_APP_SQSH) -comp xz -b 131072 -noappend -no-progress >/dev/null
-else
-	@$(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
-	    $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
-	    sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
-	        mksquashfs /src/$(BASH_APP_STAGE) /src/$(BASH_APP_SQSH) -comp xz -b 131072 -noappend -no-progress" >/dev/null
-endif
+	@$(call MKSQUASHFS,$(BASH_APP_STAGE),$(BASH_APP_SQSH))
 
 $(BASH_APPIMG): $(BASH_APP_SQSH) scripts/wrap_appimages.py
-	@python3 $(CURDIR)/scripts/wrap_appimages.py --single $(BASH_APP_SQSH) $(BASH_APPIMG)
+	@python3 $(CURDIR)/scripts/wrap_appimages.py --single $(BASH_APP_SQSH) $(BASH_APPIMG) >/dev/null
 	@$(call ok,$(BASH_APPIMG))
 
 $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH) $(TEST_SQSH_XZ) $(GLIBC_STAMP) $(SYSROOT_SQSH) $(REAL_APPIMG) $(BASH_STAMP) $(BASH_APPIMG) $(NVIM_STAMP) $(WL_PROBEIMG)
@@ -201,7 +166,7 @@ $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/test
 	@if [ -f $(SYSROOT_SQSH) ]; then \
 	    cp $(SYSROOT_SQSH) $(TEST_ROOTFS)/usr/lib/sysroots/debian.sqsh; \
 	else \
-	    echo "  [WARN] no sysroot image; real-appimage tests will skip"; \
+	    $(call warn,no sysroot image - AppImage/glibc tests will SKIP, not fail); \
 	fi
 	cp $(BUILD)/bin/testrunner $(TEST_ROOTFS)/init
 	cp $(KERNEL_MODULES) $(TEST_ROOTFS)/lib/modules/

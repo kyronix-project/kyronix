@@ -783,6 +783,9 @@ int main(int argc, char **argv) {
 
     int status = 0;
     waitpid(pid, &status, 0);
+    if (getenv("KAIR_DEBUG")) fprintf(stderr, "kair[dbg]: status=0x%x exited=%d code=%d sig=%d\n",
+        status, WIFEXITED(status), WIFEXITED(status) ? WEXITSTATUS(status) : -1,
+        WIFSIGNALED(status) ? WTERMSIG(status) : 0);
     free(cargv);
     free_env(env);
 

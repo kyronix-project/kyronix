@@ -25,4 +25,4 @@ jobs:
         run: podman image exists kyronix-build:latest && echo OK || (echo MISSING; exit 1)
 
       - name: Build and run tests
-        run: make test CRUNTIME=podman
+        run: make test CRUNTIME=podman -j $(nproc)
