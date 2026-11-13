@@ -1,5 +1,6 @@
 #define _DEFAULT_SOURCE
 #include "common.h"
+#include <stdarg.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
 #include <sys/wait.h>
@@ -101,6 +102,108 @@ static int apprun_is_script(const char *apprun_path) {
     *end = '\0';
 
     return strcmp(p, "/bin/sh") == 0 || strcmp(p, "/bin/bash") == 0;
+}
+
+static int find_inner_binary(const char *mp, char *out, size_t outsz) {
+    const char *dirs[] = {"usr/bin", "bin"};
+    int found = 0;
+
+    for (unsigned d = 0; d < sizeof(dirs) / sizeof(dirs[0]); d++) {
+        char path[PATH_MAX];
+        snprintf(path, sizeof(path), "%s/%s", mp, dirs[d]);
+        DIR *dp = opendir(path);
+        if (!dp) continue;
+
+        struct dirent *de;
+        while ((de = readdir(dp)) != NULL) {
+            if (de->d_name[0] == '.') continue;
+            char full[PATH_MAX + 256];
+            struct stat st;
+            snprintf(full, sizeof(full), "%s/%s", path, de->d_name);
+            if (stat(full, &st) != 0 || !S_ISREG(st.st_mode)) continue;
+            if (!(st.st_mode & 0111)) continue;
+            if (!apprun_is_elf(full)) continue;
+            found++;
+            if (found == 1) snprintf(out, outsz, "/%s/%s", dirs[d], de->d_name);
+        }
+        closedir(dp);
+    }
+    return found == 1 ? 0 : -1;
+}
+
+static int link_merge(const char *app, const char *lower, const char *dst,
+                      const char *appv, const char *lowv, int depth) {
+    if (depth > 16) return -1;
+
+    if (mkdir(dst, 0755) < 0 && errno != EEXIST) return -1;
+
+    DIR *ap = opendir(app);
+    if (ap) {
+        struct dirent *de;
+        while ((de = readdir(ap)) != NULL) {
+            if (de->d_name[0] == '.' && (de->d_name[1] == '\0' ||
+                (de->d_name[1] == '.' && de->d_name[2] == '\0'))) continue;
+
+            char s[PATH_MAX + 256], l[PATH_MAX + 256], t[PATH_MAX + 256], tv[PATH_MAX + 256];
+            struct stat ss, ts, ls;
+            snprintf(s, sizeof(s), "%s/%s", app, de->d_name);
+            snprintf(l, sizeof(l), "%s/%s", lower, de->d_name);
+            snprintf(t, sizeof(t), "%s/%s", dst, de->d_name);
+            if (stat(s, &ss) != 0) continue;
+            if (lstat(t, &ts) == 0) continue;
+
+            int both = stat(l, &ls) == 0;
+            if (both && S_ISDIR(ss.st_mode) && S_ISDIR(ls.st_mode)) {
+                char av[PATH_MAX + 256], lv[PATH_MAX + 256];
+                snprintf(av, sizeof(av), "%s/%s", appv, de->d_name);
+                snprintf(lv, sizeof(lv), "%s/%s", lowv, de->d_name);
+                if (link_merge(s, l, t, av, lv, depth + 1) < 0) { closedir(ap); return -1; }
+                continue;
+            }
+            snprintf(tv, sizeof(tv), "%s/%s", appv, de->d_name);
+            if (symlink(tv, t) < 0) {
+                closedir(ap);
+                return -1;
+            }
+        }
+        closedir(ap);
+    }
+
+    DIR *lp = opendir(lower);
+    if (lp) {
+        struct dirent *de;
+        while ((de = readdir(lp)) != NULL) {
+            if (de->d_name[0] == '.' && (de->d_name[1] == '\0' ||
+                (de->d_name[1] == '.' && de->d_name[2] == '\0'))) continue;
+
+            char t[PATH_MAX + 256], tv[PATH_MAX + 256];
+            struct stat ts;
+            snprintf(t, sizeof(t), "%s/%s", dst, de->d_name);
+            if (lstat(t, &ts) == 0) continue;
+            snprintf(tv, sizeof(tv), "%s/%s", lowv, de->d_name);
+            if (symlink(tv, t) < 0) {
+                closedir(lp);
+                return -1;
+            }
+        }
+        closedir(lp);
+    }
+
+    return 0;
+}
+
+static int env_put(char **env, int *n, const char *fmt, ...) {
+    char buf[PATH_MAX + 64];
+    va_list ap;
+
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+
+    char *s = strdup(buf);
+    if (!s) return -1;
+    env[(*n)++] = s;
+    return 0;
 }
 
 static void usage(void) {
@@ -233,62 +336,60 @@ static int loop_acquire(int img_fd, int64_t sqfs_off, char *dev, size_t devsz) {
     return -1;
 }
 
-static char **build_env(const char *abs, const char *mp, const char *home,
-                        const char *xdg_runtime, const char *wl_display) {
+static void free_env(char **env);
+
+static char **build_env(const char *abs, const char *mp, const char *appdir,
+                        const char *home, const char *xdg_runtime, const char *wl_display) {
     extern char **environ;
     int count = 0;
     while (environ[count]) count++;
 
-    char **env = calloc((size_t) count + 8, sizeof(char *));
+    char **env = calloc((size_t) count + 32, sizeof(char *));
     if (!env) return NULL;
-
-    size_t need = strlen(abs) + strlen(mp) + 32;
-    char *e_image = malloc(need);
-    char *e_dir = malloc(need);
-    if (!e_image || !e_dir) { free(env); free(e_image); free(e_dir); return NULL; }
-    snprintf(e_image, need, "APPIMAGE=%s", abs);
-    snprintf(e_dir, need, "APPDIR=%s", mp);
-
-    char *e_home = NULL;
-    if (home) {
-        e_home = malloc(strlen(home) + 8);
-        if (!e_home) { free(env); free(e_image); free(e_dir); return NULL; }
-        sprintf(e_home, "HOME=%s", home);
-    }
-
-    char *e_xdg = NULL;
-    if (xdg_runtime) {
-        e_xdg = malloc(strlen(xdg_runtime) + 20);
-        if (!e_xdg) { free(env); free(e_image); free(e_dir); free(e_home); return NULL; }
-        sprintf(e_xdg, "XDG_RUNTIME_DIR=%s", xdg_runtime);
-    }
-
-    char *e_wl = NULL;
-    if (wl_display) {
-        e_wl = malloc(strlen(wl_display) + 20);
-        if (!e_wl) {
-            free(env); free(e_image); free(e_dir); free(e_home); free(e_xdg);
-            return NULL;
-        }
-        sprintf(e_wl, "WAYLAND_DISPLAY=%s", wl_display);
-    }
 
     int n = 0;
     for (int i = 0; i < count; i++) {
         if (strncmp(environ[i], "APPIMAGE=", 9) == 0 || strncmp(environ[i], "APPDIR=", 7) == 0 ||
-            strncmp(environ[i], "APPIMAGE_EXTRACT_AND_RUN=", 25) == 0)
+            strncmp(environ[i], "APPIMAGE_EXTRACT_AND_RUN=", 25) == 0 ||
+            strncmp(environ[i], "XDG_DATA_DIRS=", 14) == 0 ||
+            strncmp(environ[i], "GSETTINGS_SCHEMA_DIR=", 21) == 0 ||
+            strncmp(environ[i], "GSETTINGS_BACKEND=", 19) == 0 ||
+            strncmp(environ[i], "FONTCONFIG_PATH=", 16) == 0 ||
+            strncmp(environ[i], "XDG_CACHE_HOME=", 15) == 0 ||
+            strncmp(environ[i], "GDK_BACKEND=", 12) == 0 ||
+            strncmp(environ[i], "GDK_GL=", 7) == 0 ||
+            strncmp(environ[i], "NO_AT_BRIDGE=", 13) == 0 ||
+            strncmp(environ[i], "GTK_A11Y=", 9) == 0 ||
+            strncmp(environ[i], "XKB_CONFIG_ROOT=", 16) == 0)
             continue;
-        if (e_home && strncmp(environ[i], "HOME=", 5) == 0) continue;
-        if (e_xdg && strncmp(environ[i], "XDG_RUNTIME_DIR=", 16) == 0) continue;
-        if (e_wl && strncmp(environ[i], "WAYLAND_DISPLAY=", 16) == 0) continue;
+        if (home && strncmp(environ[i], "HOME=", 5) == 0) continue;
+        if (xdg_runtime && strncmp(environ[i], "XDG_RUNTIME_DIR=", 16) == 0) continue;
+        if (wl_display && strncmp(environ[i], "WAYLAND_DISPLAY=", 16) == 0) continue;
         env[n++] = environ[i];
     }
-    env[n++] = e_image;
-    env[n++] = e_dir;
-    env[n++] = "APPIMAGE_EXTRACT_AND_RUN=1";
-    if (e_home) env[n++] = e_home;
-    if (e_xdg) env[n++] = e_xdg;
-    if (e_wl) env[n++] = e_wl;
+
+    int fail = 0;
+    fail |= env_put(env, &n, "APPIMAGE=%s", abs);
+    fail |= env_put(env, &n, "APPDIR=%s", mp);
+    fail |= env_put(env, &n, "%s", "APPIMAGE_EXTRACT_AND_RUN=1");
+    if (home) fail |= env_put(env, &n, "HOME=%s", home);
+    if (xdg_runtime) fail |= env_put(env, &n, "XDG_RUNTIME_DIR=%s", xdg_runtime);
+    if (wl_display) fail |= env_put(env, &n, "WAYLAND_DISPLAY=%s", wl_display);
+    fail |= env_put(env, &n, "XDG_DATA_DIRS=%s/usr/share:/usr/share", appdir);
+    fail |= env_put(env, &n, "GSETTINGS_SCHEMA_DIR=%s/usr/share/glib-2.0/schemas:/usr/share/glib-2.0/schemas", appdir);
+    fail |= env_put(env, &n, "%s", "GSETTINGS_BACKEND=memory");
+    fail |= env_put(env, &n, "%s", "GDK_BACKEND=wayland");
+    fail |= env_put(env, &n, "%s", "GDK_GL=disable");
+    fail |= env_put(env, &n, "%s", "NO_AT_BRIDGE=1");
+    fail |= env_put(env, &n, "%s", "GTK_A11Y=none");
+    fail |= env_put(env, &n, "%s", "FONTCONFIG_PATH=/etc/fonts");
+    fail |= env_put(env, &n, "%s", "XDG_CACHE_HOME=/tmp/.cache");
+    fail |= env_put(env, &n, "%s", "XKB_CONFIG_ROOT=/usr/share/X11/xkb");
+
+    if (fail) {
+        free_env(env);
+        return NULL;
+    }
     env[n] = NULL;
     return env;
 }
@@ -298,13 +399,9 @@ static void free_env(char **env) {
 
     extern char **environ;
     for (int i = 0; env[i]; i++) {
-        if (strncmp(env[i], "APPIMAGE=", 9) == 0 || strncmp(env[i], "APPDIR=", 7) == 0 ||
-            strncmp(env[i], "HOME=", 5) == 0 || strncmp(env[i], "XDG_RUNTIME_DIR=", 16) == 0 ||
-            strncmp(env[i], "WAYLAND_DISPLAY=", 16) == 0) {
-            int inherited = 0;
-            for (int j = 0; environ[j]; j++) if (environ[j] == env[i]) { inherited = 1; break; }
-            if (!inherited) free(env[i]);
-        }
+        int inherited = 0;
+        for (int j = 0; environ[j]; j++) if (environ[j] == env[i]) { inherited = 1; break; }
+        if (!inherited) free(env[i]);
     }
     free(env);
 }
@@ -401,6 +498,12 @@ int main(int argc, char **argv) {
     struct stat sysroot_st;
     int have_sysroot = stat(SYSROOT_IMG, &sysroot_st) == 0 && S_ISREG(sysroot_st.st_mode);
 
+    char direct_app[PATH_MAX] = {0};
+    int run_direct = 0;
+    if (use_sandbox && !self_contained && have_sysroot && is_script &&
+        find_inner_binary(mp, direct_app, sizeof(direct_app)) == 0)
+        run_direct = 1;
+
     char sb[] = "/tmp/aisb-XXXXXX";
     char sb_app[PATH_MAX] = {0}, sb_proc[PATH_MAX] = {0};
     char sr_mp[] = "/tmp/aisr-XXXXXX";
@@ -408,11 +511,13 @@ int main(int argc, char **argv) {
     int sr_created = 0, sr_mounted = 0;
     int sr_loopfd = -1;
 
-    char *sb_bound_paths[32];
+    char *sb_bound_paths[256];
     int n_sb_bound = 0;
     char *sandbox_tmp = NULL;
     char *sandbox_work = NULL;
     char *sandbox_runtime = NULL;
+    int share_mounted = 0;
+    int srshare_mounted = 0;
 
     if (use_sandbox && mkdtemp(sb)) {
         sb_dir_exists = 1;
@@ -518,8 +623,8 @@ int main(int argc, char **argv) {
                     if (sr_loopfd < 0) break;
                     if (mount(sdev, sr_mp, "squashfs", MS_RDONLY, NULL) < 0) break;
                     sr_mounted = 1;
-                    const char *dirs[] = {"lib", "lib64", "usr"};
                     int ok = 1;
+                    const char *dirs[] = {"lib", "lib64"};
                     for (unsigned di = 0; di < sizeof(dirs)/sizeof(dirs[0]); di++) {
                         char src[PATH_MAX], dst[PATH_MAX];
                         struct stat tst;
@@ -529,6 +634,51 @@ int main(int argc, char **argv) {
                         snprintf(dst, sizeof(dst), "%s/%s", sb, dirs[di]);
                         if (sb_bind(src, dst) < 0) { ok = 0; break; }
                         sb_bound_paths[n_sb_bound++] = strdup(dst);
+                    }
+                    if (ok) {
+                        char src[PATH_MAX], dst[PATH_MAX];
+                        struct stat tst;
+                        snprintf(src, sizeof(src), "%s/usr/lib", sr_mp);
+                        if (stat(src, &tst) == 0 && S_ISDIR(tst.st_mode)) {
+                            if (sb_mkdir(sb, "usr") < 0) ok = 0;
+                            else {
+                                snprintf(dst, sizeof(dst), "%s/usr/lib", sb);
+                                if (mkdir(dst, 0755) < 0 && errno != EEXIST) ok = 0;
+                                else if (sb_bind(src, dst) < 0) ok = 0;
+                                else sb_bound_paths[n_sb_bound++] = strdup(dst);
+                            }
+                        }
+                    }
+                    if (ok) {
+                        char appshare[PATH_MAX], srshare[PATH_MAX], dst[PATH_MAX], srdst[PATH_MAX];
+                        struct stat ast, sst;
+                        snprintf(appshare, sizeof(appshare), "%s/usr/share", mp);
+                        snprintf(srshare, sizeof(srshare), "%s/usr/share", sr_mp);
+                        snprintf(dst, sizeof(dst), "%s/usr/share", sb);
+                        snprintf(srdst, sizeof(srdst), "%s/.srshare", sb);
+                        int have_app = stat(appshare, &ast) == 0 && S_ISDIR(ast.st_mode);
+                        int have_sr = stat(srshare, &sst) == 0 && S_ISDIR(sst.st_mode);
+
+                        if (have_app && sb_mkdir(sb, "usr") == 0 &&
+                            (mkdir(dst, 0755) == 0 || errno == EEXIST) &&
+                            mount("tmpfs", dst, "tmpfs", 0, "mode=0755") == 0) {
+                            share_mounted = 1;
+                            if (have_sr) {
+                                if (mkdir(srdst, 0755) < 0 && errno != EEXIST) ok = 0;
+                                else if (sb_bind(srshare, srdst) < 0) ok = 0;
+                                else srshare_mounted = 1;
+                            }
+                            if (ok && link_merge(appshare, srshare, dst, "/app/usr/share", "/.srshare", 0) < 0)
+                                ok = 0;
+                        } else if (have_sr) {
+                            if (sb_mkdir(sb, "usr") < 0) ok = 0;
+                            else {
+                                snprintf(dst, sizeof(dst), "%s/usr/share", sb);
+                                if (mkdir(dst, 0755) < 0 && errno != EEXIST) ok = 0;
+                                else if (sb_bind(srshare, dst) < 0) ok = 0;
+                                else sb_bound_paths[n_sb_bound++] = strdup(dst);
+                            }
+                        }
                     }
                     const char *etcfiles[] = {"nsswitch.conf", "passwd", "group", "localtime"};
                     for (unsigned ei = 0; ei < sizeof(etcfiles)/sizeof(etcfiles[0]); ei++) {
@@ -542,6 +692,20 @@ int main(int argc, char **argv) {
                         if (tf >= 0) close(tf);
                         if (sb_bind(src, dst) < 0) { ok = 0; break; }
                         sb_bound_paths[n_sb_bound++] = strdup(dst);
+                    }
+                    {
+                        char src[PATH_MAX], dst[PATH_MAX];
+                        struct stat fst;
+                        snprintf(src, sizeof(src), "%s/etc/fonts", sr_mp);
+                        if (ok && stat(src, &fst) == 0 && S_ISDIR(fst.st_mode)) {
+                            if (sb_mkdir(sb, "etc") < 0) ok = 0;
+                            else {
+                                snprintf(dst, sizeof(dst), "%s/etc/fonts", sb);
+                                if (mkdir(dst, 0755) < 0 && errno != EEXIST) ok = 0;
+                                else if (sb_bind(src, dst) < 0) ok = 0;
+                                else sb_bound_paths[n_sb_bound++] = strdup(dst);
+                            }
+                        }
                     }
                     if (!ok) break;
                 }
@@ -561,7 +725,8 @@ int main(int argc, char **argv) {
     char **env;
 
     if (sb_ready) {
-        snprintf(apprun_final, sizeof(apprun_final), "/app/AppRun");
+        if (run_direct) snprintf(apprun_final, sizeof(apprun_final), "/app%s", direct_app);
+        else snprintf(apprun_final, sizeof(apprun_final), "/app/AppRun");
         exec_apprun = apprun_final;
         workdir = sandbox_work ? sandbox_work : "/";
         char ad_in_sb[PATH_MAX];
@@ -571,11 +736,11 @@ int main(int argc, char **argv) {
             wl = getenv("WAYLAND_DISPLAY");
             if (!wl || !wl[0]) wl = "wayland-0";
         }
-        env = build_env(abs, ad_in_sb, sandbox_tmp ? "/tmp" : NULL, sandbox_runtime, wl);
+        env = build_env(abs, ad_in_sb, "/app", sandbox_tmp ? "/tmp" : NULL, sandbox_runtime, wl);
     } else {
         exec_apprun = apprun;
         workdir = mp;
-        env = build_env(abs, mp, NULL, NULL, NULL);
+        env = build_env(abs, mp, mp, NULL, NULL, NULL);
     }
     if (!env) {
         fprintf(stderr, "%s: out of memory\n", kx_prog);
@@ -628,6 +793,16 @@ cleanup:
     // Tear down inner-most mounts first, then outward.
     for (int bi = n_sb_bound - 1; bi >= 0; bi--) {
         if (sb_bound_paths[bi]) { umount2(sb_bound_paths[bi], 0); free(sb_bound_paths[bi]); }
+    }
+    if (share_mounted) {
+        char p[PATH_MAX];
+        snprintf(p, sizeof(p), "%s/usr/share", sb);
+        umount2(p, 0);
+    }
+    if (srshare_mounted) {
+        char p[PATH_MAX];
+        snprintf(p, sizeof(p), "%s/.srshare", sb);
+        umount2(p, 0);
     }
     if (sr_mounted) umount2(sr_mp, 0);
     if (proc_bound) umount2(sb_proc, 0);

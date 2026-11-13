@@ -17,6 +17,7 @@
 #define EROFS 30
 #define EBUSY 16
 
+// TODO: in the future we need in some interface for increase loop max
 #define LOOP_MAX 8
 
 typedef struct loop_state_t {

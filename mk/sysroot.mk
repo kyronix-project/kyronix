@@ -1,19 +1,38 @@
 SYSROOT_SQSH := $(BUILD)/debian-sysroot.sqsh
 SYSROOT_STAGE := $(BUILD)/sysroot-stage
 SYSROOT_STAMP := $(SYSROOT_STAGE)/.stamp
+SYSROOT_DEBIAN := docker.io/library/debian:bookworm-slim
 
-# The staging script is self-contained (python3 stdlib + ar/tar/xz only).
-SYSROOT_SCRIPT_CMD := python3 $(CURDIR)/scripts/build_sysroot.py '$(abspath $(SYSROOT_STAGE))'
+SYSROOT_SCRIPT_CMD := \
+    set -e; export DEBIAN_FRONTEND=noninteractive; \
+    apt-get update >/dev/null 2>&1; \
+    apt-get install -y --no-install-recommends python3 ca-certificates xz-utils binutils tar >/dev/null 2>&1; \
+    python3 /src/scripts/build_sysroot.py '/src/$(SYSROOT_STAGE)' && \
+    sh /src/scripts/build_sysroot_caches.sh '/src/$(SYSROOT_STAGE)' && \
+    echo STAGE_OK
 
 ifeq ($(strip $(INSIDE_CONTAINER)),1)
-SYSROOT_BUILD := sh -c "$(SYSROOT_SCRIPT_CMD)"
+SYSROOT_BUILD := @echo "STAGE_OK (prebuilt)"
+SYSROOT_PACK := sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
+    mksquashfs $(SYSROOT_STAGE) $(SYSROOT_SQSH) -comp xz -b 131072 -noappend -no-progress"
 else
 SYSROOT_BUILD := $(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
+    $(SYSROOT_DEBIAN) sh -c "$(SYSROOT_SCRIPT_CMD)"
+SYSROOT_PACK := $(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
     $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
-    sh -c "python3 /src/scripts/build_sysroot.py '/src/$(SYSROOT_STAGE)'"
+    sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
+        mksquashfs /src/$(SYSROOT_STAGE) /src/$(SYSROOT_SQSH) -comp xz -b 131072 -noappend -no-progress"
 endif
 
-$(SYSROOT_STAMP): scripts/build_sysroot.py
+$(SYSROOT_STAMP): scripts/build_sysroot.py scripts/build_sysroot_caches.sh
+ifeq ($(strip $(INSIDE_CONTAINER)),1)
+	@if [ -f $(SYSROOT_STAMP) ]; then \
+	    $(call ok,sysroot staged (prebuilt)); \
+	else \
+	    $(call warn,sysroot stage missing - build it on the host first); \
+	    false; \
+	fi
+else
 	@$(call phase,glibc sysroot)
 	@rm -rf $(SYSROOT_STAGE); mkdir -p $(SYSROOT_STAGE)
 	@out=$$($(SYSROOT_BUILD) 2>/dev/null || true); \
@@ -24,19 +43,16 @@ $(SYSROOT_STAMP): scripts/build_sysroot.py
 	    rm -rf $(SYSROOT_STAGE); \
 	    $(call warn,sysroot stage failed (offline?) - real-appimage tests will skip); \
 	fi
+endif
 
 $(SYSROOT_SQSH): $(SYSROOT_STAMP)
-	@$(call phase,Pack sysroot)
-ifeq ($(strip $(INSIDE_CONTAINER)),1)
-	@sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
-	    mksquashfs $(SYSROOT_STAGE) $(SYSROOT_SQSH) -comp xz -b 131072 -noappend -no-progress" >/dev/null
-else
-	@$(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z \
-	    $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
-	    sh -c "command -v mksquashfs >/dev/null 2>&1 || apk add --no-cache squashfs-tools >/dev/null 2>&1; \
-	        mksquashfs /src/$(SYSROOT_STAGE) /src/$(SYSROOT_SQSH) -comp xz -b 131072 -noappend -no-progress" >/dev/null
-endif
-	@$(call ok,$(SYSROOT_SQSH))
+	@if [ ! -f $(SYSROOT_STAMP) ] || [ ! -d $(SYSROOT_STAGE) ]; then \
+	    $(call warn,no sysroot stage - skipping sysroot image); \
+	else \
+	    $(call phase,Pack sysroot); \
+	    $(SYSROOT_PACK) >/dev/null; \
+	    $(call ok,$(SYSROOT_SQSH)); \
+	fi
 
 REAL_APPIMG := $(BUILD)/real-app.img
 REAL_APP_SQSH := $(BUILD)/real-app.sqsh
