@@ -59,7 +59,7 @@ $(BOOT_FAT): $(KERNEL) boot/limine-disk.conf boot/wallpaper.jpg $(LIMINE)/limine
 	@$(call ok,$@)
 
 # --- shared initrd root filesystem ---
-$(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROOTFS_SOURCES) $(OS_RELEASE) $(PKG_LIST) $(GALCULATOR_STAMP) $(SYSROOT_SQSH)
+$(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROOTFS_SOURCES) $(OS_RELEASE) $(PKG_LIST) $(GALCULATOR_STAMP)
 	@if [ -d $(INITRD_ROOT) ]; then chmod -R u+w $(INITRD_ROOT) 2>/dev/null || true; rm -rf $(INITRD_ROOT); fi
 	@mkdir -p $(INITRD_ROOT)/boot/limine
 	@mkdir -p $(INITRD_ROOT)/lib/modules
@@ -83,12 +83,6 @@ $(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROO
 	@cp $(LIMINE)/limine-bios.sys $(INITRD_ROOT)/boot/limine/
 	@split -b 1M -d -a 2 $(BOOT_FAT) \
 	    $(INITRD_ROOT)/usr/share/kyronix/boot.fat.
-	@mkdir -p $(INITRD_ROOT)/usr/lib/sysroots
-	@if [ -f $(SYSROOT_SQSH) ]; then \
-	    cp $(SYSROOT_SQSH) $(INITRD_ROOT)/usr/lib/sysroots/debian.sqsh; \
-	else \
-	    echo "  [WARN] no glibc sysroot; kair cannot run non-self-contained AppImages"; \
-	fi
 	@if [ -s $(GALCULATOR_APPIMG) ]; then \
 	    mkdir -p $(INITRD_ROOT)/usr/share/appimages; \
 	    cp $(GALCULATOR_APPIMG) $(INITRD_ROOT)/usr/share/appimages/galculator.AppImage; \

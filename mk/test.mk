@@ -126,7 +126,7 @@ $(BASH_APPIMG): $(BASH_APP_SQSH) scripts/wrap_appimages.py
 	@python3 $(CURDIR)/scripts/wrap_appimages.py --single $(BASH_APP_SQSH) $(BASH_APPIMG) >/dev/null
 	@$(call ok,$(BASH_APPIMG))
 
-$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH) $(TEST_SQSH_XZ) $(GLIBC_STAMP) $(SYSROOT_SQSH) $(REAL_APPIMG) $(BASH_STAMP) $(BASH_APPIMG) $(NVIM_STAMP) $(WL_PROBEIMG)
+$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH) $(TEST_SQSH_XZ) $(GLIBC_STAMP) $(REAL_APPIMG) $(BASH_STAMP) $(BASH_APPIMG) $(NVIM_STAMP) $(WL_PROBEIMG)
 	@$(call phase,Test initrd)
 	rm -rf $(TEST_ROOTFS)
 	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt $(TEST_ROOTFS)/sqfs \
@@ -162,11 +162,14 @@ $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/test
 	mkdir -p $(TEST_ROOTFS)/glibc $(TEST_ROOTFS)/lib64
 	cp $(GLIBC_FIXTURES)/hello-glibc $(GLIBC_FIXTURES)/libc.so.6 $(GLIBC_FIXTURES)/libm.so.6 $(TEST_ROOTFS)/glibc/
 	cp $(GLIBC_FIXTURES)/ld-linux-x86-64.so.2 $(TEST_ROOTFS)/lib64/
-	@mkdir -p $(TEST_ROOTFS)/usr/lib/sysroots
-	@if [ -f $(SYSROOT_SQSH) ]; then \
-	    cp $(SYSROOT_SQSH) $(TEST_ROOTFS)/usr/lib/sysroots/debian.sqsh; \
+	@$(call phase,Test runtime sysroot)
+	@printf 'kair-runtime\n' > $(BUILD)/test-packages.list
+	@./scripts/local-pkg-install --registry ./pkg-registry-src \
+	    --target $(abspath $(TEST_ROOTFS)) --list $(BUILD)/test-packages.list
+	@if [ -f $(TEST_ROOTFS)/usr/lib/sysroots/debian-runtime.sqsh ]; then \
+	    $(call ok,glibc sysroot from kair-runtime); \
 	else \
-	    $(call warn,no sysroot image - AppImage/glibc tests will SKIP, not fail); \
+	    $(call warn,no glibc sysroot - AppImage/glibc tests will SKIP, not fail); \
 	fi
 	cp $(BUILD)/bin/testrunner $(TEST_ROOTFS)/init
 	cp $(KERNEL_MODULES) $(TEST_ROOTFS)/lib/modules/

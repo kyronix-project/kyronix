@@ -19,7 +19,7 @@ typedef struct {
 } loop_info64_t;
 
 #define APPIMG "/app.img"
-#define SYSROOT_PRESENT "/usr/lib/sysroots/debian.sqsh"
+#define SYSROOT_PRESENT "/usr/lib/sysroots/debian-runtime.sqsh"
 
 static int appimg_ok(void) {
     struct stat st;

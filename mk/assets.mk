@@ -9,7 +9,6 @@ KAIR_ASSET_REV ?= 1
 KAIR_DEBIAN := docker.io/library/debian:bookworm-slim
 KAIR_READMES := $(KAIR_ASSETS)/README.md $(KAIR_ASSETS)/SHA256SUMS
 
-KAIR_SYSROOT_ASSET := $(KAIR_ASSETS)/sysroot/debian-sysroot.sqsh
 KAIR_GLIBC_ASSET := $(KAIR_ASSETS)/fixtures/glibc
 KAIR_REAL_APP_ASSET := $(KAIR_ASSETS)/fixtures/real-app
 KAIR_WL_PROBE_ASSET := $(KAIR_ASSETS)/fixtures/wl-probe
@@ -21,7 +20,7 @@ KAIR_GLIBC_FILES := $(shell find $(KAIR_GLIBC_ASSET) -type f 2>/dev/null)
 KAIR_REAL_APP_FILES := $(shell find $(KAIR_REAL_APP_ASSET) -type f 2>/dev/null)
 KAIR_WL_PROBE_FILES := $(shell find $(KAIR_WL_PROBE_ASSET) -type f 2>/dev/null)
 
-SYSROOT_SQSH := $(BUILD)/debian-sysroot.sqsh
+SYSROOT_SQSH := $(BUILD)/debian-runtime.sqsh
 GLIBC_FIXTURES := $(BUILD)/fixtures-glibc
 GLIBC_STAMP := $(GLIBC_FIXTURES)/.stamp
 GLIBC_SRC := user/testrunner/fixtures/glibc/hello.c
@@ -57,18 +56,13 @@ KAIR_RM = if [ -e $(1) ]; then chmod -R u+w $(1) 2>/dev/null || true; rm -rf $(1
 
 MISSING_ASSET = $(call warn,missing baked asset $(1) - run 'make bake' (needs podman + network))
 
-$(KAIR_SYSROOT_ASSET) $(KAIR_GLIBC_ASSET) $(KAIR_REAL_APP_ASSET) \
+$(KAIR_GLIBC_ASSET) $(KAIR_REAL_APP_ASSET) \
 $(KAIR_WL_PROBE_ASSET) $(KAIR_BASH_ASSET) $(KAIR_NVIM_ASSET) \
 $(KAIR_GALCULATOR_ASSET):
 	@$(call MISSING_ASSET,$@)
 	@false
 
 # --- consuming the baked assets -------------------------------------------
-
-$(SYSROOT_SQSH): $(KAIR_SYSROOT_ASSET)
-	@$(call phase,Sysroot)
-	cp -p $< $@
-	@$(call ok,$@)
 
 $(GLIBC_STAMP): $(KAIR_GLIBC_FILES)
 	@$(call phase,Glibc fixtures)
@@ -150,7 +144,7 @@ SYSROOT_BAKE_CMD := \
     rm -rf /src/$(SYSROOT_BAKE_STAGE); mkdir -p /src/$(SYSROOT_BAKE_STAGE); \
     python3 /src/scripts/build_sysroot.py '/src/$(SYSROOT_BAKE_STAGE)' && \
     sh /src/scripts/build_sysroot_caches.sh '/src/$(SYSROOT_BAKE_STAGE)' && \
-    mksquashfs /src/$(SYSROOT_BAKE_STAGE) /src/$(KAIR_SYSROOT_ASSET) \
+    mksquashfs /src/$(SYSROOT_BAKE_STAGE) /src/$(SYSROOT_SQSH) \
         -comp xz -b 131072 -noappend -no-progress >/dev/null && \
     rm -rf /src/$(SYSROOT_BAKE_STAGE) && \
     echo BAKE_OK
@@ -182,15 +176,15 @@ fi
 
 bake-sysroot:
 	@$(call KAIR_HOST_ONLY)
-	@if [ -s $(KAIR_SYSROOT_ASSET) ]; then \
+	@if [ -s $(SYSROOT_SQSH) ]; then \
 	    $(call ok,sysroot already baked); \
 	else \
 	    $(call phase,Baking glibc sysroot (rev $(KAIR_ASSET_REV))); \
-	    mkdir -p $(KAIR_ASSETS)/sysroot $(BUILD); \
+	    mkdir -p $(BUILD); \
 	    out=$$($(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/src:Z $(KAIR_DEBIAN) \
 	        sh -c "$(SYSROOT_BAKE_CMD)" 2>&1); \
 	    if echo "$$out" | grep -q BAKE_OK; then \
-	        $(call ok,$(KAIR_SYSROOT_ASSET)); \
+	        $(call ok,$(SYSROOT_SQSH)); \
 	    else \
 	        echo "$$out" | tail -10; \
 	        $(call warn,sysroot bake failed - see output above); false; \
@@ -256,7 +250,7 @@ bake: bake-sysroot bake-fixtures bake-apps
 	@$(call ok,assets/kair baked (rev $(KAIR_ASSET_REV)))
 
 rebake-sysroot:
-	@rm -f $(KAIR_SYSROOT_ASSET)
+	@rm -f $(SYSROOT_SQSH)
 	@$(MAKE) --no-print-directory bake-sysroot
 
 rebake-fixtures:
@@ -268,7 +262,7 @@ rebake-apps:
 	@$(MAKE) --no-print-directory bake-apps
 
 rebake:
-	@rm -f $(KAIR_SYSROOT_ASSET) $(KAIR_BASH_ASSET) $(KAIR_NVIM_ASSET) $(KAIR_GALCULATOR_ASSET)
+	@rm -f $(SYSROOT_SQSH) $(KAIR_BASH_ASSET) $(KAIR_NVIM_ASSET) $(KAIR_GALCULATOR_ASSET)
 	@rm -rf $(KAIR_GLIBC_ASSET) $(KAIR_REAL_APP_ASSET) $(KAIR_WL_PROBE_ASSET)
 	@$(MAKE) --no-print-directory bake
 
