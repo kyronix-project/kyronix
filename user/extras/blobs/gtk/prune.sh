@@ -47,4 +47,16 @@ for so in "$DIR"/lib*.so.[0-9]*; do
         fi
     done
 done
+
+DROP_LIBS="libX11-xcb libXft libbrotlienc libcairo-script-interpreter \
+    libcupsimage libgailutil-3 libgthread-2.0 libpangoxft-1.0 libpcre2-posix \
+    libpsx libxkbregistry libxcb-composite libxcb-damage libxcb-dbe \
+    libxcb-dpms libxcb-dri2 libxcb-dri3 libxcb-glx libxcb-present \
+    libxcb-randr libxcb-record libxcb-res libxcb-screensaver libxcb-shape \
+    libxcb-sync libxcb-xf86dri libxcb-xfixes libxcb-xinerama libxcb-xinput \
+    libxcb-xkb libxcb-xtest libxcb-xv libxcb-xvmc"
+
+for stem in $DROP_LIBS; do
+    rm -f -- "$DIR"/"$stem".so*
+done
 exit 0
