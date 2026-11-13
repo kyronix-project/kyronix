@@ -280,10 +280,16 @@ static void apply_hostname(void) {
     status("Setting hostname", 1);
 }
 
+#define RC_CONF_PATH_MAX 192
+
+static char rc_conf_path[RC_CONF_PATH_MAX] = "/etc/rc.conf";
+
 static void read_rc_conf(void) {
-    FILE *f = fopen("/etc/rc.conf", "r");
+    FILE *f = fopen(rc_conf_path, "r");
+    char label[200];
     if (!f) {
-        status("Reading /etc/rc.conf", 0);
+        snprintf(label, sizeof(label), "Reading %s", rc_conf_path);
+        status(label, 0);
         return;
     }
 
@@ -324,7 +330,8 @@ static void read_rc_conf(void) {
     }
 
     fclose(f);
-    status("Reading /etc/rc.conf", 1);
+    snprintf(label, sizeof(label), "Reading %s", rc_conf_path);
+    status(label, 1);
 }
 
 static void write_services(void) {
@@ -386,7 +393,11 @@ static void reload_config(void) {
     for (int i = 0; i < nservices; i++) release_service(&services[i]);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    if (argc > 1 && argv[1] && argv[1][0]) {
+        snprintf(rc_conf_path, sizeof(rc_conf_path), "%s", argv[1]);
+    }
+
     int fd = open("/dev/tty", O_RDWR);
     if (fd >= 0) {
         dup2(fd, STDIN_FILENO);
@@ -415,6 +426,7 @@ int main(void) {
     setenv("TERM", "xterm-color", 1);
     setenv("XDG_RUNTIME_DIR", "/run/user/0", 1);
     setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/0/bus", 1);
+    setenv("KYRONIX_RC_CONF", rc_conf_path, 1);
 
     apply_hostname();
     read_rc_conf();

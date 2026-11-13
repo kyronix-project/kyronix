@@ -61,7 +61,7 @@ clean:
 	rm -rf build/iso-root build/test-rootfs build/test-iso-root 2>/dev/null || true
 	rm -f test.log 2>/dev/null || true
 	rm -f $(ISO) $(TEST_ISO) 2>/dev/null || true
-	rm -f $(BUILD)/initrd-weston.cpio $(BUILD)/initrd-console.cpio 2>/dev/null || true
+	rm -f $(BUILD)/initrd.cpio $(BUILD)/initrd-weston.cpio $(BUILD)/initrd-console.cpio 2>/dev/null || true
 	rm -rf $(BUILD)/initrd-root-weston $(BUILD)/initrd-root-console 2>/dev/null || true
 	rm -f $(DIST)/kernel.elf $(DIST)/kyronix-boot.fat 2>/dev/null || true
 	rm -f $(DIST)/test-initrd.cpio $(DIST)/test-disk.img $(DIST)/disk.img 2>/dev/null || true

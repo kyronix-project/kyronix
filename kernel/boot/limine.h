@@ -132,6 +132,20 @@ struct limine_module_request {
     void **internal_modules;
 };
 
+#define LIMINE_EXECUTABLE_CMDLINE_REQUEST                                                          \
+    { LIMINE_COMMON_MAGIC, 0x4b161536e598651e, 0xb390ad4a2f1f303a }
+
+struct limine_executable_cmdline_response {
+    uint64_t revision;
+    char *cmdline;
+};
+
+struct limine_executable_cmdline_request {
+    uint64_t id[4];
+    uint64_t revision;
+    struct limine_executable_cmdline_response *response;
+};
+
 #define LIMINE_KERNEL_ADDRESS_REQUEST                                                              \
     { LIMINE_COMMON_MAGIC, 0x71ba76863cc55f63, 0xb2644a48c516a487 }
 
