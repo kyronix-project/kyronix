@@ -5,13 +5,14 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.request
 
 BASE = "https://deb.debian.org/debian/dists/bookworm/main/binary-amd64/"
 
 SEEDS = [
     "libc6", "libgcc-s1", "libstdc++6", "zlib1g",
-    "libwayland-client0", "libffi8",
+    "libwayland-client0", "libffi8", "libquadmath0",
     "libgtk-3-0", "libgtk-3-common",
     "fontconfig-config", "fonts-dejavu-core",
     "gsettings-desktop-schemas",
@@ -23,8 +24,16 @@ EXCLUDE = {"dconf-gsettings-backend", "gconf-gsettings-backend"}
 
 
 def fetch(url, dest):
-    with urllib.request.urlopen(url, timeout=120) as r, open(dest, "wb") as f:
-        f.write(r.read())
+    last = None
+    for attempt in range(5):
+        try:
+            with urllib.request.urlopen(url, timeout=120) as r, open(dest, "wb") as f:
+                f.write(r.read())
+            return
+        except Exception as e:
+            last = e
+            time.sleep(2 * (attempt + 1))
+    raise last
 
 
 def parse_packages(path):
