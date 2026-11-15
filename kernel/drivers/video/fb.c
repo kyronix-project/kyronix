@@ -191,6 +191,25 @@ void fb_cursor_update(void) {
     g_cursor_last_row = g_fb.row;
 }
 
+static void cursor_hide(void) {
+    if (!g_cursor_enabled || !g_fb.addr) return;
+    uint32_t cols = screen_cols();
+    uint32_t rows = screen_rows();
+    if (g_cursor_last_col < cols && g_cursor_last_row < rows)
+        cursor_draw(g_cursor_last_col, g_cursor_last_row, g_fb.bg);
+}
+
+static void cursor_show(void) {
+    if (!g_cursor_enabled || !g_fb.addr) return;
+    uint32_t cols = screen_cols();
+    uint32_t rows = screen_rows();
+    if (g_fb.col < cols && g_fb.row < rows) {
+        cursor_draw(g_fb.col, g_fb.row, g_fb.fg);
+        g_cursor_last_col = g_fb.col;
+        g_cursor_last_row = g_fb.row;
+    }
+}
+
 void fb_begin_write(void) { g_write_depth++; }
 
 void fb_end_write(void) {
@@ -317,6 +336,7 @@ void fb_set_color(uint32_t fg, uint32_t bg) {
 
 static void screen_move_rows(uint32_t dst_row, uint32_t src_row, uint32_t count) {
     if (!count) return;
+    cursor_hide();
     uint64_t line_bytes = (uint64_t) FONT_H * g_fb.pitch;
     uint8_t *s = shadow_active();
     uint64_t dst_off = (uint64_t) dst_row * line_bytes;
@@ -326,6 +346,7 @@ static void screen_move_rows(uint32_t dst_row, uint32_t src_row, uint32_t count)
     if (!g_console_suspended)
         memmove((uint8_t *) g_fb.addr + dst_off, (uint8_t *) g_fb.addr + src_off, n);
     if (s) memmove(s + dst_off, s + src_off, n);
+    cursor_show();
 }
 
 static void screen_fill_rows(uint32_t first, uint32_t last, uint32_t color) {
@@ -335,6 +356,7 @@ static void screen_fill_rows(uint32_t first, uint32_t last, uint32_t color) {
 
 static void screen_move_cells(uint32_t row, uint32_t dst_col, uint32_t src_col, uint32_t count) {
     if (!count) return;
+    cursor_hide();
     uint64_t row_off = (uint64_t) row * FONT_H * g_fb.pitch;
     uint64_t dst_off = row_off + (uint64_t) dst_col * FONT_W * g_bytes_per_px;
     uint64_t src_off = row_off + (uint64_t) src_col * FONT_W * g_bytes_per_px;
@@ -348,11 +370,13 @@ static void screen_move_cells(uint32_t row, uint32_t dst_col, uint32_t src_col, 
                     (uint8_t *) g_fb.addr + src_off + off, n);
         if (s) memmove(s + dst_off + off, s + src_off + off, n);
     }
+    cursor_show();
 }
 
 static void fb_alt_screen_enter(bool save_cursor) {
     uint32_t cols = screen_cols();
     uint32_t rows = screen_rows();
+    cursor_hide();
     if (save_cursor) {
         g_saved_col = g_fb.col;
         g_saved_row = g_fb.row;
@@ -370,16 +394,23 @@ static void fb_alt_screen_enter(bool save_cursor) {
     if (cols && g_fb.col >= cols) g_fb.col = cols - 1;
     if (rows && g_fb.row >= rows) g_fb.row = rows - 1;
     fb_present();
+    g_cursor_last_col = g_fb.col;
+    g_cursor_last_row = g_fb.row;
+    cursor_show();
 }
 
 static void fb_alt_screen_leave(bool restore_cursor) {
     if (!g_alt_active) return;
+    cursor_hide();
     g_alt_active = false;
     if (restore_cursor && g_saved_valid) {
         g_fb.col = g_saved_col;
         g_fb.row = g_saved_row;
     }
+    g_cursor_last_col = g_fb.col;
+    g_cursor_last_row = g_fb.row;
     fb_present();
+    cursor_show();
 }
 
 static void scroll_up(void) {
