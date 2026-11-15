@@ -7,7 +7,8 @@ EXTENDED ?= 0
 
 KERNEL   := $(BUILD)/kernel.elf
 ISO      := $(DIST)/kyronix.iso
-LIVE_ISO := $(DIST)/kyronix-$(VERSION)-RELEASE-$(ARCH)-live.iso
+EDITION_SUFFIX := $(if $(filter 1,$(EXTENDED)),-extended,)
+LIVE_ISO := $(DIST)/kyronix-$(VERSION)-RELEASE-$(ARCH)$(EDITION_SUFFIX)-live.iso
 DISK     := $(DIST)/kyronix-disk.img
 TEST_ISO := $(DIST)/kyronix-test.iso
 
@@ -71,8 +72,8 @@ clean:
 	rm -f $(DIST)/kernel.elf $(DIST)/kyronix-boot.fat 2>/dev/null || true
 	rm -f $(DIST)/test-initrd.cpio $(DIST)/test-disk.img $(DIST)/disk.img 2>/dev/null || true
 	rm -f $(DIST)/kyronix-*-$(ARCH).iso 2>/dev/null || true
-	rm -f $(DIST)/kyronix-*-$(ARCH)-live.iso $(DIST)/kyronix-*-$(ARCH)-test.iso 2>/dev/null || true
-	rm -f $(DIST)/kyronix-*-$(ARCH)-live.iso.sha256 2>/dev/null || true
+	rm -f $(DIST)/kyronix-*-$(ARCH)*-live.iso $(DIST)/kyronix-*-$(ARCH)*-test.iso 2>/dev/null || true
+	rm -f $(DIST)/kyronix-*-$(ARCH)*-live.iso.sha256 2>/dev/null || true
 	rm -f $(BUILD)/os-release-INDEV $(BUILD)/os-release-RELEASE 2>/dev/null || true
 	$(MAKE) -C user clean 2>/dev/null || true
 	@rmdir $(DIST) 2>/dev/null || true
