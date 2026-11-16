@@ -14,6 +14,16 @@
 CONTAINER_RUNTIME ?= $(if $(strip $(CRUNTIME)),$(CRUNTIME),podman)
 CONTAINER_IMAGE   ?= kyronix-build
 CONTAINER_TAG     ?= latest
+CONTAINER_DEVICES ?=
+TEST_ARGS := \
+    $(if $(TEST_SHARDS),TEST_SHARDS=$(TEST_SHARDS)) \
+    $(if $(TEST_FAST),TEST_FAST=$(TEST_FAST)) \
+    $(if $(strip $(TEST_SKIP)),TEST_SKIP="$(TEST_SKIP)") \
+    $(if $(strip $(TEST_SKIP_FAST)),TEST_SKIP_FAST="$(TEST_SKIP_FAST)") \
+    $(if $(TEST_SMP),TEST_SMP=$(TEST_SMP)) \
+    $(if $(TEST_TIMEOUT),TEST_TIMEOUT=$(TEST_TIMEOUT)) \
+    $(if $(TEST_BOOT_DEADLINE),TEST_BOOT_DEADLINE=$(TEST_BOOT_DEADLINE)) \
+    $(if $(TEST_IDLE_TIMEOUT),TEST_IDLE_TIMEOUT=$(TEST_IDLE_TIMEOUT))
 EXTENDED          ?= $(or $(shell cat build/.extended 2>/dev/null),0)
 
 ifneq ($(strip $(CRUNTIME)),)
@@ -47,12 +57,12 @@ container-build:
 
 container-run: container-build
 	@$(call phase,Running build inside container)
-	$(CONTAINER_RUNTIME) run --rm \
+	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_DEVICES) \
 	    -v $(CURDIR):/src:Z \
 	    -v $(CURDIR)/./pkg-registry-src:/src/./pkg-registry-src:Z \
 	    -w /src \
 	    $(CONTAINER_IMAGE):$(CONTAINER_TAG) \
-	    make -j$$(nproc) INSIDE_CONTAINER=1 EXTENDED=$(EXTENDED) $(CONTAINER_GOALS)
+	    make -j$$(nproc) INSIDE_CONTAINER=1 EXTENDED=$(EXTENDED) $(TEST_ARGS) $(CONTAINER_GOALS)
 
 $(BUILD_GOALS): container-run
 	@$(if $(filter run boot,$@),$(MAKE) INSIDE_CONTAINER=1 EXTENDED=$(EXTENDED) $@,:)

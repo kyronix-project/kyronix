@@ -132,7 +132,7 @@ static int nvim_smcup(const char *term, char *out, size_t outsz) {
     size_t total = 0;
     int found = 0;
 
-    for (int spin = 0; spin < 2500 && !found; spin++) {
+    for (int spin = 0; spin < 750 && !found; spin++) {
         int flags = fcntl(master, F_GETFL, 0);
         fcntl(master, F_SETFL, flags | O_NONBLOCK);
         char buf[4096];

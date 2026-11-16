@@ -1,12 +1,22 @@
-TEST_INITRD := $(BUILD)/test-initrd.cpio
 TEST_ROOTFS := $(BUILD)/test-rootfs
-TEST_ISO_ROOT := $(BUILD)/test-iso-root
-TEST_DISK := $(BUILD)/test-disk.img
+TEST_ROOTFS_STAMP := $(BUILD)/.test-rootfs.stamp
 TEST_SQSH := $(BUILD)/test.sqsh
 TEST_SQSH_XZ := $(BUILD)/test-xz.sqsh
 TEST_SQFS_SRC := $(BUILD)/sqfs-src
 TEST_LOG := $(BUILD)/test.log
-TEST_TIMEOUT ?= 600
+TEST_TIMEOUT ?= 420
+TEST_BOOT_DEADLINE ?= 30
+TEST_IDLE_TIMEOUT ?= 90
+TEST_SMP ?= 4
+TEST_SHARDS ?= 1
+TEST_FAST ?= 0
+TEST_SKIP ?=
+TEST_SKIP_FAST ?= appimage_nvim_version appimage_nvim_headless appimage_nvim_sandboxed appimage_nvim_cleanup appimage_nvim_tui appimage_nvim_tui_external_terminfo appimage_basic appimage_args appimage_exit_code appimage_from_ext2 appimage_relative_path appimage_cleanup appimage_invalid appimage_version appimage_unknown_option appimage_xz_basic appimage_xz_args appimage_xz_exit_code appimage_xz_cleanup appimage_real_basic appimage_real_bundled_libs appimage_real_maps appimage_real_isolation appimage_real_args_exit appimage_real_cleanup appimage_real_dev_tty_writable appimage_real_tmp_writable appimage_real_terminfo appimage_real_home_valid appimage_real_cwd_preserved appimage_real_cwd_binds_caller_dir appimage_script_apprun_args appimage_script_apprun_cleanup appimage_runtime_dir_bound appimage_runtime_dir_writable appimage_wayland_env_propagated appimage_no_runtime_dir_still_runs appimage_shm_visible_in_sandbox appimage_wl_probe_loads appimage_wl_probe_no_compositor appimage_wl_probe_connect_attempted appimage_wl_probe_finds_sysroot_lib smp_parallel
+TEST_SKIP_SHARD = $(if $(filter-out 1,$(TEST_SHARDS)),smp_parallel)
+TEST_SKIP_FINAL = $(strip $(if $(filter 1,$(TEST_FAST)),$(TEST_SKIP_FAST),) $(TEST_SKIP_SHARD) $(TEST_SKIP))
+TEST_SHARD_IDS := $(shell i=0; while [ $$i -lt $(TEST_SHARDS) ]; do echo $$i; i=$$((i+1)); done)
+TEST_SHARD_ISOS := $(foreach n,$(TEST_SHARD_IDS),$(BUILD)/test-$(n).iso)
+TEST_SHARD_LOGS := $(foreach n,$(TEST_SHARD_IDS),$(BUILD)/test-$(n).log)
 TEST_MODULE := $(BUILD)/hello.ko
 TEST_DEP_MODULE := $(BUILD)/hello_user.ko
 FUZZ_ISO := $(DIST)/kyronix-posix-fuzz.iso
@@ -41,8 +51,8 @@ $(FUZZ_ISO): $(KERNEL) $(FUZZ_INITRD) boot/limine-test.conf $(LIMINE_FILES) $(LI
 
 fuzz-posix: $(FUZZ_ISO)
 	@mkdir -p $(BUILD)
-	@set +e; timeout $(FUZZ_TIMEOUT) $(QEMU) \
-	    -M q35 -cpu max -m 512M -smp 2 -cdrom $(FUZZ_ISO) \
+	@set +e; timeout $(FUZZ_TIMEOUT) $(QEMU_ENV) $(QEMU) \
+	    -M q35 $(QEMU_ACCEL_ARGS) -m 512M -smp 2 -cdrom $(FUZZ_ISO) \
 	    -device isa-debug-exit,iobase=0x501 -display none \
 	    -serial file:$(FUZZ_LOG) -no-reboot 2>/dev/null; \
 	qemu_status=$$?; set -e; \
@@ -126,8 +136,8 @@ $(BASH_APPIMG): $(BASH_APP_SQSH) scripts/wrap_appimages.py
 	@python3 $(CURDIR)/scripts/wrap_appimages.py --single $(BASH_APP_SQSH) $(BASH_APPIMG) >/dev/null
 	@$(call ok,$(BASH_APPIMG))
 
-$(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH) $(TEST_SQSH_XZ) $(GLIBC_STAMP) $(REAL_APPIMG) $(BASH_STAMP) $(BASH_APPIMG) $(NVIM_STAMP) $(WL_PROBEIMG)
-	@$(call phase,Test initrd)
+$(TEST_ROOTFS_STAMP): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/testrunner $(TEST_MODULE) $(TEST_DEP_MODULE) $(TEST_SQSH) $(TEST_SQSH_XZ) $(GLIBC_STAMP) $(REAL_APPIMG) $(BASH_STAMP) $(BASH_APPIMG) $(NVIM_STAMP) $(WL_PROBEIMG)
+	@$(call phase,Test rootfs)
 	rm -rf $(TEST_ROOTFS)
 	mkdir -p $(TEST_ROOTFS)/bin $(TEST_ROOTFS)/mnt $(TEST_ROOTFS)/sqfs \
 	    $(TEST_ROOTFS)/etc $(TEST_ROOTFS)/lib/modules
@@ -189,44 +199,72 @@ $(TEST_INITRD): $(KERNEL) $(KERNEL_MODULES) $(USERSPACE_STAMP) $(BUILD)/bin/test
 	for bin in tar gzip gunzip bzip2 bunzip2 xz unxz; do \
 	    cp -P $(BUILD)/bin/$$bin $(TEST_ROOTFS)/bin/; \
 	done
-	@cd $(TEST_ROOTFS) && find . | sort | \
-	    cpio -o --format=newc --owner=0:0 --reproducible \
-	    > "$(abspath $(TEST_INITRD))" 2>/dev/null
-	@$(call ok,$(TEST_INITRD))
+	@touch $@
+	@$(call ok,$(TEST_ROOTFS_STAMP))
 
-$(TEST_ISO): $(KERNEL) $(TEST_INITRD) boot/limine-test.conf \
+.PHONY: FORCE
+FORCE:
+
+$(BUILD)/test-initrd-%.cpio: $(TEST_ROOTFS_STAMP) FORCE
+	@$(call phase,Test initrd $*)
+	@rm -rf $(BUILD)/test-rootfs-$*
+	@cp -al $(TEST_ROOTFS) $(BUILD)/test-rootfs-$*
+	@printf '%s/%s\n' $* $(TEST_SHARDS) > $(BUILD)/test-rootfs-$*/test-shard
+	@: > $(BUILD)/test-rootfs-$*/test-skip
+	@for p in $(TEST_SKIP_FINAL); do printf '%s\n' "$$p" >> $(BUILD)/test-rootfs-$*/test-skip; done
+	@cd $(BUILD)/test-rootfs-$* && find . | sort | \
+	    cpio -o --format=newc --owner=0:0 --reproducible \
+	    > "$(abspath $(BUILD))/test-initrd-$*.cpio" 2>/dev/null
+	@$(call ok,$@)
+
+$(BUILD)/test-%.iso: $(KERNEL) $(BUILD)/test-initrd-%.cpio boot/limine-test.conf \
 		$(LIMINE_FILES) $(LIMINE)/limine
 	@mkdir -p $(@D)
-	$(call build_iso,$(TEST_ISO_ROOT),boot/limine-test.conf,$(TEST_INITRD),$(TEST_ISO))
+	$(call build_iso,$(BUILD)/test-iso-root-$*,boot/limine-test.conf,$(BUILD)/test-initrd-$*.cpio,$(BUILD)/test-$*.iso)
+
+.PHONY: test-build
+test-build: INSTRUMENT=1
+test-build: $(TEST_SHARD_ISOS) $(TEST_SQSH)
 
 .PHONY: test
 test: INSTRUMENT=1
-test: $(TEST_ISO) $(TEST_SQSH)
+test: $(TEST_SHARD_ISOS) $(TEST_SQSH)
 	@$(call phase,Test suite)
 	@mkdir -p $(BUILD)
-	@truncate -s 16M $(TEST_DISK)
-	@mkfs.ext2 -F -b 4096 -L kyronix-test $(TEST_DISK) >/dev/null 2>&1
 	@set +e; \
-	timeout $(TEST_TIMEOUT) $(QEMU) \
-	    -M q35 -cpu max -m 2G -smp 4 \
-	    -cdrom $(TEST_ISO) \
-	    -device isa-debug-exit,iobase=0x501 \
-	    -display none \
-	    -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
-	    -drive file=$(TEST_DISK),format=raw,if=none,id=hd0,cache=writethrough \
-	    -device ahci,id=ahci \
-	    -device ide-hd,drive=hd0,bus=ahci.0 \
-	    -drive file=$(TEST_SQSH),format=raw,if=none,id=hd1,cache=writethrough \
-	    -device ide-hd,drive=hd1,bus=ahci.1 \
-	    -serial file:$(TEST_LOG) -no-reboot 2>/dev/null; \
-	qemu_status=$$?; \
-	set -e; \
+	for n in $(TEST_SHARD_IDS); do \
+	    truncate -s 16M $(BUILD)/test-disk-$$n.img; \
+	    mkfs.ext2 -F -b 4096 -L kyronix-test $(BUILD)/test-disk-$$n.img >/dev/null 2>&1; \
+	    cp $(TEST_SQSH) $(BUILD)/test-$$n.sqsh; \
+	done; \
+	pids=""; \
+	trap 'kill $$pids 2>/dev/null; wait' EXIT; \
+	for n in $(TEST_SHARD_IDS); do \
+	    BOOT_DEADLINE=$(TEST_BOOT_DEADLINE) IDLE_TIMEOUT=$(TEST_IDLE_TIMEOUT) \
+	        $(CURDIR)/scripts/run-qemu-watchdog.sh $(BUILD)/test-$$n.log $(TEST_TIMEOUT) \
+	        $(QEMU_ENV) $(QEMU) -M q35 $(QEMU_ACCEL_ARGS) -m 2G -smp $(TEST_SMP) \
+	        -cdrom $(BUILD)/test-$$n.iso \
+	        -device isa-debug-exit,iobase=0x501 \
+	        -display none \
+	        -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
+	        -drive file=$(BUILD)/test-disk-$$n.img,format=raw,if=none,id=hd0,cache=writethrough \
+	        -device ahci,id=ahci \
+	        -device ide-hd,drive=hd0,bus=ahci.0 \
+	        -drive file=$(BUILD)/test-$$n.sqsh,format=raw,if=none,id=hd1,cache=writethrough \
+	        -device ide-hd,drive=hd1,bus=ahci.1 \
+	        -serial file:$(BUILD)/test-$$n.log -no-reboot & \
+	    pids="$$pids $$!"; \
+	done; \
+	for p in $$pids; do wait $$p; done; \
+	cat $(TEST_SHARD_LOGS) > $(TEST_LOG) 2>/dev/null || true; \
 	grep -E "(TEST|RESULT|ALL|SOME|FAIL|KMEMLEAK)" $(TEST_LOG) 2>/dev/null || true; \
-	if ! grep -q "ALL TESTS PASSED" $(TEST_LOG) 2>/dev/null; then \
-	    echo; $(call fail,QEMU status $$qemu_status); exit 1; \
-	fi; \
-	leaks=$$(sed -n 's/.*KMEMLEAK: \\([0-9][0-9]*\\).*/\\1/p' $(TEST_LOG) | tail -n 1); \
-	if [ -n "$$leaks" ] && [ "$$leaks" -gt 0 ]; then \
-	    echo; $(call fail,KMEMLEAK found $$leaks leak(s)); exit 1; \
-	fi; \
+	for log in $(TEST_SHARD_LOGS); do \
+	    if ! grep -q "ALL TESTS PASSED" "$$log" 2>/dev/null; then \
+	        echo; echo "  log: $$log"; $(call fail,Test shard failed); exit 1; \
+	    fi; \
+	    leaks=$$(sed -n 's/.*KMEMLEAK: \\([0-9][0-9]*\\).*/\\1/p' "$$log" | tail -n 1); \
+	    if [ -n "$$leaks" ] && [ "$$leaks" -gt 0 ]; then \
+	        echo; echo "  log: $$log"; $(call fail,KMEMLEAK found); exit 1; \
+	    fi; \
+	done; \
 	echo; $(call ok,All tests passed)
