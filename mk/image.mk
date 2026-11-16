@@ -72,6 +72,7 @@ $(BOOT_FAT): $(KERNEL) boot/limine-disk.conf $(LIMINE)/limine-bios.sys
 	@$(call ok,$@)
 
 # --- initrd root filesystem ---
+ifeq ($(EXTENDED),1)
 $(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROOTFS_SOURCES) $(OS_RELEASE) $(PKG_LIST) $(PKG_FILES) $(GALCULATOR_STAMP)
 	@if [ -d $(INITRD_ROOT) ]; then chmod -R u+w $(INITRD_ROOT) 2>/dev/null || true; rm -rf $(INITRD_ROOT); fi
 	@mkdir -p $(INITRD_ROOT)/boot/limine
@@ -101,6 +102,33 @@ $(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROO
 	fi
 	@touch $(INITRD_ROOT)
 	@$(call ok,initrd root)
+else
+$(INITRD_ROOT): $(KERNEL) $(KERNEL_MODULES) $(BOOT_FAT) $(USERSPACE_STAMP) $(ROOTFS_SOURCES) $(OS_RELEASE) $(PKG_LIST) $(PKG_FILES)
+	@if [ -d $(INITRD_ROOT) ]; then chmod -R u+w $(INITRD_ROOT) 2>/dev/null || true; rm -rf $(INITRD_ROOT); fi
+	@mkdir -p $(INITRD_ROOT)/boot/limine
+	@mkdir -p $(INITRD_ROOT)/lib/modules
+	@mkdir -p $(INITRD_ROOT)/usr/share/kyronix
+	@cp -a rootfs/. $(INITRD_ROOT)/
+	@if [ -n "$(PKG_LIST)" ]; then \
+		$(call phase,Local packages); \
+		./scripts/local-pkg-install --registry ./pkg-registry-src --target $(abspath $(INITRD_ROOT)) --list $(PKG_LIST); \
+		$(call ok,Local packages); \
+	fi
+	@mkdir -p $(INITRD_ROOT)/var/lib/flatpak $(INITRD_ROOT)/var/lib/dbus \
+	    $(INITRD_ROOT)/run/user/0 $(INITRD_ROOT)/dev/shm
+	@chmod 0700 $(INITRD_ROOT)/run/user/0
+	@chmod 01777 $(INITRD_ROOT)/dev/shm
+	@ln -sf /etc/machine-id $(INITRD_ROOT)/var/lib/dbus/machine-id
+	@cp $(OS_RELEASE) $(INITRD_ROOT)/etc/os-release
+	@cp $(KERNEL_MODULES) $(INITRD_ROOT)/lib/modules/
+	@cp $(KERNEL) $(INITRD_ROOT)/boot/kernel.elf
+	@cp boot/limine-disk.conf $(INITRD_ROOT)/boot/limine/limine.conf
+	@cp $(LIMINE)/limine-bios.sys $(INITRD_ROOT)/boot/limine/
+	@split -b 1M -d -a 2 $(BOOT_FAT) \
+	    $(INITRD_ROOT)/usr/share/kyronix/boot.fat.
+	@touch $(INITRD_ROOT)
+	@$(call ok,initrd root)
+endif
 
 # --- initrd (single image; the boot entry's cmdline picks init and rc.conf) ---
 $(INITRD): $(INITRD_ROOT)
