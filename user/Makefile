@@ -1,4 +1,5 @@
 ROOTFS := ../rootfs
+WAYLAND ?= 0
 
 include ../mk/output.mk
 
@@ -49,7 +50,7 @@ all:
 	@ln -sf reboot $(ROOTFS)/bin/halt
 	@$(MAKE) --no-print-directory -C libudev install
 	@$(MAKE) --no-print-directory -C extras install
-ifneq ($(WAYLAND),0)
+ifeq ($(WAYLAND),1)
 	@$(MAKE) --no-print-directory -C extras/blobs/wayland install
 	@$(MAKE) --no-print-directory -C extras/blobs/gtk
 endif

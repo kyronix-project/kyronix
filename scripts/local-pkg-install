@@ -131,15 +131,15 @@ install_pkg() {
 	fi
 
 	pdir="$REGISTRY/$pkg"
-	if [ ! -d "$pdir" ] || [ ! -r "$pdir/package.gz" ]; then
+	if [ ! -d "$pdir" ] || [ ! -r "$pdir/package.zst" ]; then
 		cp -a "$REGISTRY/$pkg" "$TMPDIR_ALL/$pkg.copy" 2>/dev/null && pdir="$TMPDIR_ALL/$pkg.copy"
 	fi
 	[ -d "$pdir" ] || { echo "local-pkg-install: package dir not found: $pkg" >&2; return 1; }
-	[ -f "$pdir/package.gz" ] || { echo "local-pkg-install: package.gz missing for $pkg" >&2; return 1; }
-	[ -f "$pdir/package.gz.md5" ] || { echo "local-pkg-install: package.gz.md5 missing for $pkg" >&2; return 1; }
+	[ -f "$pdir/package.zst" ] || { echo "local-pkg-install: package.zst missing for $pkg" >&2; return 1; }
+	[ -f "$pdir/package.zst.md5" ] || { echo "local-pkg-install: package.zst.md5 missing for $pkg" >&2; return 1; }
 
-	exp=$(cat "$pdir/package.gz.md5" | tr -d '\n\r ')
-	act=$(md5sum "$pdir/package.gz" | awk '{print $1}')
+	exp=$(awk 'NR == 1 { print $1 }' "$pdir/package.zst.md5")
+	act=$(md5sum "$pdir/package.zst" | awk '{print $1}')
 	if [ "$exp" != "$act" ]; then
 		echo "local-pkg-install: md5 mismatch for $pkg" >&2
 		return 1
@@ -153,7 +153,7 @@ install_pkg() {
 	wdir="$TMPDIR_ALL/$pkg"
 	rm -rf "$wdir"
 	mkdir -p "$wdir"
-	tar xzf "$pdir/package.gz" -C "$wdir" --no-same-owner
+	zstd -dc "$pdir/package.zst" | tar xf - -C "$wdir" --no-same-owner
 	pl="$wdir/payload"
 	if [ ! -d "$pl" ]; then
 		pl=$(find "$wdir" -maxdepth 3 -type d -name payload | head -1)

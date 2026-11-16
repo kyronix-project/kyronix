@@ -72,6 +72,20 @@ static void net_addr_monitor(void) {
              (unsigned) NET_DHCP_TIMEOUT_MS);
 }
 
+static void net_diag_tick(void) {
+    extern uint64_t g_diag_recv_calls, g_diag_recv_bytes, g_diag_recv_refuse, g_diag_recv_segs;
+    extern uint64_t g_diag_pop_calls, g_diag_pop_bytes;
+    static uint64_t next;
+    if (next == 0) next = g_ticks + 5000;
+    if (g_ticks < next) return;
+    next = g_ticks + 5000;
+    log_warn("NETDIAG t=%llums segs=%llu acc=%llu refuse=%llu accB=%llu pop=%llu popB=%llu",
+             (unsigned long long) g_ticks, (unsigned long long) g_diag_recv_segs,
+             (unsigned long long) g_diag_recv_calls, (unsigned long long) g_diag_recv_refuse,
+             (unsigned long long) g_diag_recv_bytes, (unsigned long long) g_diag_pop_calls,
+             (unsigned long long) g_diag_pop_bytes);
+}
+
 static void net_worker_main(void) {
     for (;;) {
         uint64_t flags = irq_save();
@@ -108,6 +122,7 @@ static void net_worker_main(void) {
             }
         }
         if (g_lwip_initialized) sys_check_timeouts();
+        net_diag_tick();
         net_addr_monitor();
     }
 }

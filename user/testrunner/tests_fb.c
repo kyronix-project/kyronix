@@ -326,7 +326,7 @@ int test_fb_insert_delete_lines(void) {
     fbscreen_t s;
     ASSERT_TRUE(fb_ready(&s));
 
-    ASSERT_TRUE(fb_send(&s, "\033[2J\033[H\033[7mTOP"));
+    ASSERT_TRUE(fb_send(&s, "\033[r\033[2J\033[H\033[7mTOP"));
     ASSERT_TRUE(fb_snapshot(&s));
     ASSERT_GT(fb_cell_ink(&s, 0, 0), 0);
 
@@ -337,7 +337,7 @@ int test_fb_insert_delete_lines(void) {
     ASSERT_GT(fb_cell_ink(&s, 0, 0), 0);
 
     /* DL of the whole screen's worth pulls everything up and blanks the tail. */
-    ASSERT_TRUE(fb_send(&s, "\033[1;1H\033[100M"));
+    ASSERT_TRUE(fb_send(&s, "\033[1;1H\033[100M\033[2;1H"));
     ASSERT_TRUE(fb_snapshot(&s));
     ASSERT_EQ(0, fb_cell_ink(&s, 0, 0));
 

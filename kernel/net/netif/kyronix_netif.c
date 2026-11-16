@@ -14,10 +14,14 @@
 #include "../net.h"
 
 void kyronix_netif_input(struct netif *nif, const uint8_t *data, uint16_t len) {
-    struct pbuf *p = pbuf_alloc(PBUF_RAW, len, PBUF_REF);
+    struct pbuf *p = pbuf_alloc(PBUF_RAW, len, PBUF_POOL);
+    if (!p) p = pbuf_alloc(PBUF_RAW, len, PBUF_RAM);
     if (!p) return;
 
-    p->payload = (void *) data;
+    if (pbuf_take(p, data, len) != ERR_OK) {
+        pbuf_free(p);
+        return;
+    }
 
     if (nif->input(p, nif) != ERR_OK) {
         pbuf_free(p);

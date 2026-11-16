@@ -1,7 +1,7 @@
 QEMU       ?= qemu-system-x86_64
 QEMU_ENV   ?= env -u LD_LIBRARY_PATH -u GTK_PATH -u GTK_EXE_PREFIX \
     -u GTK_IM_MODULE_FILE -u GIO_MODULE_DIR
-QEMU_ACCEL ?= $(if $(wildcard /dev/kvm),kvm,tcg)
+QEMU_ACCEL ?= $(if $(shell [ -w /dev/kvm ] && echo yes),kvm,tcg)
 QEMU_CPU   ?= $(if $(filter kvm,$(QEMU_ACCEL)),host,max)
 
 ifeq ($(QEMU_ACCEL),kvm)
@@ -19,7 +19,7 @@ QEMU_NET_ARGS = -netdev user,id=n0 -device virtio-net-pci,netdev=n0
 
 .PHONY: run boot
 
-run: $(ISO) $(DISK)
+run: _iso $(DISK)
 	@$(call phase,Launching QEMU (live ISO))
 	$(QEMU_ENV) $(QEMU) \
 	    -M q35 $(QEMU_ACCEL_ARGS) -smp 4 -m 4G \

@@ -37,7 +37,7 @@
 #define SOCK_DGRAM 2
 #define SOCK_RAW 3
 
-#define RX_BUF_SZ 16384u
+#define RX_BUF_SZ 65536u
 
 typedef struct {
     uint8_t buf[RX_BUF_SZ];
@@ -45,7 +45,8 @@ typedef struct {
 } rx_ring_t;
 
 static uint32_t ring_avail(const rx_ring_t *r) { return (r->head - r->tail) & (RX_BUF_SZ - 1); }
-
+uint64_t g_diag_recv_calls, g_diag_recv_bytes, g_diag_recv_refuse, g_diag_recv_segs;
+uint64_t g_diag_pop_calls, g_diag_pop_bytes;
 static void ring_push(rx_ring_t *r, const uint8_t *data, uint32_t len) {
     uint32_t free = (RX_BUF_SZ - 1u) - ring_avail(r);
     if (len > free) len = free;
@@ -119,13 +120,17 @@ static err_t on_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err) 
     }
 
     uint32_t freelen = (RX_BUF_SZ - 1u) - ring_avail(&c->rx);
+    g_diag_recv_calls++;
+    g_diag_recv_segs++;
     if (p->tot_len > freelen) {
+        g_diag_recv_refuse++;
         proc_t *w = c->rx_waiter;
         if (w && __sync_bool_compare_and_swap(&w->state, PROC_WAITING, PROC_READY))
             proc_set_ready(w);
         poll_notify_object(c);
         return ERR_MEM;
     }
+    g_diag_recv_bytes += p->tot_len;
 
     struct pbuf *q = p;
     while (q) {
@@ -352,9 +357,11 @@ int64_t inet_fd_read(net_conn_t *c, void *buf, uint64_t len, int fd_flags) {
         sched_yield_blocking();
         c->rx_waiter = NULL;
     }
-    return (int64_t) ring_pop(&c->rx, (uint8_t *) buf, (uint32_t) len);
+    uint32_t got = ring_pop(&c->rx, (uint8_t *) buf, (uint32_t) len);
+    g_diag_pop_calls++;
+    g_diag_pop_bytes += got;
+    return (int64_t) got;
 }
-
 int64_t inet_fd_write(net_conn_t *c, const void *buf, uint64_t len) {
     if (!c) return -(int64_t) ENOTCONN;
     if (c->phantom_fake) {

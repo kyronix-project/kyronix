@@ -19,6 +19,7 @@ RUN apk add --no-cache \
     libcap-dev \
     gawk file \
     curl wget tar \
+    zstd \
     bash coreutils findutils \
     git
 

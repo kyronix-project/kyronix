@@ -370,7 +370,7 @@ int test_waitpid_interrupted(void) {
 
     if (child == 0) {
         /* child sleeps long enough for signal to be sent */
-        sleep(2);
+        sleep(1);
         _exit(0);
     }
 

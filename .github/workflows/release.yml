@@ -21,7 +21,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,21 +52,27 @@ jobs:
             exit 1
           fi
 
-      - name: Build RELEASE image
-        run: make live CRUNTIME=podman RELEASE=1
+      - name: Build RELEASE images
+        run: |
+          set -euo pipefail
+          make live CRUNTIME=podman RELEASE=1 EXTENDED=0
+          make live CRUNTIME=podman RELEASE=1 EXTENDED=1
+
+      - name: Verify both editions built
+        run: test "$(find dist -maxdepth 1 -name '*-live.iso' | wc -l)" -eq 2
 
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
         with:
           name: kyronix-release-isos
-          path: dist/*.iso
+          path: dist/*-live.iso
           if-no-files-found: error
 
       - name: Upload checksums artifact
         uses: actions/upload-artifact@v4
         with:
           name: kyronix-release-checksums
-          path: dist/*.sha256
+          path: dist/*-live.iso.sha256
           if-no-files-found: error
 
       - name: Publish GitHub Release

@@ -17,6 +17,7 @@
 #include "http.h"
 #include "md5.h"
 #include "util.h"
+#include "zstd_decode.h"
 
 int verbose_mode = 0;
 int yes_mode = 0;
@@ -493,12 +494,30 @@ __attribute__((unused)) static int version_compare(const char *a, const char *b)
     return 0;
 }
 
+static char failed_repos[MAX_REPOS][512];
+static int failed_repo_count = 0;
+
+static int repo_is_failed(const char *url) {
+    for (int i = 0; i < failed_repo_count; i++)
+        if (strcmp(failed_repos[i], url) == 0) return 1;
+    return 0;
+}
+
+static void repo_mark_failed(const char *url) {
+    if (failed_repo_count >= MAX_REPOS) return;
+    if (repo_is_failed(url)) return;
+    snprintf(failed_repos[failed_repo_count], sizeof(failed_repos[failed_repo_count]), "%s", url);
+    failed_repo_count++;
+}
+
 static char *fetch_manifest_from_repos(const char *name, char **out_endpoint) {
     RepoConfig repos[MAX_REPOS];
     int count = read_repos(repos, MAX_REPOS);
     if (count == 0) return NULL;
 
     for (int i = 0; i < count; i++) {
+        if (repo_is_failed(repos[i].url)) continue;
+
         char url[1200];
         snprintf(url, sizeof(url), "%s/packages/%s", repos[i].url, name);
 
@@ -510,6 +529,7 @@ static char *fetch_manifest_from_repos(const char *name, char **out_endpoint) {
             *out_endpoint = strdup(repos[i].url);
             return manifest;
         }
+        if (code == 0) repo_mark_failed(repos[i].url);
         free(manifest);
     }
     return NULL;
@@ -521,6 +541,7 @@ typedef struct {
     char endpoint[512];
     long download_size;
     int installed;
+    PackageInfo *manifest;
 } ResolvedPkg;
 
 static void scan_files_recursive(const char *dir, FILE *out) {
@@ -587,35 +608,40 @@ static int resolve_dependencies(const char *name, ResolvedPkg *out, int out_max,
 
     char *manifest = NULL;
     char endpoint_buf[512] = "";
-    PackageInfo pkg;
+    PackageInfo *pkg = NULL;
 
     if (!already_installed) {
         char *ep = NULL;
         manifest = fetch_manifest_from_repos(name, &ep);
         if (!manifest) { dief("package '%s' not found in any repository", name); }
-        if (parse_manifest(manifest, &pkg) != 0) {
+        pkg = (PackageInfo *) calloc(1, sizeof(*pkg));
+        if (!pkg) {
             free(manifest);
             free(ep);
+            dief("out of memory");
+        }
+        if (parse_manifest(manifest, pkg) != 0) {
+            free(manifest);
+            free(ep);
+            free(pkg);
             dief("malformed manifest for '%s'", name);
         }
         free(manifest);
 
-        if (strcmp(pkg.name, name) != 0) {
-            free(ep);
-            dief("repository returned manifest for '%s' while resolving '%s'", pkg.name, name);
+        if (strcmp(pkg->name, name) != 0) {
+            dief("repository returned manifest for '%s' while resolving '%s'", pkg->name, name);
         }
-        if (strcmp(pkg.arch, "x86-64") != 0) {
-            free(ep);
-            dief("architecture %s not supported", pkg.arch);
-        }
+        if (strcmp(pkg->arch, "x86-64") != 0) { dief("architecture %s not supported", pkg->arch); }
 
         snprintf(endpoint_buf, sizeof(endpoint_buf), "%s", ep);
         free(ep);
     } else {
+        pkg = (PackageInfo *) calloc(1, sizeof(*pkg));
+        if (!pkg) dief("out of memory");
         char ver[64];
         get_installed_version(name, ver, sizeof(ver));
-        snprintf(pkg.version, sizeof(pkg.version), "%s", ver);
-        pkg.depends_count = 0;
+        snprintf(pkg->version, sizeof(pkg->version), "%s", ver);
+        pkg->depends_count = 0;
 
         char *ep = NULL;
         manifest = fetch_manifest_from_repos(name, &ep);
@@ -623,7 +649,7 @@ static int resolve_dependencies(const char *name, ResolvedPkg *out, int out_max,
             PackageInfo remote_pkg;
             if (parse_manifest(manifest, &remote_pkg) == 0 && strcmp(remote_pkg.name, name) == 0 &&
                 strcmp(remote_pkg.arch, "x86-64") == 0) {
-                pkg = remote_pkg;
+                *pkg = remote_pkg;
             } else {
                 log_warn("ignoring malformed manifest for installed package '%s'", name);
             }
@@ -632,26 +658,32 @@ static int resolve_dependencies(const char *name, ResolvedPkg *out, int out_max,
         free(ep);
     }
 
-    for (int d = 0; d < pkg.depends_count; d++) {
-        if (is_installed(pkg.depends[d])) {
+    for (int d = 0; d < pkg->depends_count; d++) {
+        if (is_installed(pkg->depends[d])) {
             char have[64];
-            get_installed_version(pkg.depends[d], have, sizeof(have));
+            get_installed_version(pkg->depends[d], have, sizeof(have));
             if (verbose_mode)
-                log_info("dependency %s already installed (have %s)", pkg.depends[d], have);
+                log_info("dependency %s already installed (have %s)", pkg->depends[d], have);
             continue;
         }
-        resolve_dependencies(pkg.depends[d], out, out_max, visited, vis_count);
+        resolve_dependencies(pkg->depends[d], out, out_max, visited, vis_count);
     }
 
     if (!already_installed) {
         int slot = 0;
         while (slot < out_max && out[slot].name[0]) slot++;
-        if (slot >= out_max) dief("too many packages to install (max %d)", out_max);
+        if (slot >= out_max) {
+            free(pkg);
+            dief("too many packages to install (max %d)", out_max);
+        }
 
-        snprintf(out[slot].name, sizeof(out[slot].name), "%s", pkg.name);
-        snprintf(out[slot].version, sizeof(out[slot].version), "%s", pkg.version);
+        snprintf(out[slot].name, sizeof(out[slot].name), "%s", pkg->name);
+        snprintf(out[slot].version, sizeof(out[slot].version), "%s", pkg->version);
         snprintf(out[slot].endpoint, sizeof(out[slot].endpoint), "%s", endpoint_buf);
+        out[slot].manifest = pkg;
         out[slot].installed = 0;
+    } else {
+        free(pkg);
     }
 
     (*vis_count)--;
@@ -660,25 +692,12 @@ static int resolve_dependencies(const char *name, ResolvedPkg *out, int out_max,
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-truncation"
-static int do_install(const char *name, const char *endpoint, long download_size,
-                      const char *requested_by, int explicit) {
-    if (!valid_pkg_name(name)) dief("invalid resolved package");
-    char url[2048];
-    snprintf(url, sizeof(url), "%s/packages/%s", endpoint, name);
-
-    fprintf(stdout, "%s=>%s resolving %s%s%s", ANSI_CYAN, ANSI_RESET, ANSI_BOLD, name, ANSI_RESET);
-
-    int code = 0;
-    char *manifest = http_get_body(url, &code);
-    if (code == 403) dief("access denied by registry");
-    if (code != 200) dief("package '%s' not found at %s", name, endpoint);
-
-    PackageInfo pkg;
-    if (parse_manifest(manifest, &pkg) != 0) {
-        free(manifest);
-        dief("malformed package manifest");
-    }
-    free(manifest);
+static int do_install(ResolvedPkg *rp, const char *requested_by, int explicit) {
+    if (!valid_pkg_name(rp->name)) dief("invalid resolved package");
+    const char *name = rp->name;
+    const char *endpoint = rp->endpoint;
+    long download_size = rp->download_size;
+    PackageInfo pkg = *rp->manifest;
 
     if (strcmp(pkg.name, name) != 0)
         dief("package identity mismatch: expected '%s', got '%s'", name, pkg.name);
@@ -702,11 +721,12 @@ static int do_install(const char *name, const char *endpoint, long download_size
     char *tmp_dir = mkdtemp(tmp_template);
     if (!tmp_dir) dief("failed to create temporary directory");
 
-    char archive_path[512], checksum_path[512], script_path[512], extract_dir[512];
-    snprintf(archive_path, sizeof(archive_path), "%s/%s", tmp_dir, "package.gz");
-    snprintf(checksum_path, sizeof(checksum_path), "%s/%s", tmp_dir, "package.gz.md5");
+    char archive_path[512], checksum_path[512], script_path[512], extract_dir[512], tar_path[512];
+    snprintf(archive_path, sizeof(archive_path), "%s/%s", tmp_dir, "package.zst");
+    snprintf(checksum_path, sizeof(checksum_path), "%s/%s", tmp_dir, "package.zst.md5");
     snprintf(script_path, sizeof(script_path), "%s/%s", tmp_dir, "install.sh");
     snprintf(extract_dir, sizeof(extract_dir), "%s/%s", tmp_dir, "extract");
+    snprintf(tar_path, sizeof(tar_path), "%s/%s", tmp_dir, "package.tar");
     ensure_dir(extract_dir);
 
     const char *install_dir = "/usr/bin";
@@ -743,12 +763,11 @@ static int do_install(const char *name, const char *endpoint, long download_size
 
     fprintf(stdout, "%s=>%s extracting...", ANSI_CYAN, ANSI_RESET);
     fflush(stdout);
+    if (zstd_decode_file(archive_path, tar_path) != 0) dief("archive decompression failed");
     char *tar_argv[] = { "tar",
                          "-x",
-                         "-I",
-                         "gzip -dcf",
                          "-f",
-                         archive_path,
+                         tar_path,
                          "-C",
                          extract_dir,
                          "--transform=flags=r;s|^\\.$|__skip__|",
@@ -756,6 +775,7 @@ static int do_install(const char *name, const char *endpoint, long download_size
                          "--no-same-permissions",
                          NULL };
     if (run_cmd(tar_argv) != 0) dief("archive extraction failed");
+    unlink(tar_path);
     fprintf(stdout, " %sok%s\n", ANSI_GREEN, ANSI_RESET);
 
     char pre_scan[1024];
@@ -1042,8 +1062,9 @@ void cmd_get(const char *name) {
         /* top-level package is last in list; deps get top-level name as requester */
         const char *req = (i < count - 1) ? name : NULL;
         int expl = (i == count - 1) ? 1 : 0;
-        do_install(install_list[i].name, install_list[i].endpoint, install_list[i].download_size,
-                   req, expl);
+        do_install(&install_list[i], req, expl);
+        free(install_list[i].manifest);
+        install_list[i].manifest = NULL;
     }
 
     fprintf(stdout, "\n  %d package%s installed successfully:\n", count, count == 1 ? "" : "s");

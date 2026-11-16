@@ -20,6 +20,10 @@
 
 #define HTTP_MAX_HEADER (64U * 1024U)
 
+#define HTTP_CONNECT_TIMEOUT_MS 2000
+#define HTTP_HEADER_TIMEOUT_MS 5000
+#define HTTP_BODY_TIMEOUT_MS 30000
+
 static int parse_http_url(const char *url, char *host, size_t host_n, int *port, char *path,
                           size_t path_n) {
     if (!url || !starts_with(url, "http://")) return -1;
@@ -98,7 +102,9 @@ static int connect_tcp(const char *host, int port) {
         if (connected != 0 && errno == EINPROGRESS) {
             struct pollfd pfd = { .fd = fd, .events = POLLOUT };
             int ready;
-            do { ready = poll(&pfd, 1, 10000); } while (ready < 0 && errno == EINTR);
+            do {
+                ready = poll(&pfd, 1, HTTP_CONNECT_TIMEOUT_MS);
+            } while (ready < 0 && errno == EINTR);
             if (ready > 0) {
                 int socket_error = 0;
                 socklen_t error_len = sizeof(socket_error);
@@ -116,10 +122,42 @@ static int connect_tcp(const char *host, int port) {
     return fd;
 }
 
-static ssize_t read_with_timeout(int fd, void *buf, size_t len) {
+static struct {
+    char host[256];
+    int port;
+    int fd;
+} g_conn = { .host = "", .port = 0, .fd = -1 };
+
+static int g_conn_reused = 0;
+
+static void conn_close(void) {
+    if (g_conn.fd >= 0) close(g_conn.fd);
+    g_conn.fd = -1;
+    g_conn.host[0] = '\0';
+    g_conn.port = 0;
+}
+
+static int conn_get(const char *host, int port) {
+    if (g_conn.fd >= 0 && g_conn.port == port && strcmp(g_conn.host, host) == 0) {
+        g_conn_reused = 1;
+        return g_conn.fd;
+    }
+    conn_close();
+
+    int fd = connect_tcp(host, port);
+    if (fd < 0) return -1;
+    (void) fcntl(fd, F_SETFD, FD_CLOEXEC);
+    snprintf(g_conn.host, sizeof(g_conn.host), "%s", host);
+    g_conn.port = port;
+    g_conn.fd = fd;
+    g_conn_reused = 0;
+    return fd;
+}
+
+static ssize_t read_with_timeout(int fd, void *buf, size_t len, int timeout_ms) {
     struct pollfd pfd = { .fd = fd, .events = POLLIN };
     int ready;
-    do { ready = poll(&pfd, 1, 30000); } while (ready < 0 && errno == EINTR);
+    do { ready = poll(&pfd, 1, timeout_ms); } while (ready < 0 && errno == EINTR);
     if (ready <= 0) {
         errno = ready == 0 ? ETIMEDOUT : errno;
         return -1;
@@ -139,142 +177,296 @@ static int write_all(int fd, const void *data, size_t len) {
     return 0;
 }
 
-static int make_request(char *out, size_t size, const char *path, const char *host) {
-    int n = snprintf(out, size,
-                     "GET %s HTTP/1.1\r\n"
-                     "Host: %s\r\n"
-                     "User-Agent: %s\r\n"
-                     "Accept-Encoding: identity\r\n"
-                     "Connection: close\r\n\r\n",
-                     path, host, USER_AGENT);
+static int make_request(char *out, size_t size, const char *path, const char *host, int keep_alive,
+                        const char *extra) {
+    int n =
+        snprintf(out, size,
+                 "GET %s HTTP/1.1\r\n"
+                 "Host: %s\r\n"
+                 "User-Agent: %s\r\n"
+                 "Accept-Encoding: identity\r\n"
+                 "%s"
+                 "Connection: %s\r\n\r\n",
+                 path, host, USER_AGENT, extra ? extra : "", keep_alive ? "keep-alive" : "close");
     return n >= 0 && (size_t) n < size ? n : -1;
+}
+
+typedef struct {
+    int fd;
+    int status;
+    long content_length;
+    long range_total;
+    int chunked;
+    int keep;
+    size_t body_offset;
+    unsigned char *hdr;
+    size_t hdr_len;
+} HttpHead;
+
+static long parse_content_length(const unsigned char *headers, size_t header_len);
+static int header_has_chunked(const unsigned char *headers, size_t header_len);
+
+static void http_head_free(HttpHead *h) {
+    free(h->hdr);
+    h->hdr = NULL;
+}
+
+static long parse_content_range_total(const unsigned char *headers, size_t header_len) {
+    static const char name[] = "content-range:";
+    size_t offset = 0;
+    while (offset < header_len) {
+        size_t end = offset;
+        while (end < header_len && headers[end] != '\n') { end++; }
+        size_t line_len = end - offset;
+        if (line_len && headers[offset + line_len - 1] == '\r') { line_len--; }
+        if (line_len >= sizeof(name) - 1 &&
+            strncasecmp((const char *) headers + offset, name, sizeof(name) - 1) == 0) {
+            size_t pos = offset + sizeof(name) - 1;
+            while (pos < offset + line_len && headers[pos] != '/') { pos++; }
+            if (pos == offset + line_len) { return -1; }
+            pos++;
+            unsigned long value = 0;
+            size_t digits = 0;
+            for (; pos < offset + line_len; pos++) {
+                if (headers[pos] < '0' || headers[pos] > '9') { return -1; }
+                if (value > PKG_MAX_DOWNLOAD) { return -1; }
+                value = value * 10UL + (unsigned long) (headers[pos] - '0');
+                digits++;
+            }
+            return digits ? (long) value : -1;
+        }
+        offset = end < header_len ? end + 1 : end;
+    }
+    return -1;
+}
+
+static int read_header_block(int fd, HttpHead *h, size_t *bytes_read) {
+    size_t cap = 8192;
+    size_t len = 0;
+    *bytes_read = 0;
+    h->hdr = NULL;
+    h->hdr_len = 0;
+    unsigned char *buf = (unsigned char *) malloc(cap + 1);
+    if (!buf) { dief("out of memory"); }
+
+    unsigned char *hdr_end = NULL;
+    while (!hdr_end) {
+        if (len == cap) {
+            if (cap >= HTTP_MAX_HEADER) {
+                free(buf);
+                return -1;
+            }
+            cap *= 2;
+            if (cap > HTTP_MAX_HEADER) { cap = HTTP_MAX_HEADER; }
+            unsigned char *nb = (unsigned char *) realloc(buf, cap + 1);
+            if (!nb) {
+                free(buf);
+                dief("out of memory");
+            }
+            buf = nb;
+        }
+        ssize_t rd = read_with_timeout(fd, buf + len, cap - len, HTTP_HEADER_TIMEOUT_MS);
+        if (rd < 0 && errno == EINTR) { continue; }
+        if (rd <= 0) {
+            *bytes_read = len;
+            h->hdr_len = len;
+            free(buf);
+            return -1;
+        }
+        len += (size_t) rd;
+        buf[len] = '\0';
+        hdr_end = (unsigned char *) strstr((char *) buf, "\r\n\r\n");
+        if (!hdr_end) { hdr_end = (unsigned char *) strstr((char *) buf, "\n\n"); }
+    }
+
+    size_t header_bytes = (size_t) (hdr_end - buf);
+    if (hdr_end[0] == '\r' && hdr_end[1] == '\n' && hdr_end[2] == '\r' && hdr_end[3] == '\n') {
+        header_bytes += 4;
+    } else {
+        header_bytes += 2;
+    }
+
+    h->status = 0;
+    {
+        unsigned char *sl = (unsigned char *) strstr((char *) buf, "\r\n");
+        if (!sl || sl > hdr_end) { sl = (unsigned char *) strstr((char *) buf, "\n"); }
+        if (sl) {
+            const char *sp = (const char *) buf;
+            while (*sp && *sp != ' ') { sp++; }
+            if (*sp == ' ') {
+                sp++;
+                while (*sp >= '0' && *sp <= '9') {
+                    h->status = h->status * 10 + (*sp - '0');
+                    sp++;
+                }
+            }
+        }
+    }
+    h->content_length = parse_content_length(buf, header_bytes);
+    h->chunked = header_has_chunked(buf, header_bytes);
+    h->range_total = parse_content_range_total(buf, header_bytes);
+    h->hdr = buf;
+    h->hdr_len = len;
+    h->body_offset = header_bytes;
+    h->keep = h->content_length >= 0 && !h->chunked;
+    return 0;
+}
+
+static int http_head(const char *url, const char *extra, HttpHead *h) {
+    memset(h, 0, sizeof(*h));
+    if (!url || !starts_with(url, "http://")) {
+        log_warn("invalid repository URL");
+        return -1;
+    }
+
+    char host[256], path[1024];
+    int port = 0;
+    if (parse_http_url(url, host, sizeof(host), &port, path, sizeof(path)) != 0) {
+        log_warn("invalid repository URL");
+        return -1;
+    }
+
+    char request[2048];
+    int request_len = make_request(request, sizeof(request), path, host, 1, extra);
+    if (request_len < 0) { return -1; }
+
+    for (int attempt = 0; attempt < 2; attempt++) {
+        int reused = g_conn.fd >= 0;
+
+        int fd = conn_get(host, port);
+        if (fd < 0) { return -1; }
+        h->fd = fd;
+
+        if (verbose_mode) { log_info("GET %s", url); }
+        if (write_all(fd, request, (size_t) request_len) != 0) {
+            if (reused) {
+                conn_close();
+                continue;
+            }
+            log_info("write failed for %s", url);
+            conn_close();
+            return -1;
+        }
+
+        size_t got = 0;
+        if (read_header_block(fd, h, &got) != 0) {
+            if (reused && got == 0) {
+                conn_close();
+                continue;
+            }
+            log_info("header read failed for %s", url);
+            conn_close();
+            return -1;
+        }
+
+        if (!h->keep) { conn_close(); }
+        return 0;
+    }
+
+    conn_close();
+    return -1;
+}
+
+static int read_body_exact(int fd, unsigned char *dst, size_t len, size_t *got) {
+    size_t done = 0;
+    while (done < len) {
+        ssize_t rd = read_with_timeout(fd, dst + done, len - done, HTTP_BODY_TIMEOUT_MS);
+        if (rd < 0 && errno == EINTR) { continue; }
+        if (rd <= 0) {
+            *got = done;
+            return -1;
+        }
+        done += (size_t) rd;
+    }
+    *got = done;
+    return 0;
 }
 
 unsigned char *http_get_body_raw(const char *url, int *status_code, size_t *body_len) {
     if (status_code) *status_code = 0;
     if (body_len) *body_len = 0;
-    char host[256], path[1024];
-    int port = 0;
-    if (parse_http_url(url, host, sizeof(host), &port, path, sizeof(path)) != 0) {
-        log_warn("invalid repository URL");
-        return NULL;
-    }
 
-    int fd = connect_tcp(host, port);
-    if (fd < 0) return NULL;
+    HttpHead h;
+    if (http_head(url, NULL, &h) != 0) { return NULL; }
+    if (status_code) *status_code = h.status;
 
-    char request[2048];
-    int request_len = make_request(request, sizeof(request), path, host);
-    if (request_len < 0) {
-        close(fd);
-        return NULL;
-    }
+    size_t initial = h.hdr_len - h.body_offset;
+    unsigned char *body = NULL;
+    size_t raw_len = 0;
 
-    if (verbose_mode) log_info("GET %s", url);
-    if (write_all(fd, request, (size_t) request_len) != 0) {
-        log_info("write failed for %s", url);
-        close(fd);
-        return NULL;
-    }
-
-    size_t cap = 65536;
-    size_t len = 0;
-    unsigned char *buf = (unsigned char *) malloc(cap + 1);
-    if (!buf) {
-        close(fd);
-        dief("out of memory");
-    }
-
-    for (;;) {
-        if (len == cap) {
-            if (cap >= PKG_MAX_METADATA + HTTP_MAX_HEADER) {
-                free(buf);
-                close(fd);
-                log_warn("metadata response exceeds size limit");
-                return NULL;
-            }
-            cap *= 2;
-            if (cap > PKG_MAX_METADATA + HTTP_MAX_HEADER) cap = PKG_MAX_METADATA + HTTP_MAX_HEADER;
-            unsigned char *nb = (unsigned char *) realloc(buf, cap + 1);
-            if (!nb) {
-                free(buf);
-                close(fd);
-                dief("out of memory");
-            }
-            buf = nb;
-        }
-        ssize_t rd = read_with_timeout(fd, buf + len, cap - len);
-        if (rd < 0 && errno == EINTR) continue;
-        if (rd < 0) {
-            free(buf);
-            close(fd);
+    if (h.keep) {
+        raw_len = (size_t) h.content_length;
+        if (raw_len > PKG_MAX_METADATA) {
+            http_head_free(&h);
+            conn_close();
             return NULL;
         }
-        if (rd == 0) break;
-        len += (size_t) rd;
-    }
-    close(fd);
-    buf[len] = '\0';
-
-    unsigned char *hdr_end = NULL;
-    hdr_end = (unsigned char *) strstr((char *) buf, "\r\n\r\n");
-    if (!hdr_end) {
-        hdr_end = (unsigned char *) strstr((char *) buf, "\n\n");
-        if (hdr_end) hdr_end += 1;
-    }
-    if (!hdr_end) {
-        free(buf);
-        if (status_code) *status_code = 0;
-        if (body_len) *body_len = 0;
-        return NULL;
-    }
-
-    unsigned char *status_line_end = (unsigned char *) strstr((char *) buf, "\r\n");
-    if (!status_line_end || status_line_end > hdr_end)
-        status_line_end = (unsigned char *) strstr((char *) buf, "\n");
-    if (!status_line_end) {
-        free(buf);
-        if (status_code) *status_code = 0;
-        if (body_len) *body_len = 0;
-        return NULL;
-    }
-    char status_line[128];
-    snprintf(status_line, sizeof(status_line), "%.*s", (int) (status_line_end - buf), buf);
-
-    int code = 0;
-    {
-        const char *sp = status_line;
-        while (*sp && *sp != ' ') sp++;
-        if (*sp == ' ') {
-            sp++;
-            while (*sp >= '0' && *sp <= '9') {
-                code = code * 10 + (*sp - '0');
-                sp++;
-            }
+        body = (unsigned char *) malloc(raw_len + 1);
+        if (!body) {
+            http_head_free(&h);
+            dief("out of memory");
         }
+        if (initial > raw_len) { initial = raw_len; }
+        memcpy(body, h.hdr + h.body_offset, initial);
+        size_t got = initial;
+        if (got < raw_len && read_body_exact(h.fd, body + got, raw_len - got, &got) != 0) {
+            free(body);
+            http_head_free(&h);
+            conn_close();
+            return NULL;
+        }
+        http_head_free(&h);
+    } else {
+        size_t cap = h.hdr_len + 65536;
+        body = (unsigned char *) malloc(cap + 1);
+        if (!body) {
+            http_head_free(&h);
+            dief("out of memory");
+        }
+        memcpy(body, h.hdr + h.body_offset, initial);
+        raw_len = initial;
+        for (;;) {
+            if (raw_len == cap) {
+                if (cap >= PKG_MAX_METADATA + HTTP_MAX_HEADER) {
+                    free(body);
+                    http_head_free(&h);
+                    conn_close();
+                    log_warn("metadata response exceeds size limit");
+                    return NULL;
+                }
+                cap *= 2;
+                if (cap > PKG_MAX_METADATA + HTTP_MAX_HEADER) {
+                    cap = PKG_MAX_METADATA + HTTP_MAX_HEADER;
+                }
+                unsigned char *nb = (unsigned char *) realloc(body, cap + 1);
+                if (!nb) {
+                    free(body);
+                    http_head_free(&h);
+                    dief("out of memory");
+                }
+                body = nb;
+            }
+            ssize_t rd =
+                read_with_timeout(h.fd, body + raw_len, cap - raw_len, HTTP_BODY_TIMEOUT_MS);
+            if (rd < 0 && errno == EINTR) { continue; }
+            if (rd < 0) {
+                free(body);
+                http_head_free(&h);
+                conn_close();
+                return NULL;
+            }
+            if (rd == 0) { break; }
+            raw_len += (size_t) rd;
+        }
+        http_head_free(&h);
     }
-    if (status_code) *status_code = code;
 
-    size_t header_len = (size_t) (hdr_end - buf);
-    if (hdr_end[0] == '\r' && hdr_end[1] == '\n' && hdr_end[2] == '\r' && hdr_end[3] == '\n')
-        header_len += 4;
-    else
-        header_len += 2;
-    size_t raw_len = len - header_len;
     if (raw_len > PKG_MAX_METADATA) {
-        free(buf);
+        free(body);
         return NULL;
     }
-    unsigned char *body = (unsigned char *) malloc(raw_len + 1);
-    if (!body) {
-        free(buf);
-        dief("out of memory");
-    }
-    memcpy(body, buf + header_len, raw_len);
     body[raw_len] = '\0';
     if (body_len) *body_len = raw_len;
-
-    free(buf);
     return body;
 }
 
@@ -328,61 +520,19 @@ static int header_has_chunked(const unsigned char *headers, size_t header_len) {
 }
 
 long http_content_length(const char *url) {
-    char host[256], path[1024];
-    int port = 0;
-    if (parse_http_url(url, host, sizeof(host), &port, path, sizeof(path)) != 0) return -1;
+    HttpHead h;
+    if (http_head(url, "Range: bytes=0-0\r\n", &h) != 0) { return -1; }
 
-    int fd = connect_tcp(host, port);
-    if (fd < 0) return -1;
-
-    char request[2048];
-    int request_len = make_request(request, sizeof(request), path, host);
-    if (request_len < 0) {
-        close(fd);
-        return -1;
+    long size = -1;
+    if (h.status == 206 && h.range_total >= 0) {
+        size = h.range_total;
+    } else if (h.content_length >= 0) {
+        size = h.content_length;
     }
 
-    if (write_all(fd, request, (size_t) request_len) != 0) {
-        close(fd);
-        return -1;
-    }
-
-    size_t cap = 8192;
-    size_t len = 0;
-    unsigned char *buf = (unsigned char *) malloc(cap + 1);
-    if (!buf) {
-        close(fd);
-        return -1;
-    }
-
-    unsigned char *hdr_end = NULL;
-    while (!hdr_end) {
-        if (len == cap) {
-            if (cap >= HTTP_MAX_HEADER) break;
-            cap *= 2;
-            if (cap > HTTP_MAX_HEADER) cap = HTTP_MAX_HEADER;
-            unsigned char *nb = (unsigned char *) realloc(buf, cap + 1);
-            if (!nb) {
-                free(buf);
-                close(fd);
-                return -1;
-            }
-            buf = nb;
-        }
-        ssize_t rd = read_with_timeout(fd, buf + len, cap - len);
-        if (rd < 0 && errno == EINTR) continue;
-        if (rd <= 0) break;
-        len += (size_t) rd;
-        buf[len] = '\0';
-        hdr_end = (unsigned char *) strstr((char *) buf, "\r\n\r\n");
-        if (!hdr_end) hdr_end = (unsigned char *) strstr((char *) buf, "\n\n");
-    }
-    close(fd);
-
-    long cl = -1;
-    if (hdr_end) cl = parse_content_length(buf, (size_t) (hdr_end - buf));
-    free(buf);
-    return cl;
+    if (h.keep) { conn_close(); }
+    http_head_free(&h);
+    return size;
 }
 
 static void render_bar(const char *label, size_t received, size_t total, int bar_w) {
@@ -417,100 +567,20 @@ static void render_bar(const char *label, size_t received, size_t total, int bar
 
 int http_download(const char *url, const char *dest, const char *label) {
     if (verbose_mode) log_info("download %s -> %s", url, dest);
-    char host[256], path[1024];
-    int port = 0;
-    if (parse_http_url(url, host, sizeof(host), &port, path, sizeof(path)) != 0) return -1;
 
-    int fd = connect_tcp(host, port);
-    if (fd < 0) {
+    HttpHead h;
+    if (http_head(url, NULL, &h) != 0) {
         log_info("connect failed for %s", url);
         return -1;
     }
 
-    char request[2048];
-    int request_len = make_request(request, sizeof(request), path, host);
-    if (request_len < 0) {
-        close(fd);
-        return -1;
-    }
-
-    if (write_all(fd, request, (size_t) request_len) != 0) {
-        log_info("write failed for %s", url);
-        close(fd);
-        return -1;
-    }
-
-    size_t hdr_cap = 8192;
-    size_t hdr_len = 0;
-    unsigned char *hdr_buf = (unsigned char *) malloc(hdr_cap + 1);
-    if (!hdr_buf) {
-        close(fd);
-        return -1;
-    }
-
-    unsigned char *hdr_end = NULL;
-    while (!hdr_end) {
-        if (hdr_len == hdr_cap) {
-            if (hdr_cap >= HTTP_MAX_HEADER) {
-                free(hdr_buf);
-                close(fd);
-                return -1;
-            }
-            hdr_cap *= 2;
-            if (hdr_cap > HTTP_MAX_HEADER) hdr_cap = HTTP_MAX_HEADER;
-            unsigned char *nb = (unsigned char *) realloc(hdr_buf, hdr_cap + 1);
-            if (!nb) {
-                free(hdr_buf);
-                close(fd);
-                return -1;
-            }
-            hdr_buf = nb;
-        }
-        ssize_t rd = read_with_timeout(fd, hdr_buf + hdr_len, hdr_cap - hdr_len);
-        if (rd < 0 && errno == EINTR) continue;
-        if (rd <= 0) {
-            log_info("header read failed for %s (n=%zd)", url, rd);
-            free(hdr_buf);
-            close(fd);
-            return -1;
-        }
-        hdr_len += (size_t) rd;
-        hdr_buf[hdr_len] = '\0';
-        hdr_end = (unsigned char *) strstr((char *) hdr_buf, "\r\n\r\n");
-        if (!hdr_end) hdr_end = (unsigned char *) strstr((char *) hdr_buf, "\n\n");
-    }
-
-    int code = 0;
-    {
-        unsigned char *sl = (unsigned char *) strstr((char *) hdr_buf, "\r\n");
-        if (!sl || sl > hdr_end) sl = (unsigned char *) strstr((char *) hdr_buf, "\n");
-        if (sl) {
-            const char *sp = (const char *) hdr_buf;
-            while (*sp && *sp != ' ') sp++;
-            if (*sp == ' ') {
-                sp++;
-                while (*sp >= '0' && *sp <= '9') {
-                    code = code * 10 + (*sp - '0');
-                    sp++;
-                }
-            }
-        }
-    }
-
-    size_t header_bytes = (size_t) (hdr_end - hdr_buf);
-    if (hdr_end[0] == '\r' && hdr_end[1] == '\n' && hdr_end[2] == '\r' && hdr_end[3] == '\n')
-        header_bytes += 4;
-    else
-        header_bytes += 2;
-    long content_length = parse_content_length(hdr_buf, header_bytes);
-    size_t initial_body = hdr_len - header_bytes;
-
-    if (code != 200 || header_has_chunked(hdr_buf, header_bytes) ||
-        (content_length >= 0 && (size_t) content_length > PKG_MAX_DOWNLOAD) ||
+    size_t initial_body = h.hdr_len - h.body_offset;
+    if (h.status != 200 || h.chunked ||
+        (h.content_length >= 0 && (size_t) h.content_length > PKG_MAX_DOWNLOAD) ||
         initial_body > PKG_MAX_DOWNLOAD) {
-        log_info("HTTP %d for %s", code, url);
-        free(hdr_buf);
-        close(fd);
+        log_info("HTTP %d for %s", h.status, url);
+        http_head_free(&h);
+        conn_close();
         return -1;
     }
 
@@ -519,67 +589,70 @@ int http_download(const char *url, const char *dest, const char *label) {
     if (!f) {
         if (out_fd >= 0) close(out_fd);
         log_info("cannot create %s", dest);
-        free(hdr_buf);
-        close(fd);
+        http_head_free(&h);
+        conn_close();
         return -1;
     }
 
     size_t received = 0;
     int bar_w = 32;
-    size_t expected = content_length > 0 ? (size_t) content_length : 0;
+    size_t expected = h.content_length > 0 ? (size_t) h.content_length : 0;
     render_bar(label, 0, expected, bar_w);
 
     if (initial_body > 0) {
-        if (fwrite(hdr_buf + header_bytes, 1, initial_body, f) != initial_body) {
-            free(hdr_buf);
+        if (fwrite(h.hdr + h.body_offset, 1, initial_body, f) != initial_body) {
+            http_head_free(&h);
             fclose(f);
-            close(fd);
+            conn_close();
             unlink(dest);
             return -1;
         }
         received += initial_body;
         render_bar(label, received, expected, bar_w);
     }
-    free(hdr_buf);
+    http_head_free(&h);
 
     size_t buf_cap = 65536;
     unsigned char *buf = (unsigned char *) malloc(buf_cap);
     if (!buf) {
         fclose(f);
-        close(fd);
+        conn_close();
         return -1;
     }
 
+    int ok = 1;
+    size_t want = SIZE_MAX;
+    if (h.keep) { want = (size_t) h.content_length; }
+
     for (;;) {
-        ssize_t rd = read_with_timeout(fd, buf, buf_cap);
-        if (rd < 0 && errno == EINTR) continue;
+        if (received >= want) { break; }
+        size_t space = buf_cap;
+        if (want != SIZE_MAX && want - received < space) { space = want - received; }
+        ssize_t rd = read_with_timeout(h.fd, buf, space, HTTP_BODY_TIMEOUT_MS);
+        if (rd < 0 && errno == EINTR) { continue; }
         if (rd < 0) {
             log_info("body read failed for %s", url);
-            free(buf);
-            fclose(f);
-            close(fd);
-            unlink(dest);
-            return -1;
+            ok = 0;
+            break;
         }
-        if (rd == 0) break;
+        if (rd == 0) {
+            if (want != SIZE_MAX) {
+                log_info("short body for %s", url);
+                ok = 0;
+            }
+            break;
+        }
 
         size_t chunk = (size_t) rd;
         if (received > PKG_MAX_DOWNLOAD - chunk) {
-            free(buf);
-            fclose(f);
-            close(fd);
-            unlink(dest);
             log_warn("download exceeds size limit");
-            return -1;
+            ok = 0;
+            break;
         }
-        size_t written = fwrite(buf, 1, chunk, f);
-        if (written != chunk) {
+        if (fwrite(buf, 1, chunk, f) != chunk) {
             log_info("fwrite failed for %s", dest);
-            free(buf);
-            fclose(f);
-            close(fd);
-            unlink(dest);
-            return -1;
+            ok = 0;
+            break;
         }
 
         received += chunk;
@@ -588,13 +661,21 @@ int http_download(const char *url, const char *dest, const char *label) {
 
     fclose(f);
     free(buf);
-    close(fd);
+
+    if (!ok) {
+        conn_close();
+        unlink(dest);
+        return -1;
+    }
+
+    if (!h.keep) { conn_close(); }
 
     render_bar(label, received, expected, bar_w);
     fputc('\n', stderr);
 
-    if (content_length > 0 && received != (size_t) content_length) {
-        log_info("size mismatch for %s: expected %ld got %zu", url, content_length, received);
+    if (h.content_length > 0 && received != (size_t) h.content_length) {
+        log_info("size mismatch for %s: expected %ld got %zu", url, h.content_length, received);
+        conn_close();
         unlink(dest);
         return -1;
     }

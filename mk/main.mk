@@ -3,10 +3,12 @@ ARCH     := amd64
 BUILD    := build
 DIST     := dist
 RELEASE  ?= 0
+EXTENDED ?= 0
 
 KERNEL   := $(BUILD)/kernel.elf
 ISO      := $(DIST)/kyronix.iso
-LIVE_ISO := $(DIST)/kyronix-$(VERSION)-RELEASE-$(ARCH)-live.iso
+EDITION_SUFFIX := $(if $(filter 1,$(EXTENDED)),-extended,)
+LIVE_ISO := $(DIST)/kyronix-$(VERSION)-RELEASE-$(ARCH)$(EDITION_SUFFIX)-live.iso
 DISK     := $(DIST)/kyronix-disk.img
 TEST_ISO := $(DIST)/kyronix-test.iso
 
@@ -19,15 +21,19 @@ include mk/image.mk
 include mk/qemu.mk
 include mk/test.mk
 
-.PHONY: iso live help clean distclean _summary
+.PHONY: iso live help clean distclean _summary _iso _extended-check
 
-iso: $(ISO) _summary
+iso: _iso
+	@$(MAKE) --no-print-directory _summary
 
-_summary: $(ISO)
+_iso: _extended-check
+	@$(MAKE) --no-print-directory EXTENDED=$(EXTENDED) $(ISO)
+
+_summary:
 
 live:
 	@$(call phase,Release build)
-	$(MAKE) $(ISO) RELEASE=1
+	$(MAKE) _iso RELEASE=1
 	@mkdir -p $(DIST)
 	@rm -f $(LIVE_ISO)
 	mv $(ISO) $(LIVE_ISO)
@@ -38,8 +44,10 @@ live:
 help:
 	@echo "Kyronix build commands"
 	@echo ""
-	@echo "  make          Build $(ISO) (Desktop + Console variants)"
-	@echo "  make iso      Build $(ISO) (Desktop + Console variants)"
+	@echo "  make          Build $(ISO) $(if $(filter 0,$(EXTENDED)),(Console),(Weston + Console))"
+	@echo "  make iso      Build $(ISO) $(if $(filter 0,$(EXTENDED)),(Console),(Weston + Console))"
+	@echo "  make EXTENDED=0  Build without Weston"
+	@echo "  make EXTENDED=1  Build with Weston and packages.list"
 	@echo "  make live     Build a RELEASE image: $(LIVE_ISO) (+ .sha256)"
 	@echo "  make run      Build and boot the live ISO with $(DISK)"
 	@echo "  make boot     Boot the system already installed on $(DISK)"
@@ -61,13 +69,11 @@ clean:
 	rm -rf build/iso-root build/test-rootfs build/test-iso-root 2>/dev/null || true
 	rm -f test.log 2>/dev/null || true
 	rm -f $(ISO) $(TEST_ISO) 2>/dev/null || true
-	rm -f $(BUILD)/initrd.cpio $(BUILD)/initrd-weston.cpio $(BUILD)/initrd-console.cpio 2>/dev/null || true
-	rm -rf $(BUILD)/initrd-root-weston $(BUILD)/initrd-root-console 2>/dev/null || true
 	rm -f $(DIST)/kernel.elf $(DIST)/kyronix-boot.fat 2>/dev/null || true
 	rm -f $(DIST)/test-initrd.cpio $(DIST)/test-disk.img $(DIST)/disk.img 2>/dev/null || true
 	rm -f $(DIST)/kyronix-*-$(ARCH).iso 2>/dev/null || true
-	rm -f $(DIST)/kyronix-*-$(ARCH)-live.iso $(DIST)/kyronix-*-$(ARCH)-test.iso 2>/dev/null || true
-	rm -f $(DIST)/kyronix-*-$(ARCH)-live.iso.sha256 2>/dev/null || true
+	rm -f $(DIST)/kyronix-*-$(ARCH)*-live.iso $(DIST)/kyronix-*-$(ARCH)*-test.iso 2>/dev/null || true
+	rm -f $(DIST)/kyronix-*-$(ARCH)*-live.iso.sha256 2>/dev/null || true
 	rm -f $(BUILD)/os-release-INDEV $(BUILD)/os-release-RELEASE 2>/dev/null || true
 	$(MAKE) -C user clean 2>/dev/null || true
 	@rmdir $(DIST) 2>/dev/null || true

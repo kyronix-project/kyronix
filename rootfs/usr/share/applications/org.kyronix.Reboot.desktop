@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Reboot
-Comment=Reboot the system
-Icon=system-reboot
-Exec=reboot
-Categories=System;

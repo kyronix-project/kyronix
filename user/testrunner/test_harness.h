@@ -184,7 +184,9 @@ static inline int run_cmd(char *const argv[]) {
     return -1;
 }
 
-#define CAPTURE_TIMEOUT_SECS 20
+#ifndef CAPTURE_TIMEOUT_SECS
+#define CAPTURE_TIMEOUT_SECS 5
+#endif
 #define CAPTURE_TIMED_OUT (-2)
 
 static volatile sig_atomic_t capture_alarm_fired = 0;

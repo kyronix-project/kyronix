@@ -2,12 +2,33 @@ name: test
 on:
   push:
     branches: [ "*" ]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".gitignore"
   pull_request:
     branches: [ "*" ]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".gitignore"
+  schedule:
+    - cron: "0 3 * * *"
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TEST_FAST: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+  TEST_SHARDS: ${{ github.event_name == 'pull_request' && '2' || '1' }}
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,5 +45,18 @@ jobs:
       - name: Sanity check image
         run: podman image exists kyronix-build:latest && echo OK || (echo MISSING; exit 1)
 
-      - name: Build and run tests
-        run: make test CRUNTIME=podman -j $(nproc)
+      - name: Build test image
+        run: make test-build CRUNTIME=podman TEST_FAST=$TEST_FAST TEST_SHARDS=$TEST_SHARDS -j $(nproc)
+
+      - name: Run tests
+        run: make test CRUNTIME=podman TEST_FAST=$TEST_FAST TEST_SHARDS=$TEST_SHARDS -j $(nproc)
+
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: |
+            build/test*.log
+            build/test*.log.qemu
+          if-no-files-found: ignore

@@ -1,1 +1,5 @@
-# This is the list of packages that will be included in future initrd
+# This is the list of packages that will be incdluded in future extended initrd
+# NOTE: Packages installed only when EXTENDED=1
+
+weston
+kair-runtime
