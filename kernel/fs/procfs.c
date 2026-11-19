@@ -388,6 +388,7 @@ static int64_t proc_pids_read(vfs_node_t *n, char *buf, uint64_t len, uint64_t o
     for (int i = 0; i < PROC_MAX; i++) {
         proc_t *p = &g_proctable[i];
         if (p->state == PROC_UNUSED) continue;
+        if (p->pid == 0) continue;
         if (!jail_can_see(g_current_proc, p)) continue;
         const char *name = p->exe_path[0] ? p->exe_path : "unknown";
         uint64_t pages = p->pages_alloc > p->pages_freed ? p->pages_alloc - p->pages_freed : 0;
