@@ -38,102 +38,106 @@ void proc_init(void) {
     log_info("PROC: table initialised  (%d slots)", PROC_MAX);
 }
 
+static proc_t *proc_slot_setup(int i, uint32_t ppid) {
+    proc_t *p = &g_proctable[i];
+    memset(p, 0, sizeof(*p));
+
+    p->state = PROC_EMBRYO;
+    proc_set_used(p);
+    p->pid = (uint32_t) (i + 1);
+    p->tgid = p->pid;
+    p->ppid = ppid;
+    p->pgid = (uint32_t) (i + 1);
+    p->wait_for = 0;
+    p->refcount = 1;
+
+    uint64_t guard_va = g_kstack_va_bump;
+    g_kstack_va_bump += KSTACK_VA_STRIDE;
+    for (int pg = 0; pg < KSTACK_PAGES; pg++) {
+        void *phys = pmm_alloc_zeroed();
+        if (!phys) {
+            // free already-mapped pages
+            for (int j = 0; j < pg; j++) {
+                uint64_t va = guard_va + PAGE_SIZE + (uint64_t) j * PAGE_SIZE;
+                uint64_t pa = vmm_virt_to_phys(&g_kernel_space, va);
+                vmm_unmap(&g_kernel_space, va);
+                if (pa) pmm_free((void *) pa);
+            }
+            p->state = PROC_UNUSED;
+        }
+        uint64_t va = guard_va + PAGE_SIZE + (uint64_t) pg * PAGE_SIZE;
+        if (vmm_map(&g_kernel_space, va, (uint64_t) phys, VMM_KDATA) < 0) {
+            pmm_free(phys);
+            for (int j = 0; j < pg; j++) {
+                uint64_t jva = guard_va + PAGE_SIZE + (uint64_t) j * PAGE_SIZE;
+                uint64_t pa = vmm_virt_to_phys(&g_kernel_space, jva);
+                vmm_unmap(&g_kernel_space, jva);
+                if (pa) pmm_free((void *) pa);
+            }
+            p->state = PROC_UNUSED;
+        }
+    }
+    p->kstack_guard = guard_va;
+    p->kstack = (uint8_t *) (guard_va + PAGE_SIZE);
+    p->kstack_top = guard_va + KSTACK_VA_STRIDE;
+
+    p->fds = (vfs_file_t **) kcalloc(VFS_FD_MAX, sizeof(vfs_file_t *));
+    if (!p->fds) {
+        proc_kstack_free(p);
+        p->state = PROC_UNUSED;
+    }
+    p->fds_refcnt = (uint32_t *) kmalloc(sizeof(uint32_t));
+    if (!p->fds_refcnt) {
+        kfree(p->fds);
+        p->fds = NULL;
+        proc_kstack_free(p);
+        p->state = PROC_UNUSED;
+    }
+    *p->fds_refcnt = 1;
+
+    p->nsproxy = nsproxy_get(&init_nsproxy);
+
+    p->mmap_bump = 0x0000500000000000ULL;
+    p->umask = 0022;
+    p->cwd[0] = '/';
+    p->cwd[1] = '\0';
+    p->cap_effective = CAP_FULL_MASK;
+    p->cap_permitted = CAP_FULL_MASK;
+    p->cap_inheritable = CAP_FULL_MASK;
+    p->cap_bounding = CAP_FULL_MASK;
+    p->dumpable = 1;
+    strncpy(p->comm, "kx", sizeof(p->comm) - 1);
+
+    // default x87 fpu + sse state: clean area, mask all exceptions
+    memset(p->fpu_state, 0, sizeof(p->fpu_state));
+    ((uint16_t *) p->fpu_state)[0] = 0x037F;        /* FCW */
+    ((uint32_t *) (p->fpu_state + 24))[0] = 0x1F80; /* MXCSR */
+
+    return p;
+}
+
 proc_t *proc_alloc(uint32_t ppid) {
     spin_lock(&g_proctable_lock);
-    for (int i = 0; i < PROC_MAX; i++) {
+    for (int i = 1; i < PROC_MAX; i++) {
         if (g_proctable[i].state != PROC_UNUSED) continue;
-
-        proc_t *p = &g_proctable[i];
-        memset(p, 0, sizeof(*p));
-
-        p->state = PROC_EMBRYO;
-        proc_set_used(p);
-        p->pid = (uint32_t) (i + 1);
-        p->tgid = p->pid;
-        p->ppid = ppid;
-        p->pgid = (uint32_t) (i + 1);
-        p->wait_for = 0;
-        p->refcount = 1;
-
-        uint64_t guard_va = g_kstack_va_bump;
-        g_kstack_va_bump += KSTACK_VA_STRIDE;
-        for (int pg = 0; pg < KSTACK_PAGES; pg++) {
-            void *phys = pmm_alloc_zeroed();
-            if (!phys) {
-                // free already-mapped pages
-                for (int j = 0; j < pg; j++) {
-                    uint64_t va = guard_va + PAGE_SIZE + (uint64_t) j * PAGE_SIZE;
-                    uint64_t pa = vmm_virt_to_phys(&g_kernel_space, va);
-                    vmm_unmap(&g_kernel_space, va);
-                    if (pa) pmm_free((void *) pa);
-                }
-                p->state = PROC_UNUSED;
-                proc_clear_used(p);
-                spin_unlock(&g_proctable_lock);
-                return NULL;
-            }
-            uint64_t va = guard_va + PAGE_SIZE + (uint64_t) pg * PAGE_SIZE;
-            if (vmm_map(&g_kernel_space, va, (uint64_t) phys, VMM_KDATA) < 0) {
-                pmm_free(phys);
-                for (int j = 0; j < pg; j++) {
-                    uint64_t jva = guard_va + PAGE_SIZE + (uint64_t) j * PAGE_SIZE;
-                    uint64_t pa = vmm_virt_to_phys(&g_kernel_space, jva);
-                    vmm_unmap(&g_kernel_space, jva);
-                    if (pa) pmm_free((void *) pa);
-                }
-                p->state = PROC_UNUSED;
-                proc_clear_used(p);
-                spin_unlock(&g_proctable_lock);
-                return NULL;
-            }
-        }
-        p->kstack_guard = guard_va;
-        p->kstack = (uint8_t *) (guard_va + PAGE_SIZE);
-        p->kstack_top = guard_va + KSTACK_VA_STRIDE;
-
-        p->fds = (vfs_file_t **) kcalloc(VFS_FD_MAX, sizeof(vfs_file_t *));
-        if (!p->fds) {
-            proc_kstack_free(p);
-            p->state = PROC_UNUSED;
-            proc_clear_used(p);
-            spin_unlock(&g_proctable_lock);
-            return NULL;
-        }
-        p->fds_refcnt = (uint32_t *) kmalloc(sizeof(uint32_t));
-        if (!p->fds_refcnt) {
-            kfree(p->fds);
-            p->fds = NULL;
-            proc_kstack_free(p);
-            p->state = PROC_UNUSED;
-            proc_clear_used(p);
-            spin_unlock(&g_proctable_lock);
-            return NULL;
-        }
-        *p->fds_refcnt = 1;
-
-        p->nsproxy = nsproxy_get(&init_nsproxy);
-
-        p->mmap_bump = 0x0000500000000000ULL;
-        p->umask = 0022;
-        p->cwd[0] = '/';
-        p->cwd[1] = '\0';
-        p->cap_effective = CAP_FULL_MASK;
-        p->cap_permitted = CAP_FULL_MASK;
-        p->cap_inheritable = CAP_FULL_MASK;
-        p->cap_bounding = CAP_FULL_MASK;
-        p->dumpable = 1;
-        strncpy(p->comm, "kx", sizeof(p->comm) - 1);
-
-        // default x87 fpu + sse state: clean area, mask all exceptions
-        memset(p->fpu_state, 0, sizeof(p->fpu_state));
-        ((uint16_t *) p->fpu_state)[0] = 0x037F;        /* FCW */
-        ((uint32_t *) (p->fpu_state + 24))[0] = 0x1F80; /* MXCSR */
-
+        proc_t *p = proc_slot_setup(i, ppid);
         spin_unlock(&g_proctable_lock);
         return p;
     }
     spin_unlock(&g_proctable_lock);
     return NULL;
+}
+
+proc_t *proc_alloc_init(void) {
+    spin_lock(&g_proctable_lock);
+    if (g_proctable[0].state != PROC_UNUSED) {
+        spin_unlock(&g_proctable_lock);
+        log_error("PROC: init slot (pid 1) already in use");
+        return NULL;
+    }
+    proc_t *p = proc_slot_setup(0, 0);
+    spin_unlock(&g_proctable_lock);
+    return p;
 }
 
 bool proc_security_inherit(proc_t *child, proc_t *parent) {
@@ -337,7 +341,7 @@ void sched_yield(void) {
 }
 
 proc_t *proc_create_idle(uint32_t cpu_id, void (*entry)(void)) {
-    for (int i = 0; i < PROC_MAX; i++) {
+    for (int i = PROC_MAX-1; i >= 1; i--) {
         if (g_proctable[i].state != PROC_UNUSED) continue;
         proc_t *p = &g_proctable[i];
         memset(p, 0, sizeof(*p));
