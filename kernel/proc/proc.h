@@ -209,6 +209,7 @@ static inline void sched_cpu_sleep(void) {
 
 void proc_init(void);
 proc_t *proc_alloc(uint32_t ppid);
+proc_t *proc_alloc_init(void);
 proc_t *proc_create_idle(uint32_t cpu_id, void (*entry)(void));
 proc_t *proc_create_kernel(const char *name, void (*entry)(void));
 void proc_kstack_free(proc_t *p);

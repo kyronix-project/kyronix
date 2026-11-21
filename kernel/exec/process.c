@@ -209,7 +209,7 @@ int process_exec(const void *data, uint64_t size, const char *name, int argc,
         return -1;
     }
 
-    proc_t *p = proc_alloc(0);
+    proc_t *p = proc_alloc_init();
     if (!p) {
         log_error("process_exec: proc_alloc failed");
         vmm_space_free(res.space);
